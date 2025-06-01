@@ -42,16 +42,19 @@ RUN apk add --no-cache libc6-compat openssl
 COPY package.json yarn.lock ./
 
 # Install ONLY production dependencies
-RUN yarn install --production --frozen-lockfile --network-timeout 100000
+# RUN yarn install --production --frozen-lockfile --network-timeout 100000
+# Instead of reinstalling prod dependencies, let's copy them from the builder
+# along with the generated Prisma client.
 
 # Copy compiled code from the builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
-# Copy Prisma schema and the generated Prisma Client from the builder stage
-# The generated client includes the query engine for the production environment (Linux)
+# Copy Prisma schema (needed for runtime if migrate deploy is run here)
 COPY --from=builder /usr/src/app/prisma ./prisma
-COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /usr/src/app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy ENTIRE node_modules from builder stage.
+# This includes production dependencies AND the @prisma/client with generated files.
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 
 # Copy public assets and EJS views FROM THE BUILDER STAGE'S SOURCE
 COPY --from=builder /usr/src/app/src/public ./public
