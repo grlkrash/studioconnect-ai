@@ -2,7 +2,7 @@ import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail } from '../services/notificationService'
-import { LeadCaptureQuestion } from '../../generated/prisma'
+import { LeadCaptureQuestion } from '@prisma/client'
 
 /**
  * Main AI handler that processes user messages and determines the appropriate response flow.
