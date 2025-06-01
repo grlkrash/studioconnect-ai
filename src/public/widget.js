@@ -33,7 +33,7 @@
     
     // For production, update this with your actual production URL
     console.log('SMB Chat Widget: Using production API');
-    return 'https://your-production-api.com'; // TODO: Replace with your production URL
+    return 'https://leads-support-agent.onrender.com';
   })();
 
   // State
