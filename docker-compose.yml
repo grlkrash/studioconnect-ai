@@ -31,7 +31,7 @@ services:
       db:
         condition: service_healthy # Wait for the DB to be healthy before starting the app
     # Command to run when the container starts (overrides Dockerfile's CMD for development)
-    command: yarn dev
+    command: sh -c "yarn prisma:generate && yarn dev"
 
   db:
     container_name: leads-support-agent-db
