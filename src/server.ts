@@ -13,34 +13,27 @@ const PORT = process.env.PORT || 3000
 // Middleware configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // origin will be 'http://127.0.0.1:8080' from live-server
-    // origin will be undefined for same-origin, Postman, or server-side requests
-    // origin will be 'null' for file:/// (though we are trying to avoid this with live-server)
-    console.log("CORS Check - Request Origin header:", origin); // For debugging
+    console.log("CORS Check - Request Origin header:", origin);
 
-    const devAllowedOrigins = [
-      'http://127.0.0.1:8080', // Your live-server origin
-      'http://localhost:3000',   // Add this for your admin dashboard itself
-      // Add other local development origins here if needed
-    ];
-    const productionAllowedOrigins = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [];
+    // Define allowed origins
+    // APP_OWN_URL will be your Render service URL (e.g., https://your-app-name.onrender.com)
+    // FRONTEND_WIDGET_TEST_URL will be your local live-server (e.g., http://127.0.0.1:8080)
+    // FRONTEND_PRODUCTION_URL will be your eventual app.cincyaisolutions.com
 
-    if (process.env.NODE_ENV === 'development') {
-      if (!origin || devAllowedOrigins.includes(origin)) {
-        console.log("CORS Development: Allowing origin:", origin || 'current server origin');
-        callback(null, true); // Allow this origin
-      } else {
-        console.log("CORS Development: Blocking origin:", origin);
-        callback(new Error(`Not allowed by CORS in development. Origin: ${origin}`));
-      }
-    } else { // Production or other environments
-      if (origin && productionAllowedOrigins.includes(origin)) {
-        console.log("CORS Production: Allowing origin:", origin);
-        callback(null, true);
-      } else {
-        console.log("CORS Production: Blocking origin:", origin);
-        callback(new Error('Not allowed by CORS.'));
-      }
+    const allowedOrigins = [
+      process.env.APP_OWN_URL,
+      process.env.FRONTEND_WIDGET_TEST_URL,
+      process.env.FRONTEND_PRODUCTION_URL 
+    ].filter(Boolean); // Remove any undefined/empty strings if ENV VARS are not set
+
+    // Allow requests with no origin (like curl, server-to-server, some health checks)
+    // OR if the origin is in our list of allowed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      console.log("CORS: Allowing origin:", origin || 'undefined/null');
+      callback(null, true);
+    } else {
+      console.log("CORS: Blocking origin:", origin, "| Allowed:", allowedOrigins);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,

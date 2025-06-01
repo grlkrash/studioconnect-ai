@@ -11,16 +11,17 @@
 
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Project Structure](#3-project-structure)
-4. [Core Components](#4-core-components)
-5. [Database Schema](#5-database-schema)
-6. [API Documentation](#6-api-documentation)
-7. [Development Setup](#7-development-setup)
-8. [Deployment Guide](#8-deployment-guide)
-9. [Security Considerations](#9-security-considerations)
-10. [Development Best Practices](#10-development-best-practices)
-11. [Testing Strategy](#11-testing-strategy)
-12. [Troubleshooting](#12-troubleshooting)
+3. [Data Flows & User Journeys](#3-data-flows--user-journeys)
+4. [Project Structure](#4-project-structure)
+5. [Core Components](#5-core-components)
+6. [Database Schema](#6-database-schema)
+7. [API Documentation](#7-api-documentation)
+8. [Development Setup](#8-development-setup)
+9. [Deployment Guide](#9-deployment-guide)
+10. [Security Considerations](#10-security-considerations)
+11. [Development Best Practices](#11-development-best-practices)
+12. [Testing Strategy](#12-testing-strategy)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -99,7 +100,383 @@ The AI Agent Assistant for SMBs is a multi-tenant SaaS application that provides
 
 ---
 
-## 3. Project Structure
+## 3. Data Flows & User Journeys
+
+This section provides detailed visualizations and explanations of how data flows through the system and the journeys taken by different user types.
+
+### 3.1 User Personas & Journeys
+
+#### End User (Website Visitor)
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Website Visitor Journey Map                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  DISCOVER        ENGAGE           INTERACT         CONVERT          │
+│     │               │                 │               │             │
+│     ▼               ▼                 ▼               ▼             │
+│ [Lands on] ───► [Sees Chat] ───► [Opens Chat] ──► [Conversation]  │
+│  Website         Widget          & Reads Welcome    Begins         │
+│                                     Message                         │
+│                                                         │           │
+│                                                         ▼           │
+│                                                   ┌─────────┐      │
+│                                                   │  FAQ?   │      │
+│                                                   └────┬────┘      │
+│                                                        │           │
+│                                              Yes ◄─────┴─────► No  │
+│                                               │                 │   │
+│                                               ▼                 ▼   │
+│                                        [Gets Answer]    [Lead Flow] │
+│                                         from KB          Initiated  │
+│                                               │                 │   │
+│                                               ▼                 ▼   │
+│                                        [Continues or]   [Provides] │
+│                                          Ends Chat        Info     │
+│                                                                │   │
+│                                                                ▼   │
+│                                                         [Becomes   │
+│                                                           Lead]    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### SMB Admin Journey
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        SMB Admin Journey Map                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ONBOARD         CONFIGURE         MONITOR          OPTIMIZE        │
+│     │               │                 │                │            │
+│     ▼               ▼                 ▼                ▼            │
+│ [Signs Up] ───► [Sets Up] ────► [Views Leads] ──► [Updates KB]    │
+│  Account         Agent              Dashboard        & Settings     │
+│     │                                 │                             │
+│     ▼                                 ▼                             │
+│ [Gets Login] ──► [Configures] ──► [Receives] ───► [Analyzes]      │
+│ Credentials    Lead Questions    Notifications    Performance      │
+│                      │                │                             │
+│                      ▼                ▼                             │
+│                [Adds Knowledge]  [Contacts]                        │
+│                     Base           Leads                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Detailed Data Flow Diagrams
+
+#### Chat Interaction Flow
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Chat Interaction Data Flow                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+User Input ──────┐
+                 ▼
+         ┌──────────────┐     {message, businessId,
+         │ Chat Widget  │      conversationHistory}
+         └──────┬───────┘              │
+                │                      ▼
+                │              ┌──────────────┐
+                └─────────────►│  Chat API    │
+                               └──────┬───────┘
+                                      │ Validate & Parse
+                                      ▼
+                               ┌──────────────┐
+                               │  AI Handler  │◄─── Config from DB
+                               └──────┬───────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    │                 │                 │
+                    ▼                 ▼                 ▼
+            ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+            │Intent Class. │  │Emergency Det.│  │State Manager │
+            └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+                   │                 │                 │
+                   └─────────────────┼─────────────────┘
+                                     │
+                   ┌─────────────────┴─────────────────┐
+                   │                                   │
+                   ▼                                   ▼
+           ┌──────────────┐                    ┌──────────────┐
+           │  FAQ Mode    │                    │ Lead Capture │
+           └──────┬───────┘                    └──────┬───────┘
+                  │                                   │
+                  ▼                                   ▼
+           ┌──────────────┐                    ┌──────────────┐
+           │ RAG Service  │                    │Lead Questions│
+           └──────┬───────┘                    └──────┬───────┘
+                  │                                   │
+                  ▼                                   ▼
+           ┌──────────────┐                    ┌──────────────┐
+           │Vector Search │                    │ Validate &   │
+           │(pgvector)    │                    │ Store Lead   │
+           └──────┬───────┘                    └──────┬───────┘
+                  │                                   │
+                  └─────────────┬─────────────────────┘
+                                │
+                                ▼
+                        ┌──────────────┐
+                        │ OpenAI API   │
+                        └──────┬───────┘
+                                │
+                                ▼
+                        ┌──────────────┐
+                        │Format Reply  │
+                        └──────┬───────┘
+                                │
+                                ▼
+                            Response
+```
+
+#### Lead Capture Sequence Diagram
+```
+┌─────┐ ┌────────┐ ┌───────────┐ ┌──────────┐ ┌──────┐ ┌──────────┐ ┌─────┐
+│User │ │Widget  │ │Chat API   │ │AI Handler│ │OpenAI│ │Database  │ │Email│
+└──┬──┘ └───┬────┘ └─────┬─────┘ └────┬─────┘ └───┬──┘ └────┬─────┘ └──┬──┘
+   │        │            │             │           │         │          │
+   │"I need │            │             │           │         │          │
+   │service"│            │             │           │         │          │
+   ├───────►│            │             │           │         │          │
+   │        ├───────────►│             │           │         │          │
+   │        │   POST     │             │           │         │          │
+   │        │  /api/chat │             │           │         │          │
+   │        │            ├────────────►│           │         │          │
+   │        │            │processMsg() │           │         │          │
+   │        │            │             ├──────────►│         │          │
+   │        │            │             │ classify  │         │          │
+   │        │            │  intent  │         │          │
+   │        │            │◄──────────┤         │          │
+   │        │            │LEAD_CAPT │         │          │
+   │        │            │           │         │          │
+   │        │            │             ├───────────┼────────►│          │
+   │        │            │             │  get lead questions │          │
+   │        │            │             │◄──────────┼─────────┤          │
+   │        │            │             │           │         │          │
+   │        │            │             ├──────────►│         │          │
+   │        │            │             │ generate  │         │          │
+   │        │            │             │ question  │         │          │
+   │        │            │             │◄──────────┤         │          │
+   │        │            │◄────────────┤           │         │          │
+   │        │◄───────────┤  "What's    │           │         │          │
+   │"John   │ "What's    │  your name?"│           │         │          │
+   │ Doe"   │ your name?"│             │           │         │          │
+   ├───────►├───────────►├────────────►│           │         │          │
+   │        │            │             ├───────────┼────────►│          │
+   │        │            │             │   store partial data│          │
+   │        │            │             │◄──────────┼─────────┤          │
+   │        │            │             │           │         │          │
+   │        │            │             │ [Continue for email & phone]   │
+   │        │            │             │           │         │          │
+   │        │            │             ├───────────┼────────►│          │
+   │        │            │             │    save complete lead          │
+   │        │            │             │◄──────────┼─────────┤          │
+   │        │            │             ├───────────┼─────────┼─────────►│
+   │        │            │             │     send notification email    │
+   │        │            │◄────────────┤           │         │          │
+   │        │◄───────────┤  "Thanks!   │           │         │          │
+   │        │ "Thanks!   │  We'll..."  │           │         │          │
+   │        │  We'll..." │             │           │         │          │
+   │        │            │             │           │         │          │
+```
+
+### 3.3 State Management & Conversation Flow
+
+#### Conversation State Machine
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Conversation State Machine                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+                            ┌─────────┐
+                            │  START  │
+                            └────┬────┘
+                                 │ User sends first message
+                                 ▼
+                         ┌───────────────┐
+                         │INTENT_ANALYSIS│
+                         └───────┬───────┘
+                                 │
+                ┌────────────────┼────────────────┐
+                │                │                │
+                ▼                ▼                ▼
+        ┌────────────┐   ┌────────────┐   ┌────────────┐
+        │    FAQ     │   │LEAD_CAPTURE│   │ EMERGENCY  │
+        └─────┬──────┘   └─────┬──────┘   └─────┬──────┘
+              │                │                │
+              ▼                ▼                ▼
+        ┌────────────┐   ┌────────────┐   ┌────────────┐
+        │FETCH_KNOWL │   │ASK_QUESTION│   │URGENT_LEAD │
+        └─────┬──────┘   └─────┬──────┘   └─────┬──────┘
+              │                │                │
+              ▼                │                │
+        ┌────────────┐         │                │
+        │GEN_ANSWER  │         │                │
+        └─────┬──────┘         │                │
+              │                ▼                │
+              │          ┌────────────┐         │
+              │          │AWAIT_ANSWER│         │
+              │          └─────┬──────┘         │
+              │                │                │
+              │                ▼                │
+              │          ┌────────────┐         │
+              │          │VALIDATE_ANS│         │
+              │          └─────┬──────┘         │
+              │                │                │
+              │          ┌─────┴─────┐          │
+              │      Valid?         Invalid?    │
+              │          │             │         │
+              │          ▼             ▼         │
+              │    ┌──────────┐ ┌──────────┐   │
+              │    │NEXT_QUEST│ │RETRY_QUES│   │
+              │    └────┬─────┘ └────┬─────┘   │
+              │         │            │          │
+              │         │ ◄──────────┘          │
+              │         │                       │
+              │         ▼                       │
+              │    All questions?               │
+              │         │                       │
+              │      Yes│ No                    │
+              │         │ │                     │
+              │         ▼ └──► ASK_QUESTION     │
+              │    ┌──────────┐                 │
+              │    │SAVE_LEAD │◄────────────────┘
+              │    └────┬─────┘
+              │         │
+              │         ▼
+              │    ┌──────────┐
+              │    │SEND_NOTIF│
+              │    └────┬─────┘
+              │         │
+              └─────────┼─────────┐
+                        ▼         │
+                  ┌──────────┐    │
+                  │END_CONV  │◄───┘
+                  └──────────┘
+```
+
+### 3.4 Data Transformation Pipeline
+
+#### Knowledge Base Processing Flow
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              Knowledge Base Content Processing Pipeline              │
+└─────────────────────────────────────────────────────────────────────┘
+
+Admin Input                    Processing                      Storage
+    │                              │                              │
+    ▼                              ▼                              ▼
+┌─────────┐               ┌─────────────────┐           ┌─────────────┐
+│Raw Text │──────────────►│ Text Chunking   │──────────►│  PostgreSQL │
+│Content  │               │ (500 char max)  │           │   (text)    │
+└─────────┘               └────────┬────────┘           └─────────────┘
+                                   │                            │
+                                   ▼                            │
+                          ┌─────────────────┐                   │
+                          │ For Each Chunk: │                   │
+                          └────────┬────────┘                   │
+                                   │                            │
+                                   ▼                            │
+                          ┌─────────────────┐                   │
+                          │  Clean & Format │                   │
+                          │ - Remove HTML   │                   │
+                          │ - Normalize WS  │                   │
+                          └────────┬────────┘                   │
+                                   │                            │
+                                   ▼                            │
+                          ┌─────────────────┐                   │
+                          │  OpenAI Embed   │                   │
+                          │ API Request     │                   │
+                          │(text-embedding- │                   │
+                          │    3-small)     │                   │
+                          └────────┬────────┘                   │
+                                   │                            │
+                                   ▼                            │
+                          ┌─────────────────┐                   │
+                          │ 1536-dim Vector │                   │
+                          └────────┬────────┘                   │
+                                   │                            │
+                                   └────────────────────────────┤
+                                                               ▼
+                                                      ┌─────────────┐
+                                                      │  pgvector   │
+                                                      │  Storage    │
+                                                      └─────────────┘
+
+Query Time:
+┌─────────┐      ┌─────────────┐      ┌─────────────┐      ┌─────────┐
+│User     │─────►│Generate     │─────►│Cosine       │─────►│Top 3    │
+│Question │      │Query Vector │      │Similarity   │      │Matches  │
+└─────────┘      └─────────────┘      └─────────────┘      └─────────┘
+```
+
+### 3.5 Critical Data Paths
+
+#### Real-time Performance Requirements
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Performance Critical Paths                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│ Chat Message Processing:                                            │
+│ ┌─────────┐    50ms    ┌──────┐   200ms   ┌──────┐   100ms  ┌───┐ │
+│ │ Widget  ├───────────►│ API  ├──────────►│  AI  ├─────────►│DB │ │
+│ └─────────┘            └──────┘           └──────┘          └───┘ │
+│                                                                     │
+│ Total Target: < 2000ms end-to-end                                  │
+│                                                                     │
+│ Vector Search:                                                      │
+│ ┌─────────┐    30ms    ┌──────┐   150ms   ┌──────┐               │
+│ │Embedding├───────────►│Search├──────────►│Rank  │                │
+│ └─────────┘            └──────┘           └──────┘                │
+│                                                                     │
+│ Total Target: < 200ms for retrieval                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.6 Error Handling & Recovery Flows
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Error Handling Decision Tree                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+                        Error Occurs
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Error Type?     │
+                    └────────┬────────┘
+                             │
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+          ▼                 ▼                 ▼
+    ┌──────────┐     ┌──────────┐     ┌──────────┐
+    │ Network  │     │ OpenAI   │     │ Database │
+    │ Timeout  │     │API Error │     │  Error   │
+    └────┬─────┘     └────┬─────┘     └────┬─────┘
+         │                │                │
+         ▼                ▼                ▼
+    ┌──────────┐     ┌──────────┐     ┌──────────┐
+    │  Retry   │     │Fallback  │     │ Cache    │
+    │ 3 times  │     │ Message  │     │Response  │
+    └────┬─────┘     └────┬─────┘     └────┬─────┘
+         │                │                │
+         └────────────────┴────────────────┘
+                          │
+                          ▼
+                   ┌──────────┐
+                   │Log Error │
+                   │& Metrics │
+                   └────┬─────┘
+                        │
+                        ▼
+                 Return Graceful
+                 Error to User
+```
+
+---
+
+## 4. Project Structure
 
 ```
 leads-support-agent-smb/
@@ -143,9 +520,9 @@ leads-support-agent-smb/
 
 ---
 
-## 4. Core Components
+## 5. Core Components
 
-### 4.1 AI Handler (`aiHandler.ts`)
+### 5.1 AI Handler (`aiHandler.ts`)
 
 **Purpose**: Central AI orchestration for chat interactions
 
@@ -161,7 +538,7 @@ processMessage(message: string, conversationHistory: Message[], businessId: stri
 - Emergency detection
 - Response generation
 
-### 4.2 RAG Service (`ragService.ts`)
+### 5.2 RAG Service (`ragService.ts`)
 
 **Purpose**: Retrieval-Augmented Generation for FAQ answering
 
@@ -176,7 +553,7 @@ findRelevantKnowledge(userQuery: string, businessId: string, limit: number): Pro
 - Vector similarity search using pgvector
 - Context retrieval for FAQ responses
 
-### 4.3 OpenAI Service (`openai.ts`)
+### 5.3 OpenAI Service (`openai.ts`)
 
 **Purpose**: Wrapper for OpenAI API interactions
 
@@ -186,7 +563,7 @@ getEmbedding(text: string, model?: string): Promise<number[]>
 getChatCompletion(userPrompt: string, systemPrompt: string, model?: string): Promise<string>
 ```
 
-### 4.4 Auth Middleware (`authMiddleware.ts`)
+### 5.4 Auth Middleware (`authMiddleware.ts`)
 
 **Purpose**: JWT-based authentication for admin routes
 
@@ -195,7 +572,7 @@ getChatCompletion(userPrompt: string, systemPrompt: string, model?: string): Pro
 - Populates `req.user` with decoded token data
 - Returns 401 for invalid/missing tokens
 
-### 4.5 Chat Widget (`widget.js`)
+### 5.5 Chat Widget (`widget.js`)
 
 **Purpose**: Embeddable client-side chat interface
 
@@ -207,7 +584,7 @@ getChatCompletion(userPrompt: string, systemPrompt: string, model?: string): Pro
 
 ---
 
-## 5. Database Schema
+## 6. Database Schema
 
 ### Entity Relationship Diagram
 
@@ -293,7 +670,7 @@ model KnowledgeBase {
 
 ---
 
-## 6. API Documentation
+## 7. API Documentation
 
 ### Public Endpoints
 
@@ -432,7 +809,7 @@ model KnowledgeBase {
 
 ---
 
-## 7. Development Setup
+## 8. Development Setup
 
 ### Prerequisites
 - Node.js 20.x
@@ -502,7 +879,7 @@ npm run build
 
 ---
 
-## 8. Deployment Guide
+## 9. Deployment Guide
 
 ### Production Requirements
 
@@ -554,7 +931,7 @@ CORS_ORIGIN=https://example.com
 
 ---
 
-## 9. Security Considerations
+## 10. Security Considerations
 
 ### Authentication & Authorization
 - JWT tokens stored in HttpOnly cookies
@@ -583,7 +960,7 @@ CORS_ORIGIN=https://example.com
 
 ---
 
-## 10. Development Best Practices
+## 11. Development Best Practices
 
 ### Code Style
 - TypeScript strict mode enabled
@@ -637,7 +1014,7 @@ logger.info('Lead captured', {
 
 ---
 
-## 11. Testing Strategy
+## 12. Testing Strategy
 
 ### Unit Tests (Planned)
 - AI intent classification
@@ -674,7 +1051,7 @@ tests/
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### Common Issues
 
