@@ -2,6 +2,7 @@ import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail } from '../services/notificationService'
+import { LeadCaptureQuestion } from '../../generated/prisma'
 
 /**
  * Main AI handler that processes user messages and determines the appropriate response flow.
@@ -95,7 +96,7 @@ User's Question: ${message}`
       // Lead Capture Flow - Guide through questions
       console.log('Entering Lead Capture flow...')
       
-      console.log('Agent config questions:', agentConfig?.questions?.map(q => ({ id: q.id, text: q.questionText, order: q.order })))
+      console.log('Agent config questions:', agentConfig?.questions?.map((q: LeadCaptureQuestion) => ({ id: q.id, text: q.questionText, order: q.order })))
       
       if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
         return { reply: "It looks like our lead capture system isn't set up yet. How else can I assist?" }
@@ -114,7 +115,7 @@ User's Question: ${message}`
         
         if (entry.role === 'assistant') {
           // Check if this message matches any of our questions
-          const matchedQuestion = agentConfig.questions.find(q => q.questionText === entry.content)
+          const matchedQuestion = agentConfig.questions.find((q: LeadCaptureQuestion) => q.questionText === entry.content)
           if (matchedQuestion && nextEntry && nextEntry.role === 'user') {
             console.log(`  ✓ Matched question: "${matchedQuestion.questionText}" (ID: ${matchedQuestion.id})`)
             console.log(`  ✓ User answer: "${nextEntry.content}"`)
@@ -148,7 +149,7 @@ User's Question: ${message}`
         for (let i = 0; i < conversationHistory.length - 1; i++) {
           const entry = conversationHistory[i]
           if (entry.role === 'assistant') {
-            const matchedQuestion = agentConfig.questions.find(q => q.questionText === entry.content)
+            const matchedQuestion = agentConfig.questions.find((q: LeadCaptureQuestion) => q.questionText === entry.content)
             if (matchedQuestion && i + 1 < conversationHistory.length && conversationHistory[i + 1].role === 'user') {
               const questionText = matchedQuestion.questionText
               const userAnswer = conversationHistory[i + 1].content
