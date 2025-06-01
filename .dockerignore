@@ -1,0 +1,34 @@
+# Node.js
+node_modules
+npm-debug.log*
+yarn-error.log
+yarn-debug.log
+
+# TypeScript compilation output (if you ever compile to JS locally)
+dist
+
+# Prisma generated client (prevent Mac version from overriding Linux version)
+generated/prisma
+.prisma/client
+generated/
+
+# Environment variables file (should be managed by Docker Compose)
+.env
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Git
+.git
+.gitignore
+
+# IDE and OS specific
+.vscode
+.idea
+*.DS_Store
+Thumbs.db
+
+# Markdown files (like README.md, not needed in the image)
+*.md 

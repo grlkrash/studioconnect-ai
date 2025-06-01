@@ -1,0 +1,244 @@
+import nodemailer from 'nodemailer'
+import Mail from 'nodemailer/lib/mailer'
+
+/**
+ * Sends an email notification to the HSP when a new lead is captured
+ * @param toEmail - The HSP's notification email address
+ * @param leadDetails - Object containing lead information (capturedData, conversationTranscript, contactName, contactEmail, etc.)
+ * @param leadPriority - The priority level of the lead (LOW, NORMAL, HIGH, URGENT)
+ * @param businessName - The name of the business
+ */
+export async function sendLeadNotificationEmail(
+  toEmail: string,
+  leadDetails: any,
+  leadPriority: string | null,
+  businessName: string
+): Promise<void> {
+  try {
+    console.log(`Sending lead notification email to ${toEmail}...`)
+
+    // Extract contact info from capturedData if not in dedicated fields
+    let contactName = leadDetails.contactName;
+    let contactEmail = leadDetails.contactEmail;
+    let contactPhone = leadDetails.contactPhone;
+
+    // If dedicated fields are empty, try to extract from capturedData
+    if (!contactName || !contactEmail || !contactPhone) {
+      const capturedData = leadDetails.capturedData || {};
+      
+      // Look for name in common question patterns
+      for (const [question, answer] of Object.entries(capturedData)) {
+        const lowerQuestion = question.toLowerCase();
+        if (!contactName && (lowerQuestion.includes('name') || lowerQuestion.includes('full name'))) {
+          contactName = answer as string;
+        }
+        if (!contactEmail && (lowerQuestion.includes('email') || lowerQuestion.includes('e-mail'))) {
+          contactEmail = answer as string;
+        }
+        if (!contactPhone && (lowerQuestion.includes('phone') || lowerQuestion.includes('number'))) {
+          contactPhone = answer as string;
+        }
+      }
+    }
+
+    // Create a test account using Ethereal Email
+    const testAccount = await nodemailer.createTestAccount()
+
+    // Create a transporter using the test account credentials
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    })
+
+    // Format the priority for display
+    const priorityDisplay = leadPriority || 'NORMAL'
+    const priorityColor = {
+      'URGENT': '#ef4444',
+      'HIGH': '#f59e0b',
+      'NORMAL': '#3b82f6',
+      'LOW': '#6b7280'
+    }[priorityDisplay] || '#3b82f6'
+
+    // Build the HTML email content
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0; }
+          .priority-badge { 
+            display: inline-block; 
+            padding: 5px 15px; 
+            border-radius: 20px; 
+            color: white; 
+            font-weight: bold;
+            background-color: ${priorityColor};
+          }
+          .content { background-color: white; padding: 20px; border: 1px solid #e9ecef; }
+          .field { margin-bottom: 15px; }
+          .field-label { font-weight: bold; color: #666; }
+          .data-box { 
+            background-color: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+          }
+          .transcript-box {
+            background-color: #f1f5f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+          }
+          .footer { 
+            background-color: #f8f9fa; 
+            padding: 15px; 
+            text-align: center; 
+            font-size: 12px; 
+            color: #666;
+            border-radius: 0 0 8px 8px;
+          }
+          .emergency-notice {
+            background-color: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2 style="margin: 0;">New Lead Captured</h2>
+            <p style="margin: 10px 0 0 0;">
+              <span class="priority-badge">${priorityDisplay} PRIORITY</span>
+            </p>
+          </div>
+          
+          <div class="content">
+            ${priorityDisplay === 'URGENT' ? '<div class="emergency-notice">⚠️ URGENT: This lead indicated an emergency situation and requires immediate attention!</div>' : ''}
+            
+            <div class="field">
+              <span class="field-label">Business:</span> ${businessName}
+            </div>
+            
+            <div class="field">
+              <span class="field-label">Contact Name:</span> ${contactName || 'Not provided'}
+            </div>
+            
+            <div class="field">
+              <span class="field-label">Contact Email:</span> ${contactEmail || 'Not provided'}
+            </div>
+            
+            <div class="field">
+              <span class="field-label">Contact Phone:</span> ${contactPhone || 'Not provided'}
+            </div>
+            
+            ${leadDetails.notes ? `
+            <div class="field">
+              <span class="field-label">Notes:</span>
+              <div class="data-box">${leadDetails.notes}</div>
+            </div>
+            ` : ''}
+            
+            <div class="field">
+              <span class="field-label">Captured Data:</span>
+              <div class="data-box">${JSON.stringify(leadDetails.capturedData, null, 2)}</div>
+            </div>
+            
+            <div class="field">
+              <span class="field-label">Conversation Transcript:</span>
+              <div class="transcript-box">${leadDetails.conversationTranscript}</div>
+            </div>
+            
+            <div class="field">
+              <span class="field-label">Lead Created:</span> ${new Date().toLocaleString()}
+            </div>
+          </div>
+          
+          <div class="footer">
+            <p>This is an automated notification from your AI Lead Agent.</p>
+            <p>To manage lead notifications, please update your settings in the admin dashboard.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Construct the email options
+    const mailOptions: Mail.Options = {
+      from: '"AI Lead Agent" <noreply@example.com>',
+      to: toEmail,
+      subject: `New ${priorityDisplay} Priority Lead from ${businessName} AI Agent: ${contactName || 'N/A'}`,
+      html: htmlContent,
+      // Also include a text version for better email client compatibility
+      text: `
+New ${priorityDisplay} Priority Lead
+
+Business: ${businessName}
+Contact Name: ${contactName || 'Not provided'}
+Contact Email: ${contactEmail || 'Not provided'}
+Contact Phone: ${contactPhone || 'Not provided'}
+${leadDetails.notes ? `Notes: ${leadDetails.notes}` : ''}
+
+Captured Data:
+${JSON.stringify(leadDetails.capturedData, null, 2)}
+
+Conversation Transcript:
+${leadDetails.conversationTranscript}
+
+Lead Created: ${new Date().toLocaleString()}
+
+---
+This is an automated notification from your AI Lead Agent.
+      `.trim()
+    }
+
+    // Send the email
+    const info = await transporter.sendMail(mailOptions)
+
+    // Log success and preview URL
+    console.log('Lead notification email sent! Message ID:', info.messageId)
+    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+
+  } catch (error) {
+    console.error('Failed to send lead notification email:', error)
+    // Don't throw the error - we don't want email failures to break the lead capture flow
+    // In production, you might want to log this to a monitoring service
+  }
+}
+
+/**
+ * Test function to verify email configuration
+ */
+export async function testEmailConfiguration(): Promise<void> {
+  try {
+    const testAccount = await nodemailer.createTestAccount()
+    console.log('Email test account created successfully!')
+    console.log('User:', testAccount.user)
+    console.log('Pass:', testAccount.pass)
+    console.log('SMTP Host:', 'smtp.ethereal.email')
+    console.log('SMTP Port:', 587)
+  } catch (error) {
+    console.error('Failed to create test email account:', error)
+    throw error
+  }
+}

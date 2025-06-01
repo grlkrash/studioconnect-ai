@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Agent Settings</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .success-message {
+            color: #10b981;
+            background-color: #d1fae5;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        label {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        textarea {
+            padding: 10px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: border-color 0.15s ease-in-out;
+        }
+        
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #0ea5e9;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .color-input-group {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .color-input-group .form-group {
+            flex: 1;
+        }
+        
+        button[type="submit"] {
+            background-color: #0ea5e9;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out;
+            align-self: flex-start;
+        }
+        
+        button[type="submit"]:hover {
+            background-color: #0284c7;
+        }
+        
+        button[type="submit"]:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        #formFeedback {
+            margin-top: 20px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        #formFeedback.success {
+            background-color: #d1fae5;
+            color: #065f46;
+            display: block;
+        }
+        
+        #formFeedback.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+            display: block;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0ea5e9;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/admin/dashboard">SMB AI Agent</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin/dashboard">Dashboard</a>
+                <a class="nav-link" href="/admin/leads">Leads</a>
+                <a class="nav-link active" href="/admin/settings">Agent Settings</a>
+                <a class="nav-link" href="/admin/knowledge-base">Knowledge Base</a>
+                <a class="nav-link" href="/api/admin/logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <a href="/admin/dashboard" class="back-link">← Back to Dashboard</a>
+        
+        <h1>Manage Agent Settings</h1>
+        
+        <% if (successMessage) { %>
+            <div class="success-message">
+                <%= successMessage %>
+            </div>
+        <% } %>
+        
+        <form id="agentSettingsForm">
+            <div class="form-group">
+                <label for="agentName">Agent Name:</label>
+                <input 
+                    type="text" 
+                    id="agentName" 
+                    name="agentName" 
+                    value="<%= (agentConfig && agentConfig.agentName) ? agentConfig.agentName : 'AI Assistant' %>"
+                    placeholder="Enter agent name"
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="personaPrompt">Persona Prompt:</label>
+                <textarea 
+                    id="personaPrompt" 
+                    name="personaPrompt" 
+                    rows="5"
+                    placeholder="Enter the persona prompt for your agent"
+                ><%= (agentConfig && agentConfig.personaPrompt) ? agentConfig.personaPrompt : 'You are a helpful and friendly assistant.' %></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="welcomeMessage">Welcome Message:</label>
+                <textarea 
+                    id="welcomeMessage" 
+                    name="welcomeMessage" 
+                    rows="3"
+                    placeholder="Enter the welcome message for your chat widget"
+                ><%= (agentConfig && agentConfig.welcomeMessage) ? agentConfig.welcomeMessage : 'Hello! How can I help you today?' %></textarea>
+            </div>
+            
+            <div class="color-input-group">
+                <div class="form-group">
+                    <label for="primaryColor">Primary Color (hex):</label>
+                    <input 
+                        type="text" 
+                        id="primaryColor" 
+                        name="primaryColor" 
+                        value="<%= (agentConfig && agentConfig.colorTheme && typeof agentConfig.colorTheme === 'object' && agentConfig.colorTheme.primary) ? agentConfig.colorTheme.primary : '#0ea5e9' %>"
+                        placeholder="#0ea5e9"
+                        pattern="^#[0-9A-Fa-f]{6}$"
+                        title="Please enter a valid hex color (e.g., #0ea5e9)"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="secondaryColor">Secondary Color (hex):</label>
+                    <input 
+                        type="text" 
+                        id="secondaryColor" 
+                        name="secondaryColor" 
+                        value="<%= (agentConfig && agentConfig.colorTheme && typeof agentConfig.colorTheme === 'object' && agentConfig.colorTheme.secondary) ? agentConfig.colorTheme.secondary : '#64748b' %>"
+                        placeholder="#64748b"
+                        pattern="^#[0-9A-Fa-f]{6}$"
+                        title="Please enter a valid hex color (e.g., #64748b)"
+                    >
+                </div>
+            </div>
+            
+            <button type="submit">Save Settings</button>
+        </form>
+        
+        <div id="formFeedback"></div>
+    </div>
+
+    <script>
+        // Get form and feedback elements
+        const agentSettingsForm = document.getElementById('agentSettingsForm');
+        const formFeedback = document.getElementById('formFeedback');
+        
+        // Add event listener for form submission
+        agentSettingsForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            // Clear any previous messages
+            formFeedback.textContent = '';
+            formFeedback.className = '';
+            formFeedback.style.display = 'none';
+            
+            // Get values from input fields
+            const agentName = document.getElementById('agentName').value;
+            const personaPrompt = document.getElementById('personaPrompt').value;
+            const welcomeMessage = document.getElementById('welcomeMessage').value;
+            const primaryColorValue = document.getElementById('primaryColor').value;
+            const secondaryColorValue = document.getElementById('secondaryColor').value;
+            
+            // Construct colorTheme object
+            const colorTheme = {
+                primary: primaryColorValue,
+                secondary: secondaryColorValue
+            };
+            
+            // Construct form data object
+            const formData = {
+                agentName,
+                personaPrompt,
+                welcomeMessage,
+                colorTheme
+            };
+            
+            try {
+                // Send POST request to API endpoint
+                const response = await fetch('/api/admin/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                // Handle response
+                if (response.ok) {
+                    // Success
+                    const result = await response.json();
+                    formFeedback.textContent = 'Settings saved successfully!';
+                    formFeedback.className = 'success';
+                    formFeedback.style.display = 'block';
+                    
+                    // Optional: Redirect with success message after a short delay
+                    setTimeout(() => {
+                        window.location.href = '/admin/settings?success=true';
+                    }, 1500);
+                } else {
+                    // Error
+                    const errorResult = await response.json();
+                    formFeedback.textContent = 'Error saving settings: ' + (errorResult.error || 'Unknown error');
+                    formFeedback.className = 'error';
+                    formFeedback.style.display = 'block';
+                }
+            } catch (error) {
+                // Network or other error
+                formFeedback.textContent = 'Error saving settings: ' + error.message;
+                formFeedback.className = 'error';
+                formFeedback.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Lead Capture Questions</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .questions-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .questions-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .questions-table th,
+        .questions-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .questions-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .no-questions {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+        }
+        .add-question-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea,
+        select,
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        button[type="submit"] {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+        #formFeedback {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 4px;
+            display: none;
+        }
+        #formFeedback.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        #formFeedback.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/admin/dashboard">SMB AI Agent</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin/dashboard">Dashboard</a>
+                <a class="nav-link" href="/admin/leads">Leads</a>
+                <a class="nav-link" href="/admin/settings">Agent Settings</a>
+                <a class="nav-link active" href="/admin/lead-questions">Lead Questions</a>
+                <a class="nav-link" href="/api/admin/logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <h1>Manage Lead Capture Questions</h1>
+
+    <!-- Display Existing Questions -->
+    <div class="questions-container">
+        <h2>Existing Questions</h2>
+        <% if (questions && questions.length > 0) { %>
+            <table class="questions-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Question Text</th>
+                        <th>Expected Format</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% questions.forEach(function(question) { %>
+                        <tr>
+                            <td><%= question.order %></td>
+                            <td><%= question.questionText %></td>
+                            <td><%= question.expectedFormat %></td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        <% } else { %>
+            <div class="no-questions">
+                <p>No lead capture questions configured yet.</p>
+            </div>
+        <% } %>
+    </div>
+
+    <!-- Form to Add a New Question -->
+    <div class="add-question-form">
+        <h2>Add New Question</h2>
+        <form id="addQuestionForm">
+            <div class="form-group">
+                <label for="questionText">Question Text:</label>
+                <textarea id="questionText" name="questionText" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="expectedFormat">Expected Format:</label>
+                <select id="expectedFormat" name="expectedFormat">
+                    <option value="TEXT">Text</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="PHONE">Phone</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="order">Order:</label>
+                <input type="number" id="order" name="order" required>
+            </div>
+
+            <button type="submit">Add Question</button>
+        </form>
+
+        <div id="formFeedback"></div>
+    </div>
+
+    <script>
+        document.getElementById('addQuestionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                questionText: document.getElementById('questionText').value,
+                expectedFormat: document.getElementById('expectedFormat').value,
+                order: parseInt(document.getElementById('order').value)
+            };
+
+            const feedback = document.getElementById('formFeedback');
+            
+            try {
+                // TODO: Replace with actual API endpoint
+                const response = await fetch('/api/lead-questions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    feedback.textContent = 'Question added successfully!';
+                    feedback.className = 'success';
+                    feedback.style.display = 'block';
+                    
+                    // Reset form
+                    document.getElementById('addQuestionForm').reset();
+                    
+                    // Reload page after 2 seconds to show new question
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    throw new Error('Failed to add question');
+                }
+            } catch (error) {
+                feedback.textContent = 'Error adding question. Please try again.';
+                feedback.className = 'error';
+                feedback.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html> 

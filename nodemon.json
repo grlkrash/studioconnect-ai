@@ -1,0 +1,14 @@
+{
+  "watch": ["src"],
+  "ext": "ts,json",
+  "ignore": [
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "node_modules/*",
+    "dist/*",
+    "generated/*",
+    "*.log"
+  ],
+  "exec": "npx ts-node ./src/server.ts",
+  "signal": "SIGINT"
+} 

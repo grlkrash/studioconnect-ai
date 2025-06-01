@@ -1,0 +1,58 @@
+services:
+  app:
+    container_name: leads-support-agent-app
+    # Build the image from the Dockerfile in the current directory (.)
+    build: .
+    ports:
+      # Map port 3000 on your Mac to port 3000 in the container
+      - "3000:3000"
+    volumes:
+      # Mount your current project directory into the container at /usr/src/app
+      # This allows live code changes to be reflected without rebuilding the image.
+      - .:/usr/src/app
+      # This is an anonymous volume for node_modules. It ensures that the
+      # node_modules installed INSIDE the container (by Dockerfile's yarn install)
+      # is used, and not overwritten by a local node_modules folder if it exists.
+      - /usr/src/app/node_modules
+      # Anonymous volume for generated directory to preserve container's Prisma client
+      - /usr/src/app/generated
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      # Database URL points to the 'db' service name, using the credentials defined for it
+      DATABASE_URL: postgresql://db_user:db_password@db:5432/app_db?schema=public
+      DIRECT_URL: postgresql://db_user:db_password@db:5432/app_db?schema=public
+      # These will be picked up from your local .env file (if it exists in your project root)
+      # or from your shell environment if set there.
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000} # Default if not in .env
+    depends_on:
+      db:
+        condition: service_healthy # Wait for the DB to be healthy before starting the app
+    # Command to run when the container starts (overrides Dockerfile's CMD for development)
+    command: yarn dev
+
+  db:
+    container_name: leads-support-agent-db
+    # Use an image that comes with PostgreSQL and pgvector pre-installed
+    image: pgvector/pgvector:pg16 
+    ports:
+      # Map port 5433 on your Mac to port 5432 in the Postgres container
+      # This avoids conflicts if you have another Postgres running locally on 5432.
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: db_user
+      POSTGRES_PASSWORD: db_password
+      POSTGRES_DB: app_db
+    volumes:
+      # Persist database data in a named volume
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U db_user -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data: # Defines the named volume for data persistence 

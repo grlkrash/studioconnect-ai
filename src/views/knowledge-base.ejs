@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Knowledge Base - SMB AI Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .navbar {
+            margin-bottom: 2rem;
+        }
+        .knowledge-entry {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1rem 0;
+        }
+        .knowledge-entry:last-child {
+            border-bottom: none;
+        }
+        .content-snippet {
+            max-height: 100px;
+            overflow: hidden;
+            position: relative;
+        }
+        .content-snippet.expanded {
+            max-height: none;
+        }
+        .read-more {
+            color: #0066cc;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .source-url {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        #formFeedback {
+            margin-top: 1rem;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        .knowledge-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/admin/dashboard">SMB AI Agent</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin/dashboard">Dashboard</a>
+                <a class="nav-link" href="/admin/leads">Leads</a>
+                <a class="nav-link" href="/admin/settings">Agent Settings</a>
+                <a class="nav-link active" href="/admin/knowledge-base">Knowledge Base</a>
+                <a class="nav-link" href="/api/admin/logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 class="mb-4">Manage Knowledge Base Entries</h1>
+
+        <!-- Existing Knowledge Base Entries -->
+        <div class="knowledge-list">
+            <h2>Current Knowledge Base</h2>
+            <% if (knowledgeEntries && knowledgeEntries.length > 0) { %>
+                <% knowledgeEntries.forEach((entry, index) => { %>
+                    <div class="knowledge-entry" data-entry-id="<%= entry.id %>">
+                        <div class="content-snippet" id="content-<%= index %>">
+                            <% if (entry.content.length > 200) { %>
+                                <%= entry.content.substring(0, 200) %>...
+                                <span class="read-more" onclick="toggleContent('<%= index %>')">Read more</span>
+                            <% } else { %>
+                                <%= entry.content %>
+                            <% } %>
+                        </div>
+                        <div class="full-content" id="full-content-<%= index %>" style="display: none;">
+                            <%= entry.content %>
+                            <span class="read-more" onclick="toggleContent('<%= index %>')">Read less</span>
+                        </div>
+                        <% if (entry.sourceURL) { %>
+                            <div class="source-url mt-2">
+                                Source: <a href="<%= entry.sourceURL %>" target="_blank" rel="noopener noreferrer"><%= entry.sourceURL %></a>
+                            </div>
+                        <% } %>
+                    </div>
+                <% }); %>
+            <% } else { %>
+                <div class="empty-state">
+                    <p>No knowledge base entries added yet.</p>
+                    <p>Add your first entry below to help your AI agent answer customer questions!</p>
+                </div>
+            <% } %>
+        </div>
+
+        <!-- Add New Knowledge Base Entry Form -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Add New Knowledge Entry</h2>
+                <form id="addKnowledgeForm">
+                    <div class="mb-3">
+                        <label for="content" class="form-label">Content:</label>
+                        <textarea 
+                            id="content" 
+                            name="content" 
+                            class="form-control" 
+                            rows="5" 
+                            placeholder="Enter information that your AI agent can use to answer customer questions..."
+                            required
+                        ></textarea>
+                        <div class="form-text">This content will be used by the AI to answer customer questions.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="sourceURL" class="form-label">Source URL (Optional):</label>
+                        <input 
+                            type="text" 
+                            id="sourceURL" 
+                            name="sourceURL" 
+                            class="form-control" 
+                            placeholder="https://example.com/source"
+                        >
+                        <div class="form-text">Add a reference URL if this content comes from a specific source.</div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Add Entry</button>
+                </form>
+                
+                <div id="formFeedback"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Toggle between snippet and full content
+        function toggleContent(index) {
+            const snippet = document.getElementById(`content-${index}`);
+            const fullContent = document.getElementById(`full-content-${index}`);
+            
+            if (snippet.style.display === 'none') {
+                snippet.style.display = 'block';
+                fullContent.style.display = 'none';
+            } else {
+                snippet.style.display = 'none';
+                fullContent.style.display = 'block';
+            }
+        }
+
+        // Get form element and feedback div
+        const addKnowledgeForm = document.getElementById('addKnowledgeForm');
+        const formFeedback = document.getElementById('formFeedback');
+
+        // Add event listener for form submission
+        addKnowledgeForm.addEventListener('submit', async (event) => {
+            // Prevent default form submission
+            event.preventDefault();
+            
+            // Clear previous feedback messages
+            formFeedback.innerHTML = '';
+            
+            // Get values from form fields
+            const content = document.getElementById('content').value;
+            const sourceURL = document.getElementById('sourceURL').value;
+            
+            // Construct formData object
+            const formData = {
+                content: content,
+                sourceURL: sourceURL || '' // Send empty string if no URL provided
+            };
+            
+            try {
+                // Make fetch POST request to backend API
+                const response = await fetch('/api/admin/knowledgebase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                // Handle the response
+                if (response.ok) {
+                    // Display success message
+                    formFeedback.innerHTML = '<div class="alert alert-success">Knowledge entry added and embedding process started!</div>';
+                    
+                    // Reload page to see new entry in the list
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    // Display error message
+                    const errorData = await response.json();
+                    formFeedback.innerHTML = `<div class="alert alert-danger">Error: ${errorData.message || 'Failed to add knowledge entry'}</div>`;
+                }
+            } catch (error) {
+                // Handle network errors
+                formFeedback.innerHTML = '<div class="alert alert-danger">Network error. Please try again.</div>';
+                console.error('Error submitting form:', error);
+            }
+        });
+    </script>
+</body>
+</html> 
