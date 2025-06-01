@@ -53,9 +53,9 @@ COPY --from=builder /usr/src/app/prisma ./prisma
 COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /usr/src/app/node_modules/@prisma ./node_modules/@prisma
 
-# Copy public assets and EJS views
-COPY public ./public
-COPY src/views ./src/views
+# Copy public assets and EJS views FROM THE BUILDER STAGE'S SOURCE
+COPY --from=builder /usr/src/app/src/public ./public
+COPY --from=builder /usr/src/app/src/views ./views
 
 # Your application listens on port 3000 (or a PORT from .env)
 EXPOSE ${PORT:-3000}
