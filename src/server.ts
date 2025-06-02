@@ -92,16 +92,33 @@ app.use('/api/admin', adminRoutes)
 
 // 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
-  const widgetPath = path.join(__dirname, '../public/widget.js')
-  console.log(`Attempting to send widget from: ${widgetPath}`)
-  
-  if (fs.existsSync(widgetPath)) {
-    console.log(`Widget file FOUND at: ${widgetPath}`)
-    res.set('Content-Type', 'application/javascript')
-    res.sendFile(widgetPath)
-  } else {
-    console.error(`Widget file NOT FOUND at: ${widgetPath}`)
-    res.status(404).send('Widget script not found.')
+  // Using process.cwd() for more explicit path resolution
+  const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
+
+  console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
+  try {
+    if (fs.existsSync(widgetPath)) {
+      console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
+      res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+      res.sendFile(widgetPath, (err) => {
+        if (err) {
+          console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
+          if (!res.headersSent) {
+            res.status(500).send('// Server error: Could not send widget file.');
+          }
+        } else {
+          console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
+        }
+      });
+    } else {
+      console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
+      res.status(404).send('// Widget script not found.');
+    }
+  } catch (e: any) {
+    console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
+    if (!res.headersSent) {
+      res.status(500).send('// Server error processing widget request.');
+    }
   }
 })
 

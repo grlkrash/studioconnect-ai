@@ -13,9 +13,35 @@ router.get('/login', (req, res) => {
 
 // Protected dashboard route
 router.get('/dashboard', authMiddleware, async (req, res) => {
-  // This handler only runs if authMiddleware passes
-  // req.user is populated by authMiddleware with the JWT payload
-  res.render('dashboard', { user: req.user })
+  try {
+    if (!req.user) {
+      // This should ideally be handled by authMiddleware redirecting for views
+      // or a dedicated view auth middleware.
+      return res.redirect('/admin/login');
+    }
+
+    // Fetch the full user details, AND INCLUDE the related business
+    const userWithBusiness = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      include: {
+        business: true, // This line is key!
+      },
+    });
+
+    if (!userWithBusiness) {
+      console.error('Dashboard: User from token not found in DB:', req.user.userId);
+      return res.redirect('/admin/login');
+    }
+
+    // Now userWithBusiness contains user details AND userWithBusiness.business has the business info
+    res.render('dashboard', {
+      user: userWithBusiness, // Pass the user object which now includes the business
+    });
+
+  } catch (error) {
+    console.error("Error rendering dashboard:", error);
+    return res.status(500).send("Error loading dashboard.");
+  }
 })
 
 // Protected agent settings route

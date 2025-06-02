@@ -88,7 +88,16 @@
 </head>
 <body>
     <div class="dashboard-container">
-        <h1>Welcome, <%= user ? user.email : 'Admin' %>!</h1>
+        <h1>
+          Welcome, 
+          <% if (user && user.business && user.business.name) { %>
+            <%= user.business.name %>
+          <% } else if (user && user.email) { %>
+            <%= user.email %> 
+          <% } else { %>
+            Admin
+          <% } %>!
+        </h1>
         
         <p>Manage your AI agent settings and view captured leads from this dashboard.</p>
         
