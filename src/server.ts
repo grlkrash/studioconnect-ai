@@ -32,49 +32,49 @@ console.log("<<<<< END STARTUP ENV VAR CHECK >>>>>")
 const app = express()
 const PORT = process.env.PORT || 3000
 
-// Middleware configuration
-console.log("--- VALUES BEING USED FOR ALLOWED_ORIGINS ---")
-console.log("Value of process.env.APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
-console.log("Value of process.env.WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
-console.log("Value of process.env.FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
-
-// CORE MIDDLEWARE - CORS should be early
-app.use(cors({
-  origin: function (origin, callback) {
-    console.log("[CORS Debug] Request Origin:", origin);
+// CORS configuration - MUST BE FIRST MIDDLEWARE
+const corsOptions = {
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    console.log("[CORS Debug] Request Origin:", origin)
     
     // Debug logs for environment variables at the moment of CORS check
-    console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL);
-    console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL);
-    console.log("[CORS Env Check] WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL);
-    console.log("[CORS Env Check] WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL);
-    console.log("[CORS Env Check] FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL);
+    console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
+    console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL)
+    console.log("[CORS Env Check] WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL)
+    console.log("[CORS Env Check] WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
+    console.log("[CORS Env Check] FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
 
     const allowedOrigins = [
-      process.env.APP_PRIMARY_URL,          
-      process.env.ADMIN_CUSTOM_DOMAIN_URL,  
-      process.env.WIDGET_DEMO_URL,          
+      process.env.APP_PRIMARY_URL,
+      process.env.ADMIN_CUSTOM_DOMAIN_URL,
+      process.env.WIDGET_DEMO_URL,
       process.env.WIDGET_TEST_URL,
-      process.env.FRONTEND_PRODUCTION_URL   
-    ].filter(Boolean); 
+      process.env.FRONTEND_PRODUCTION_URL,
+      'http://127.0.0.1:8080', // Add local development server
+      'http://localhost:8080'  // Add local development server
+    ].filter(Boolean)
 
-    console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins);
+    console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins)
 
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("[CORS Debug] Allowing origin:", origin || 'undefined/null', "Allowed List:", allowedOrigins);
-      callback(null, true);
+      console.log("[CORS Debug] Allowing origin:", origin || 'undefined/null', "Allowed List:", allowedOrigins)
+      callback(null, true)
     } else {
-      console.log("[CORS Debug] Blocking origin:", origin, "| Allowed List:", allowedOrigins);
-      callback(new Error('Not allowed by CORS'));
+      console.log("[CORS Debug] Blocking origin:", origin, "| Allowed List:", allowedOrigins)
+      callback(null, false) // Changed from Error to false for better handling
     }
   },
   credentials: true,
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS", // Ensure OPTIONS is explicitly listed
-  allowedHeaders: "Content-Type,Authorization,Cookie,X-Requested-With",
-  preflightContinue: false, // Ensure preflight is not passed to other handlers
-  optionsSuccessStatus: 204 // Standard for preflight
-}))
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}
 
+// Apply CORS middleware first
+app.use(cors(corsOptions))
+
+// Then other middleware
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
