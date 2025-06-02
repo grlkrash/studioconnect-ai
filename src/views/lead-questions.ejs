@@ -187,8 +187,7 @@
             const feedback = document.getElementById('formFeedback');
             
             try {
-                // TODO: Replace with actual API endpoint
-                const response = await fetch('/api/lead-questions', {
+                const response = await fetch('/api/admin/config/questions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

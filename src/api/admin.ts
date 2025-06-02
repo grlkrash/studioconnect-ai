@@ -390,4 +390,17 @@ router.get('/leads', authMiddleware, async (req, res) => {
   }
 })
 
+// Add logout route
+router.get('/logout', (req, res) => {
+  // Clear the 'token' cookie
+  res.cookie('token', '', {
+    httpOnly: true,
+    expires: new Date(0), // Set expiration to a past date
+    secure: process.env.NODE_ENV === 'production', // Match your login cookie settings
+    sameSite: 'strict' // Match your login cookie settings
+  })
+  // Redirect to login page
+  res.redirect('/admin/login')
+})
+
 export default router 
