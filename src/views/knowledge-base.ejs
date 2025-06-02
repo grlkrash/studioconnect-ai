@@ -89,6 +89,16 @@
                                 Source: <a href="<%= entry.sourceURL %>" target="_blank" rel="noopener noreferrer"><%= entry.sourceURL %></a>
                             </div>
                         <% } %>
+                        <div class="mt-2">
+                            <small>Created: <%= new Date(entry.createdAt).toLocaleString() %></small>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-primary edit-kb-btn"
+                                    data-id="<%= entry.id %>"
+                                    data-content="<%= encodeURIComponent(entry.content) %>"
+                                    data-sourceurl="<%= entry.sourceURL || '' %>">Edit</button>
+                            <button class="btn btn-sm btn-danger delete-kb-btn" data-id="<%= entry.id %>">Delete</button>
+                        </div>
                     </div>
                 <% }); %>
             <% } else { %>
@@ -153,57 +163,118 @@
             }
         }
 
-        // Get form element and feedback div
+        // Get form elements
         const addKnowledgeForm = document.getElementById('addKnowledgeForm');
+        const contentTextarea = document.getElementById('content');
+        const sourceURLInput = document.getElementById('sourceURL');
+        const submitButton = addKnowledgeForm.querySelector('button[type="submit"]');
+        const formHeading = addKnowledgeForm.querySelector('h2');
         const formFeedback = document.getElementById('formFeedback');
 
-        // Add event listener for form submission
+        // State for edit mode
+        let currentlyEditingKbId = null;
+
+        // Add event listeners for edit buttons
+        document.querySelectorAll('.edit-kb-btn').forEach(button => {
+            button.addEventListener('click', function(event) {
+                event.preventDefault();
+                formFeedback.innerHTML = '';
+
+                currentlyEditingKbId = this.dataset.id;
+                contentTextarea.value = decodeURIComponent(this.dataset.content || '');
+                sourceURLInput.value = this.dataset.sourceurl || '';
+
+                if (formHeading) formHeading.textContent = 'Edit Knowledge Entry';
+                submitButton.textContent = 'Update Entry';
+                contentTextarea.focus();
+            });
+        });
+
+        // Form submission handler
         addKnowledgeForm.addEventListener('submit', async (event) => {
-            // Prevent default form submission
             event.preventDefault();
-            
-            // Clear previous feedback messages
             formFeedback.innerHTML = '';
             
-            // Get values from form fields
-            const content = document.getElementById('content').value;
-            const sourceURL = document.getElementById('sourceURL').value;
+            const content = contentTextarea.value.trim();
+            const sourceURL = sourceURLInput.value.trim();
             
-            // Construct formData object
+            if (!content) {
+                formFeedback.innerHTML = '<div class="alert alert-danger">Content is required.</div>';
+                return;
+            }
+            
             const formData = {
                 content: content,
-                sourceURL: sourceURL || '' // Send empty string if no URL provided
+                sourceURL: sourceURL || null
             };
             
+            const url = currentlyEditingKbId 
+                ? `/api/admin/knowledgebase/${currentlyEditingKbId}`
+                : '/api/admin/knowledgebase';
+            
+            const method = currentlyEditingKbId ? 'PUT' : 'POST';
+            
             try {
-                // Make fetch POST request to backend API
-                const response = await fetch('/api/admin/knowledgebase', {
-                    method: 'POST',
+                const response = await fetch(url, {
+                    method: method,
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(formData)
                 });
                 
-                // Handle the response
                 if (response.ok) {
-                    // Display success message
-                    formFeedback.innerHTML = '<div class="alert alert-success">Knowledge entry added and embedding process started!</div>';
+                    const message = currentlyEditingKbId 
+                        ? 'Knowledge entry updated successfully! Embedding will be regenerated.'
+                        : 'Knowledge entry added successfully! Embedding will be generated.';
                     
-                    // Reload page to see new entry in the list
+                    formFeedback.innerHTML = `<div class="alert alert-success">${message}</div>`;
+                    
                     setTimeout(() => {
                         window.location.reload();
                     }, 1500);
                 } else {
-                    // Display error message
                     const errorData = await response.json();
-                    formFeedback.innerHTML = `<div class="alert alert-danger">Error: ${errorData.message || 'Failed to add knowledge entry'}</div>`;
+                    formFeedback.innerHTML = `<div class="alert alert-danger">Error: ${errorData.message || 'Operation failed'}</div>`;
                 }
             } catch (error) {
-                // Handle network errors
                 formFeedback.innerHTML = '<div class="alert alert-danger">Network error. Please try again.</div>';
                 console.error('Error submitting form:', error);
             }
+        });
+
+        // Delete functionality
+        document.querySelectorAll('.delete-kb-btn').forEach(button => {
+            button.addEventListener('click', async function(event) {
+                event.preventDefault();
+                const kbId = this.dataset.id;
+                
+                if (confirm('Are you sure you want to delete this knowledge base entry?')) {
+                    formFeedback.innerHTML = '';
+                    
+                    try {
+                        const response = await fetch(`/api/admin/knowledgebase/${kbId}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+
+                        if (response.ok) {
+                            formFeedback.innerHTML = '<div class="alert alert-success">Entry deleted successfully!</div>';
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1500);
+                        } else {
+                            const errorData = await response.json();
+                            formFeedback.innerHTML = `<div class="alert alert-danger">Error: ${errorData.message || 'Failed to delete entry'}</div>`;
+                        }
+                    } catch (error) {
+                        formFeedback.innerHTML = '<div class="alert alert-danger">Network error. Please try again.</div>';
+                        console.error('Error deleting entry:', error);
+                    }
+                }
+            });
         });
     </script>
 </body>
