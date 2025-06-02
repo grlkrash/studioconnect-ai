@@ -13,10 +13,31 @@ import chatRoutes from './api/chatRoutes'
 import adminRoutes from './api/admin'
 import viewRoutes from './api/viewRoutes'
 
+// At the very top of src/server.ts, or right after all imports
+console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
+console.log("NODE_ENV from process.env:", process.env.NODE_ENV)
+console.log("PORT from process.env:", process.env.PORT)
+console.log("DATABASE_URL (first 30 chars):", process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + "..." : "DATABASE_URL is UNDEFINED")
+console.log("JWT_SECRET (exists?):", process.env.JWT_SECRET ? 'Exists' : 'JWT_SECRET is MISSING!')
+console.log("OPENAI_API_KEY (exists?):", process.env.OPENAI_API_KEY ? 'Exists (starts sk-...)' : 'OPENAI_API_KEY is MISSING!')
+
+console.log("--- CORS Related ENV VARS as seen by process.env ---")
+console.log("APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
+console.log("ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL)
+console.log("WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL)
+console.log("WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
+console.log("FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
+console.log("<<<<< END STARTUP ENV VAR CHECK >>>>>")
+
 const app = express()
 const PORT = process.env.PORT || 3000
 
 // Middleware configuration
+console.log("--- VALUES BEING USED FOR ALLOWED_ORIGINS ---")
+console.log("Value of process.env.APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
+console.log("Value of process.env.WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
+console.log("Value of process.env.FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
+
 app.use(cors({
   origin: function (origin, callback) {
     console.log("CORS Check - Request Origin header:", origin);
@@ -32,13 +53,16 @@ app.use(cors({
       process.env.FRONTEND_PRODUCTION_URL 
     ].filter(Boolean); // Remove any undefined/empty strings if ENV VARS are not set
 
+    console.log("Constructed allowedOrigins array:", JSON.stringify(allowedOrigins))
+    console.log("-----------------------------------------")
+
     // Allow requests with no origin (like curl, server-to-server, some health checks)
     // OR if the origin is in our list of allowed origins
     if (!origin || allowedOrigins.includes(origin)) {
       console.log("CORS: Allowing origin:", origin || 'undefined/null');
       callback(null, true);
     } else {
-      console.log("CORS: Blocking origin:", origin, "| Allowed:", allowedOrigins);
+      console.log("CORS: Blocking origin:", origin, "| Allowed:", JSON.stringify(allowedOrigins));
       callback(new Error('Not allowed by CORS'));
     }
   },
