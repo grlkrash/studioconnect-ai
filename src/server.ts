@@ -38,37 +38,41 @@ console.log("Value of process.env.APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL
 console.log("Value of process.env.WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
 console.log("Value of process.env.FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
 
+// CORE MIDDLEWARE - CORS should be early
 app.use(cors({
   origin: function (origin, callback) {
-    console.log("CORS Check - Request Origin header:", origin);
-
-    // Define allowed origins
-    // APP_PRIMARY_URL will be your Render service URL (e.g., https://your-app-name.onrender.com)
-    // WIDGET_TEST_URL will be your local live-server (e.g., http://127.0.0.1:8080)
-    // FRONTEND_PRODUCTION_URL will be your eventual app.cincyaisolutions.com
+    console.log("[CORS Debug] Request Origin:", origin);
+    
+    // Debug logs for environment variables at the moment of CORS check
+    console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL);
+    console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL);
+    console.log("[CORS Env Check] WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL);
+    console.log("[CORS Env Check] WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL);
+    console.log("[CORS Env Check] FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL);
 
     const allowedOrigins = [
-      process.env.APP_PRIMARY_URL,
+      process.env.APP_PRIMARY_URL,          
+      process.env.ADMIN_CUSTOM_DOMAIN_URL,  
+      process.env.WIDGET_DEMO_URL,          
       process.env.WIDGET_TEST_URL,
-      process.env.FRONTEND_PRODUCTION_URL 
-    ].filter(Boolean); // Remove any undefined/empty strings if ENV VARS are not set
+      process.env.FRONTEND_PRODUCTION_URL   
+    ].filter(Boolean); 
 
-    console.log("Constructed allowedOrigins array:", JSON.stringify(allowedOrigins))
-    console.log("-----------------------------------------")
+    console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins);
 
-    // Allow requests with no origin (like curl, server-to-server, some health checks)
-    // OR if the origin is in our list of allowed origins
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("CORS: Allowing origin:", origin || 'undefined/null');
+      console.log("[CORS Debug] Allowing origin:", origin || 'undefined/null', "Allowed List:", allowedOrigins);
       callback(null, true);
     } else {
-      console.log("CORS: Blocking origin:", origin, "| Allowed:", JSON.stringify(allowedOrigins));
+      console.log("[CORS Debug] Blocking origin:", origin, "| Allowed List:", allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS", // Ensure OPTIONS is explicitly listed
+  allowedHeaders: "Content-Type,Authorization,Cookie,X-Requested-With",
+  preflightContinue: false, // Ensure preflight is not passed to other handlers
+  optionsSuccessStatus: 204 // Standard for preflight
 }))
 
 app.use(express.json({ limit: '10mb' }))
