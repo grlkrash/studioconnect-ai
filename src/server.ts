@@ -53,7 +53,7 @@ app.use(cookieParser())
 
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
-app.set('views', path.join(__dirname, 'views'))
+app.set('views', path.join(__dirname, '../../views'))
 
 // =======================
 // ROUTE MOUNTING ORDER
