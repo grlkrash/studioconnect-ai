@@ -70,12 +70,15 @@
                       }) %>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                      <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                        <%= lead.status === 'qualified' ? 'bg-green-100 text-green-800' : 
-                            lead.status === 'unqualified' ? 'bg-red-100 text-red-800' : 
-                            'bg-gray-100 text-gray-800' %>">
-                        <%= lead.status %>
-                      </span>
+                      <select 
+                        class="lead-status-select px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                        data-lead-id="<%= lead.id %>"
+                      >
+                        <% const statuses = ["NEW", "CONTACTED", "QUALIFIED", "CLOSED_WON", "CLOSED_LOST"]; %>
+                        <% statuses.forEach(s => { %>
+                          <option value="<%= s %>" <%= lead.status === s ? 'selected' : '' %>><%= s %></option>
+                        <% }); %>
+                      </select>
                     </td>
                     <td class="px-6 py-4 text-sm text-gray-900">
                       <% if (lead.capturedData && Object.keys(lead.capturedData).length > 0) { %>
@@ -127,6 +130,9 @@
             </table>
           </div>
           
+          <!-- Feedback Message Container -->
+          <div id="leadsFeedback" class="mt-4 text-sm"></div>
+          
           <!-- Optional: Conversation Transcript Preview -->
           <% if (leads.some(lead => lead.conversationTranscript)) { %>
             <div class="mt-6 text-sm text-gray-500">
@@ -137,5 +143,38 @@
       </div>
     </div>
   </div>
+
+<script>
+  const leadsFeedback = document.getElementById('leadsFeedback')
+
+  document.querySelectorAll('.lead-status-select').forEach(selectElement => {
+    selectElement.addEventListener('change', async function() {
+      const leadId = this.dataset.leadId
+      const newStatus = this.value
+      leadsFeedback.textContent = '' // Clear previous messages
+
+      try {
+        const response = await fetch(`/api/admin/leads/${leadId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus })
+        })
+
+        leadsFeedback.style.color = 'red' // Default
+        if (response.ok) {
+          leadsFeedback.textContent = 'Lead status updated successfully!'
+          leadsFeedback.style.color = 'green'
+        } else {
+          const errorResult = await response.json()
+          leadsFeedback.textContent = 'Error updating status: ' + (errorResult.error || response.statusText)
+        }
+      } catch (err) {
+        leadsFeedback.style.color = 'red'
+        leadsFeedback.textContent = 'Network error or server issue while updating status.'
+        console.error('Update lead status error:', err)
+      }
+    })
+  })
+</script>
 </body>
 </html> 

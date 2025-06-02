@@ -497,6 +497,51 @@ router.get('/leads', authMiddleware, async (req, res) => {
   }
 })
 
+// Update Lead Status
+router.put('/leads/:leadId/status', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const leadId = req.params.leadId
+    const { status } = req.body
+
+    // Validate status
+    const validStatuses = ['NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED_WON', 'CLOSED_LOST']
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      })
+    }
+
+    // Find the lead and verify ownership
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId }
+    })
+
+    // Check if lead exists and belongs to the business
+    if (!lead || lead.businessId !== businessId) {
+      return res.status(404).json({
+        error: 'Lead not found or you do not have permission to modify it'
+      })
+    }
+
+    // Update the lead status
+    const updatedLead = await prisma.lead.update({
+      where: { id: leadId },
+      data: { status }
+    })
+
+    // Send back the updated lead
+    res.status(200).json(updatedLead)
+
+  } catch (error) {
+    console.error('Error updating lead status:', error)
+    res.status(500).json({
+      error: 'Internal server error while updating lead status'
+    })
+  }
+})
+
 // Add logout route
 router.get('/logout', (req, res) => {
   // Clear the 'token' cookie
