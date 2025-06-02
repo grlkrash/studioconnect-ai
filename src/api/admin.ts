@@ -510,4 +510,100 @@ router.get('/logout', (req, res) => {
   res.redirect('/admin/login')
 })
 
+// Update Knowledge Base Entry
+router.put('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const kbId = req.params.kbId
+
+    // Extract knowledge base details from request body
+    const { content, sourceURL } = req.body
+
+    // Validation: ensure content is present if being updated
+    if (content !== undefined && content.trim() === '') {
+      return res.status(400).json({ 
+        error: 'Content cannot be empty if provided' 
+      })
+    }
+
+    // Find the KB entry and verify ownership
+    const kbEntry = await prisma.knowledgeBase.findUnique({
+      where: { id: kbId }
+    })
+
+    // Check if KB entry exists and belongs to the business
+    if (!kbEntry || kbEntry.businessId !== businessId) {
+      return res.status(404).json({ 
+        error: 'Knowledge base entry not found or you do not have permission to modify it' 
+      })
+    }
+
+    // Update the KB entry
+    const updatedKbEntry = await prisma.knowledgeBase.update({
+      where: { id: kbId },
+      data: {
+        content: content !== undefined ? content : undefined,
+        sourceURL: sourceURL !== undefined ? sourceURL : undefined
+      }
+    })
+
+    // Regenerate embedding if content was updated
+    if (content !== undefined && updatedKbEntry) {
+      try {
+        await generateAndStoreEmbedding(updatedKbEntry.id)
+        console.log(`Embedding regenerated for KB entry: ${updatedKbEntry.id}`)
+      } catch (embedError) {
+        console.error(`Error regenerating embedding for KB entry ${updatedKbEntry.id} after update:`, embedError)
+        // We'll let the KB update be considered a success even if embedding regeneration fails
+        // The embedding can potentially be regenerated later
+      }
+    }
+
+    // Send back the updated KB entry
+    res.status(200).json(updatedKbEntry)
+
+  } catch (error) {
+    console.error('Error updating knowledge base entry:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while updating knowledge base entry' 
+    })
+  }
+})
+
+// Delete Knowledge Base Entry
+router.delete('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const kbId = req.params.kbId
+
+    // Find the KB entry and verify ownership
+    const kbEntry = await prisma.knowledgeBase.findUnique({
+      where: { id: kbId }
+    })
+
+    // Check if KB entry exists and belongs to the business
+    if (!kbEntry || kbEntry.businessId !== businessId) {
+      return res.status(404).json({ 
+        error: 'Knowledge base entry not found or you do not have permission to delete it' 
+      })
+    }
+
+    // Delete the KB entry
+    await prisma.knowledgeBase.delete({
+      where: { id: kbId }
+    })
+
+    // Send success response with 204 No Content
+    res.status(204).send()
+
+  } catch (error) {
+    console.error('Error deleting knowledge base entry:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while deleting knowledge base entry' 
+    })
+  }
+})
+
 export default router 
