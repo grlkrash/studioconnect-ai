@@ -62,16 +62,57 @@
       justify-content: center;
       z-index: 9998;
       transition: transform 0.2s, box-shadow 0.2s;
+      animation: glow 3s ease-in-out infinite;
+    }
+
+    @keyframes glow {
+      0%, 100% {
+        box-shadow: 
+          0 0 5px rgba(37, 99, 235, 0.5),
+          0 0 10px rgba(37, 99, 235, 0.3),
+          0 0 15px rgba(147, 51, 234, 0.3),
+          0 0 20px rgba(236, 72, 153, 0.2),
+          0 0 25px rgba(59, 130, 246, 0.2),
+          0 0 30px rgba(147, 51, 234, 0.1);
+      }
+      25% {
+        box-shadow: 
+          0 0 5px rgba(147, 51, 234, 0.5),
+          0 0 10px rgba(147, 51, 234, 0.3),
+          0 0 15px rgba(236, 72, 153, 0.3),
+          0 0 20px rgba(59, 130, 246, 0.2),
+          0 0 25px rgba(37, 99, 235, 0.2),
+          0 0 30px rgba(236, 72, 153, 0.1);
+      }
+      50% {
+        box-shadow: 
+          0 0 5px rgba(236, 72, 153, 0.5),
+          0 0 10px rgba(236, 72, 153, 0.3),
+          0 0 15px rgba(59, 130, 246, 0.3),
+          0 0 20px rgba(37, 99, 235, 0.2),
+          0 0 25px rgba(147, 51, 234, 0.2),
+          0 0 30px rgba(59, 130, 246, 0.1);
+      }
+      75% {
+        box-shadow: 
+          0 0 5px rgba(59, 130, 246, 0.5),
+          0 0 10px rgba(59, 130, 246, 0.3),
+          0 0 15px rgba(37, 99, 235, 0.3),
+          0 0 20px rgba(147, 51, 234, 0.2),
+          0 0 25px rgba(236, 72, 153, 0.2),
+          0 0 30px rgba(37, 99, 235, 0.1);
+      }
     }
 
     .smb-chat-bubble:hover {
       transform: scale(1.05);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+      animation-play-state: paused;
     }
 
     .smb-chat-bubble-icon {
-      font-size: 28px;
-      color: white;
+      width: 32px;
+      height: 32px;
+      fill: white;
     }
 
     .smb-chat-window {
@@ -273,18 +314,18 @@
   // Create HTML elements
   const chatBubble = document.createElement('div');
   chatBubble.className = 'smb-chat-bubble';
-  // Option 1: Emoji (current implementation)
-  // chatBubble.innerHTML = '<span class="smb-chat-bubble-icon">🧑‍💼</span>';
   
-  // Option 2: SVG icon (uncomment to use)
-  /*
+  // SVG office worker icon
   chatBubble.innerHTML = `
-    <svg class="smb-chat-bubble-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" width="28" height="28">
-      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+    <svg class="smb-chat-bubble-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
+      <path d="M12 2C9.24 2 7 4.24 7 7c0 2.76 2.24 5 5 5s5-2.24 5-5c0-2.76-2.24-5-5-5zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3z"/>
+      <path d="M20 21v-1c0-3.87-3.13-7-7-7h-2c-3.87 0-7 3.13-7 7v1h2v-1c0-2.76 2.24-5 5-5h2c2.76 0 5 2.24 5 5v1h2z"/>
+      <rect x="11" y="8" width="2" height="5" fill="white"/>
+      <path d="M11 13h2v1h-2z"/>
+      <path d="M9 11.5L7.5 13 9 14.5V16l-2.5-2.5L9 11z" opacity="0.7"/>
+      <path d="M15 11.5L16.5 13 15 14.5V16l2.5-2.5L15 11z" opacity="0.7"/>
     </svg>
   `;
-  */
-  chatBubble.innerHTML = '<span class="smb-chat-bubble-icon">👤</span>';
 
   const chatWindow = document.createElement('div');
   chatWindow.className = 'smb-chat-window';
