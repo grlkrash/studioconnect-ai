@@ -50,7 +50,8 @@ app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, 'views'))
 
 // Serve static files (for the chat widget)
-app.use('/static', express.static(path.join(__dirname, 'public')))
+// Updated path to work with TypeScript build output structure
+app.use('/static', express.static(path.join(__dirname, '../public')))
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -82,8 +83,13 @@ app.get('/admin-test', (req, res) => {
 // Serve the chat widget script
 app.get('/widget.js', (req, res) => {
   res.set('Content-Type', 'application/javascript')
-  res.sendFile(path.join(__dirname, 'public', 'widget.js'))
+  res.sendFile(path.join(__dirname, '../public', 'widget.js'))
 })
+
+// Root route handler
+app.get('/', (req, res) => {
+  res.send('Application Root - Hello from Deployed App!');
+});
 
 // 404 handler
 app.use('*', (req: express.Request, res: express.Response) => {
@@ -102,6 +108,16 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   })
 })
+
+// Debug logs for static path
+const staticPath = path.join(__dirname, '../public'); // This path assumes server.js is in dist/ and public is at the root of where dist is
+console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+try {
+  const files = require('fs').readdirSync(staticPath);
+  console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+} catch (e: any) {
+  console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+}
 
 // Start server
 const server = app.listen(PORT, () => {
