@@ -3,9 +3,15 @@ import dotenv from 'dotenv'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import path from 'path'
+import fs from 'fs'
 
 // Load environment variables
 dotenv.config()
+
+// Import route handlers
+import chatRoutes from './api/chatRoutes'
+import adminRoutes from './api/admin'
+import viewRoutes from './api/viewRoutes'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -49,11 +55,33 @@ app.use(cookieParser())
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, 'views'))
 
-// Serve static files (for the chat widget)
-// Updated path to work with TypeScript build output structure
-app.use('/static', express.static(path.join(__dirname, '../public')))
+// =======================
+// ROUTE MOUNTING ORDER
+// =======================
 
-// Health check endpoint
+// 1. Mount admin view routes FIRST
+app.use('/admin', viewRoutes)
+
+// 2. Mount API routes
+app.use('/api/chat', chatRoutes)
+app.use('/api/admin', adminRoutes)
+
+// 3. Specific file serving routes
+app.get('/widget.js', (req, res) => {
+  const widgetPath = path.join(__dirname, '../public/widget.js')
+  console.log(`Attempting to send widget from: ${widgetPath}`)
+  
+  if (fs.existsSync(widgetPath)) {
+    console.log(`Widget file FOUND at: ${widgetPath}`)
+    res.set('Content-Type', 'application/javascript')
+    res.sendFile(widgetPath)
+  } else {
+    console.error(`Widget file NOT FOUND at: ${widgetPath}`)
+    res.status(404).send('Widget script not found.')
+  }
+})
+
+// 4. Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
@@ -63,35 +91,32 @@ app.get('/health', (req, res) => {
   })
 })
 
-// Import route handlers (these will be created later)
-import chatRoutes from './api/chatRoutes'
-import adminRoutes from './api/admin'
-import viewRoutes from './api/viewRoutes'
-
-// API Routes
-app.use('/api/chat', chatRoutes)
-app.use('/api/admin', adminRoutes)
-
-// View Routes (for admin dashboard)
-app.use('/admin', viewRoutes)
-
-// Debug route to test routing
+// 5. Debug route to test routing
 app.get('/admin-test', (req, res) => {
   res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
 })
 
-// Serve the chat widget script
-app.get('/widget.js', (req, res) => {
-  res.set('Content-Type', 'application/javascript')
-  res.sendFile(path.join(__dirname, '../public', 'widget.js'))
-})
-
-// Root route handler
+// 6. Root route handler
 app.get('/', (req, res) => {
   res.send('Application Root - Hello from Deployed App!');
 });
 
-// 404 handler
+// 7. Static file serving (general)
+app.use('/static', express.static(path.join(__dirname, '../public')))
+
+// Debug logs for static path
+const staticPath = path.join(__dirname, '../public');
+console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+try {
+  const files = fs.readdirSync(staticPath);
+  console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+} catch (e: any) {
+  console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+}
+
+// =======================
+// WILDCARD 404 HANDLER - MUST BE LAST!
+// =======================
 app.use('*', (req: express.Request, res: express.Response) => {
   res.status(404).json({
     error: 'Route not found',
@@ -108,16 +133,6 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   })
 })
-
-// Debug logs for static path
-const staticPath = path.join(__dirname, '../public'); // This path assumes server.js is in dist/ and public is at the root of where dist is
-console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
-try {
-  const files = require('fs').readdirSync(staticPath);
-  console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
-} catch (e: any) {
-  console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
-}
 
 // Start server
 const server = app.listen(PORT, () => {
