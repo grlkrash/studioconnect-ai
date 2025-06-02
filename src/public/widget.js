@@ -273,7 +273,18 @@
   // Create HTML elements
   const chatBubble = document.createElement('div');
   chatBubble.className = 'smb-chat-bubble';
-  chatBubble.innerHTML = '<span class="smb-chat-bubble-icon">💬</span>';
+  // Option 1: Emoji (current implementation)
+  // chatBubble.innerHTML = '<span class="smb-chat-bubble-icon">🧑‍💼</span>';
+  
+  // Option 2: SVG icon (uncomment to use)
+  /*
+  chatBubble.innerHTML = `
+    <svg class="smb-chat-bubble-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" width="28" height="28">
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+    </svg>
+  `;
+  */
+  chatBubble.innerHTML = '<span class="smb-chat-bubble-icon">👤</span>';
 
   const chatWindow = document.createElement('div');
   chatWindow.className = 'smb-chat-window';
