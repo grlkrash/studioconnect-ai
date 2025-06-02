@@ -22,13 +22,13 @@ app.use(cors({
     console.log("CORS Check - Request Origin header:", origin);
 
     // Define allowed origins
-    // APP_OWN_URL will be your Render service URL (e.g., https://your-app-name.onrender.com)
-    // FRONTEND_WIDGET_TEST_URL will be your local live-server (e.g., http://127.0.0.1:8080)
+    // APP_PRIMARY_URL will be your Render service URL (e.g., https://your-app-name.onrender.com)
+    // WIDGET_TEST_URL will be your local live-server (e.g., http://127.0.0.1:8080)
     // FRONTEND_PRODUCTION_URL will be your eventual app.cincyaisolutions.com
 
     const allowedOrigins = [
-      process.env.APP_OWN_URL,
-      process.env.FRONTEND_WIDGET_TEST_URL,
+      process.env.APP_PRIMARY_URL,
+      process.env.WIDGET_TEST_URL,
       process.env.FRONTEND_PRODUCTION_URL 
     ].filter(Boolean); // Remove any undefined/empty strings if ENV VARS are not set
 
