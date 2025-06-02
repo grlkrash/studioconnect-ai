@@ -292,6 +292,113 @@ router.post('/config/questions', authMiddleware, async (req, res) => {
   }
 })
 
+// Update Lead Capture Question
+router.put('/config/questions/:questionId', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const questionId = req.params.questionId
+
+    // Extract question details from request body
+    const { questionText, expectedFormat, order, mapsToLeadField } = req.body
+
+    // Basic validation
+    if (!questionText || order === undefined || order === null) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: questionText and order are required' 
+      })
+    }
+
+    // Validate expectedFormat against allowed values
+    const validFormats = ['TEXT', 'EMAIL', 'PHONE']
+    if (expectedFormat && !validFormats.includes(expectedFormat)) {
+      return res.status(400).json({ 
+        error: `Invalid expectedFormat. Must be one of: ${validFormats.join(', ')}` 
+      })
+    }
+
+    // Find the question and verify ownership
+    const question = await prisma.leadCaptureQuestion.findUnique({
+      where: { id: questionId },
+      include: { config: true }
+    })
+
+    // Check if question exists and belongs to the business
+    if (!question || question.config.businessId !== businessId) {
+      return res.status(404).json({ 
+        error: 'Question not found or you do not have permission to modify it' 
+      })
+    }
+
+    // Update the question
+    const updatedQuestion = await prisma.leadCaptureQuestion.update({
+      where: { id: questionId },
+      data: {
+        questionText,
+        expectedFormat: expectedFormat || 'TEXT',
+        order: Number(order),
+        mapsToLeadField
+      }
+    })
+
+    // Send back the updated question
+    res.status(200).json(updatedQuestion)
+
+  } catch (error) {
+    console.error('Error updating lead capture question:', error)
+    
+    // Check for specific Prisma errors
+    if (error instanceof Error) {
+      // Handle unique constraint violation (e.g., duplicate order number)
+      if (error.message.includes('Unique constraint')) {
+        return res.status(400).json({ 
+          error: 'A question with this order number already exists for this configuration' 
+        })
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Internal server error while updating lead capture question' 
+    })
+  }
+})
+
+// Delete Lead Capture Question
+router.delete('/config/questions/:questionId', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const questionId = req.params.questionId
+
+    // Find the question and verify ownership
+    const question = await prisma.leadCaptureQuestion.findUnique({
+      where: { id: questionId },
+      include: { config: true }
+    })
+
+    // Check if question exists and belongs to the business
+    if (!question || question.config.businessId !== businessId) {
+      return res.status(404).json({ 
+        error: 'Question not found or you do not have permission to delete it' 
+      })
+    }
+
+    // Delete the question
+    await prisma.leadCaptureQuestion.delete({
+      where: { id: questionId }
+    })
+
+    // Send success response
+    res.status(204).send()
+
+  } catch (error) {
+    console.error('Error deleting lead capture question:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while deleting lead capture question' 
+    })
+  }
+})
+
 // Create New Knowledge Base Entry
 router.post('/knowledgebase', authMiddleware, async (req, res) => {
   try {
