@@ -116,13 +116,15 @@
                       <% } %>
                     </td>
                     <td class="px-6 py-4 text-sm text-gray-900">
-                      <% if (lead.notes) { %>
-                        <div class="max-w-xs truncate" title="<%= lead.notes %>">
-                          <%= lead.notes %>
+                      <div class="lead-notes-display"><%- lead.notes || 'N/A' %></div>
+                      <div class="lead-notes-edit" style="display:none;">
+                        <textarea class="note-textarea w-full p-2 border rounded-md" rows="3"><%- lead.notes || '' %></textarea>
+                        <div class="mt-2 space-x-2">
+                          <button class="save-note-btn px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-lead-id="<%= lead.id %>">Save Note</button>
+                          <button class="cancel-note-btn px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</button>
                         </div>
-                      <% } else { %>
-                        N/A
-                      <% } %>
+                      </div>
+                      <button class="edit-note-btn mt-2 px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Edit Note</button>
                     </td>
                   </tr>
                 <% }); %>
@@ -172,6 +174,63 @@
         leadsFeedback.style.color = 'red'
         leadsFeedback.textContent = 'Network error or server issue while updating status.'
         console.error('Update lead status error:', err)
+      }
+    })
+  })
+
+  // Note editing functionality
+  document.querySelectorAll('.edit-note-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      const noteCell = this.closest('td')
+      noteCell.querySelector('.lead-notes-display').style.display = 'none'
+      noteCell.querySelector('.lead-notes-edit').style.display = 'block'
+      this.style.display = 'none'
+    })
+  })
+
+  document.querySelectorAll('.cancel-note-btn').forEach(button => {
+    button.addEventListener('click', function() {
+      const noteCell = this.closest('td')
+      const displayDiv = noteCell.querySelector('.lead-notes-display')
+      const editDiv = noteCell.querySelector('.lead-notes-edit')
+      editDiv.style.display = 'none'
+      displayDiv.style.display = 'block'
+      noteCell.querySelector('.edit-note-btn').style.display = 'inline-block'
+      editDiv.querySelector('.note-textarea').value = displayDiv.textContent.trim() === 'N/A' ? '' : displayDiv.textContent.trim()
+    })
+  })
+
+  document.querySelectorAll('.save-note-btn').forEach(button => {
+    button.addEventListener('click', async function() {
+      const leadId = this.dataset.leadId
+      const noteCell = this.closest('td')
+      const newNotes = noteCell.querySelector('.note-textarea').value.trim()
+      leadsFeedback.textContent = ''
+
+      try {
+        const response = await fetch(`/api/admin/leads/${leadId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: newNotes })
+        })
+        leadsFeedback.style.color = 'red'
+        if (response.ok) {
+          const updatedLead = await response.json()
+          const displayDiv = noteCell.querySelector('.lead-notes-display')
+          displayDiv.textContent = updatedLead.notes || 'N/A'
+          noteCell.querySelector('.lead-notes-edit').style.display = 'none'
+          displayDiv.style.display = 'block'
+          noteCell.querySelector('.edit-note-btn').style.display = 'inline-block'
+          leadsFeedback.textContent = 'Note saved successfully!'
+          leadsFeedback.style.color = 'green'
+        } else {
+          const errorResult = await response.json()
+          leadsFeedback.textContent = 'Error saving note: ' + (errorResult.error || 'Unknown error')
+        }
+      } catch (err) {
+        leadsFeedback.style.color = 'red'
+        leadsFeedback.textContent = 'Network error saving note.'
+        console.error('Save note error:', err)
       }
     })
   })

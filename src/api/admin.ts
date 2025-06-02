@@ -542,6 +542,43 @@ router.put('/leads/:leadId/status', authMiddleware, async (req, res) => {
   }
 })
 
+// Update Lead Notes
+router.put('/leads/:leadId', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const leadId = req.params.leadId
+    const { notes } = req.body
+
+    // Find the lead and verify ownership
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId }
+    })
+
+    // Check if lead exists and belongs to the business
+    if (!lead || lead.businessId !== businessId) {
+      return res.status(404).json({
+        error: 'Lead not found or you do not have permission to modify it'
+      })
+    }
+
+    // Update the lead notes
+    const updatedLead = await prisma.lead.update({
+      where: { id: leadId },
+      data: { notes }
+    })
+
+    // Send back the updated lead
+    res.status(200).json(updatedLead)
+
+  } catch (error) {
+    console.error('Error updating lead notes:', error)
+    res.status(500).json({
+      error: 'Internal server error while updating lead notes'
+    })
+  }
+})
+
 // Add logout route
 router.get('/logout', (req, res) => {
   // Clear the 'token' cookie
