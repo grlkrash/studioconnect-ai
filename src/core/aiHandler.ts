@@ -1,7 +1,7 @@
 import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
-import { sendLeadNotificationEmail } from '../services/notificationService'
+import { sendLeadNotificationEmail, initiateEmergencyVoiceCall } from '../services/notificationService'
 import { LeadCaptureQuestion } from '@prisma/client'
 
 /**
@@ -273,6 +273,23 @@ User's Question: ${message}`
               newLead.priority,
               business.name
             )
+
+            // Handle emergency voice call if needed
+            if (isEmergency && business.notificationPhoneNumber) {
+              try {
+                console.log(`Initiating emergency voice call to ${business.notificationPhoneNumber}...`)
+                await initiateEmergencyVoiceCall(
+                  business.notificationPhoneNumber,
+                  business.name,
+                  `Lead from ${newLead.contactName || 'unknown contact'}. Issue: ${capturedData['emergency_notes'] || 'Details in system.'}`
+                )
+                console.log('Emergency voice call initiated successfully')
+              } catch (callError) {
+                console.error('Failed to initiate emergency voice call:', callError)
+              }
+            } else if (isEmergency) {
+              console.log('No notification phone number configured for emergency calls')
+            }
           } else {
             console.log('No notification email configured for this business')
           }

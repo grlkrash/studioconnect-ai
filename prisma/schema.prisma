@@ -59,6 +59,7 @@ model Business {
   name         String
   businessType BusinessType  @default(OTHER)
   notificationEmail String?  // Email for receiving lead notifications
+  notificationPhoneNumber String? // Optional: Phone number for SMS/Voice alerts
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

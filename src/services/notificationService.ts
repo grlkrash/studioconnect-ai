@@ -1,5 +1,12 @@
 import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
+import twilio from 'twilio'
+
+// Initialize Twilio client
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+)
 
 /**
  * Sends an email notification to the HSP when a new lead is captured
@@ -240,5 +247,39 @@ export async function testEmailConfiguration(): Promise<void> {
   } catch (error) {
     console.error('Failed to create test email account:', error)
     throw error
+  }
+}
+
+/**
+ * Initiates an emergency voice call to the HSP when a high-priority lead is captured
+ * @param toPhoneNumber - The HSP's phone number to call
+ * @param businessName - The name of the business
+ * @param leadSummary - A brief summary of the lead details
+ */
+export async function initiateEmergencyVoiceCall(
+  toPhoneNumber: string,
+  businessName: string,
+  leadSummary: string
+): Promise<void> {
+  try {
+    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER
+    if (!twilioPhoneNumber) {
+      console.error('TWILIO_PHONE_NUMBER environment variable is not set')
+      return
+    }
+
+    const messageToSay = `Urgent lead for ${businessName}. ${leadSummary}. Please check your system for details. Repeating: Urgent lead for ${businessName}. ${leadSummary}.`
+    const twiml = `<Response><Say voice="alice" language="en-US">${messageToSay}</Say></Response>`
+
+    await twilioClient.calls.create({
+      twiml,
+      to: toPhoneNumber,
+      from: twilioPhoneNumber
+    })
+
+    console.log(`Emergency voice call initiated to ${toPhoneNumber} for business ${businessName}`)
+  } catch (error) {
+    console.error('Failed to initiate emergency voice call:', error)
+    // Don't throw the error - we don't want call failures to break the lead capture flow
   }
 }
