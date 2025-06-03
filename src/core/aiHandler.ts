@@ -4,6 +4,11 @@ import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from '../services/notificationService'
 import { LeadCaptureQuestion } from '@prisma/client'
 
+// Extend the LeadCaptureQuestion type to include isEssentialForEmergency
+type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
+  isEssentialForEmergency: boolean
+}
+
 /**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
@@ -101,6 +106,51 @@ User's Question: ${message}`
       if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
         return { reply: "It looks like our lead capture system isn't set up yet. How else can I assist?" }
       }
+
+      // Check if the INITIAL message that triggered lead capture was an emergency
+      let isEmergency = false
+      const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content || ''
+      
+      if (firstUserMessage) {
+        console.log(`Checking if initial message indicates emergency: "${firstUserMessage}"`)
+        const emergencyCheckPrompt = `Does the following user message indicate an emergency situation (e.g., burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water heater leak)? Respond with only YES or NO. User message: '${firstUserMessage}'`
+        const isEmergencyResponse = await getChatCompletion(
+          emergencyCheckPrompt, 
+          "You are an emergency detection assistant specialized in identifying urgent home service situations."
+        )
+        isEmergency = (isEmergencyResponse || 'NO').trim().toUpperCase() === 'YES'
+        
+        if (isEmergency) {
+          console.log('Lead creation: Initial message WAS an EMERGENCY')
+        } else {
+          console.log('Lead creation: Initial message was NOT an emergency')
+        }
+      }
+
+      // Determine which questions to ask based on emergency status
+      let questionsToAsk = agentConfig.questions as ExtendedLeadCaptureQuestion[]
+      if (isEmergency) {
+        console.log("EMERGENCY DETECTED: Filtering for essential questions...")
+        // Filter for questions marked as essential for emergencies
+        const essentialQuestions = questionsToAsk.filter(
+          q => q.isEssentialForEmergency === true
+        )
+
+        if (essentialQuestions.length > 0) {
+          questionsToAsk = essentialQuestions
+          console.log('Essential emergency questions:', questionsToAsk.map(q => q.questionText))
+        } else {
+          // Fallback if no questions are marked as essential for emergency:
+          // Ask just the very first configured question as a bare minimum
+          if (agentConfig.questions && agentConfig.questions.length > 0) {
+            console.log("No essential questions marked for emergency, asking only the first configured question.")
+            questionsToAsk = agentConfig.questions.slice(0, 1) as ExtendedLeadCaptureQuestion[]
+          } else {
+            questionsToAsk = [] // No questions configured at all
+          }
+          console.log('Fallback emergency questions:', questionsToAsk.map(q => q.questionText))
+        }
+      }
       
       // Determine next unanswered question
       let nextQuestion = null
@@ -115,7 +165,7 @@ User's Question: ${message}`
         
         if (entry.role === 'assistant') {
           // Check if this message matches any of our questions
-          const matchedQuestion = agentConfig.questions.find((q: LeadCaptureQuestion) => q.questionText === entry.content)
+          const matchedQuestion = questionsToAsk.find((q: ExtendedLeadCaptureQuestion) => q.questionText === entry.content)
           if (matchedQuestion && nextEntry && nextEntry.role === 'user') {
             console.log(`  ✓ Matched question: "${matchedQuestion.questionText}" (ID: ${matchedQuestion.id})`)
             console.log(`  ✓ User answer: "${nextEntry.content}"`)
@@ -125,11 +175,11 @@ User's Question: ${message}`
       }
       
       console.log('\nAnswered question IDs:', Array.from(answeredQuestions))
-      console.log('Total questions:', agentConfig.questions.length)
+      console.log('Total questions to ask in this flow:', questionsToAsk.length)
       console.log('Questions answered:', answeredQuestions.size)
       
       // Find first unanswered question
-      for (const question of agentConfig.questions) {
+      for (const question of questionsToAsk) {
         if (!answeredQuestions.has(question.id)) {
           nextQuestion = question
           console.log(`\nNext question to ask: "${question.questionText}" (ID: ${question.id}, Order: ${question.order})`)
@@ -149,7 +199,7 @@ User's Question: ${message}`
         for (let i = 0; i < conversationHistory.length - 1; i++) {
           const entry = conversationHistory[i]
           if (entry.role === 'assistant') {
-            const matchedQuestion = agentConfig.questions.find((q: LeadCaptureQuestion) => q.questionText === entry.content)
+            const matchedQuestion = questionsToAsk.find((q: ExtendedLeadCaptureQuestion) => q.questionText === entry.content)
             if (matchedQuestion && i + 1 < conversationHistory.length && conversationHistory[i + 1].role === 'user') {
               const questionText = matchedQuestion.questionText
               const userAnswer = conversationHistory[i + 1].content
@@ -174,7 +224,7 @@ User's Question: ${message}`
         let notes: string | undefined = undefined
         
         // Iterate through questions to find field mappings
-        for (const question of agentConfig.questions) {
+        for (const question of questionsToAsk) {
           // Check if this question has a mapsToLeadField property and if we have an answer for it
           // Using type assertion since the field exists in schema but types may not be regenerated yet
           const questionWithMapping = question as typeof question & { mapsToLeadField?: string }
@@ -211,27 +261,6 @@ User's Question: ${message}`
           contactPhone,
           notes
         })
-        
-        // Check if the INITIAL message that triggered lead capture was an emergency
-        let isEmergency = false
-        const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content || ''
-        
-        if (firstUserMessage) {
-          console.log(`Checking if initial message indicates emergency: "${firstUserMessage}"`)
-          const emergencyCheckPrompt = `Does the following user message indicate an emergency situation (e.g., burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water heater leak)? Respond with only YES or NO. User message: '${firstUserMessage}'`
-          const isEmergencyResponse = await getChatCompletion(
-            emergencyCheckPrompt, 
-            "You are an emergency detection assistant specialized in identifying urgent home service situations."
-          )
-          isEmergency = (isEmergencyResponse || 'NO').trim().toUpperCase() === 'YES'
-          
-          if (isEmergency) {
-            console.log('Lead creation: Initial message WAS an EMERGENCY')
-            capturedData['emergency_notes'] = `User indicated an EMERGENCY situation in their initial message: "${firstUserMessage}"`
-          } else {
-            console.log('Lead creation: Initial message was NOT an emergency')
-          }
-        }
         
         // Create lead record with appropriate priority
         const newLead = await prisma.lead.create({

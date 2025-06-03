@@ -115,6 +115,7 @@ model LeadCaptureQuestion {
   order          Int
   isRequired     Boolean        @default(true)
   mapsToLeadField String?       // Maps to lead fields: contactName, contactEmail, contactPhone, notes
+  isEssentialForEmergency Boolean @default(false)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
