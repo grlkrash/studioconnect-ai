@@ -139,10 +139,13 @@
       flex-direction: column;
       z-index: 9999;
       overflow: hidden;
+      transform: translateY(100%);
+      transition: transform 0.3s ease-in-out;
     }
 
     .smb-chat-window.open {
       display: flex;
+      transform: translateY(0);
     }
 
     .smb-chat-header {
@@ -304,23 +307,51 @@
     @media (max-width: 480px) {
       .smb-chat-window {
         width: 100%;
-        height: 100%;
+        height: 85vh;
         bottom: 0;
         right: 0;
-        border-radius: 0;
+        border-radius: 16px 16px 0 0;
         position: fixed;
-        top: 0;
+        top: auto;
         left: 0;
         margin: 0;
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        transform: translateY(100%);
+        transition: transform 0.3s ease-in-out;
+      }
+
+      .smb-chat-window.open {
+        transform: translateY(0);
       }
 
       .smb-chat-bubble {
-        bottom: calc(20px + env(safe-area-inset-bottom));
-        right: calc(20px + env(safe-area-inset-right));
-        width: 50px;
-        height: 50px;
-        z-index: 9998;
+        bottom: 16px;
+        right: 16px;
+        width: 56px;
+        height: 56px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        animation: none; /* Remove animation on mobile for better performance */
+      }
+
+      .smb-chat-bubble:active {
+        transform: scale(0.95);
+      }
+
+      /* Add a subtle pulse animation for better visibility */
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
+        }
+        50% {
+          box-shadow: 0 4px 24px rgba(37, 99, 235, 0.5);
+        }
+        100% {
+          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
+        }
+      }
+
+      .smb-chat-bubble {
+        animation: pulse 2s ease-in-out infinite;
       }
 
       .smb-chat-bubble-icon {
@@ -329,15 +360,16 @@
       }
 
       .smb-chat-header {
-        padding: 16px;
+        padding: 12px 16px;
         position: sticky;
         top: 0;
         z-index: 1;
       }
 
       .smb-chat-messages {
-        padding: 16px;
-        padding-bottom: calc(80px + env(safe-area-inset-bottom));
+        padding: 12px 16px;
+        padding-bottom: calc(70px + env(safe-area-inset-bottom));
+        max-height: calc(85vh - 140px);
       }
 
       .smb-chat-input-area {
@@ -345,8 +377,8 @@
         bottom: 0;
         left: 0;
         right: 0;
-        padding: 16px;
-        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        padding: 12px 16px;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
         background: white;
         border-top: 1px solid #e5e7eb;
         z-index: 2;
@@ -357,18 +389,23 @@
       }
 
       .smb-chat-input {
-        padding: 12px;
-        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 10px 12px;
+        font-size: 16px;
       }
 
       .smb-chat-send {
-        padding: 12px 16px;
+        padding: 10px 16px;
         white-space: nowrap;
       }
 
       .smb-chat-message-content {
         max-width: 85%;
         font-size: 15px;
+        padding: 10px 14px;
+      }
+
+      .smb-chat-message {
+        margin-bottom: 12px;
       }
     }
 
@@ -447,6 +484,11 @@
         addMessageToChat(welcomeMessage, 'ai');
         // SAFEGUARD: Ensure content is always a string
         conversationHistory.push({ role: 'assistant', content: String(welcomeMessage) });
+        
+        // Ensure welcome message is visible
+        setTimeout(() => {
+          messagesArea.scrollTop = 0;
+        }, 100);
       }
     } else {
       chatWindow.classList.remove('open');
