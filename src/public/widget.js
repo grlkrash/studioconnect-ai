@@ -18,7 +18,7 @@
   // Configuration
   const API_BASE_URL = (() => {
     // Use Render deployment server
-    const renderUrl = 'https://leads-support-agent.onrender.com/';
+    const renderUrl = 'https://leads-support-agent.onrender.com';
     console.log('SMB Chat Widget: Using API at', renderUrl);
     return renderUrl;
   })();
@@ -508,7 +508,10 @@
     });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const chatEndpoint = `${API_BASE_URL}/api/chat`;
+      console.log('Sending request to:', chatEndpoint);
+      
+      const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
