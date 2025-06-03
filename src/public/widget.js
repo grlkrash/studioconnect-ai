@@ -308,11 +308,78 @@
         bottom: 0;
         right: 0;
         border-radius: 0;
+        position: fixed;
+        top: 0;
+        left: 0;
+        margin: 0;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
       }
 
       .smb-chat-bubble {
-        bottom: 10px;
-        right: 10px;
+        bottom: calc(20px + env(safe-area-inset-bottom));
+        right: calc(20px + env(safe-area-inset-right));
+        width: 50px;
+        height: 50px;
+        z-index: 9998;
+      }
+
+      .smb-chat-bubble-icon {
+        width: 28px;
+        height: 28px;
+      }
+
+      .smb-chat-header {
+        padding: 16px;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      .smb-chat-messages {
+        padding: 16px;
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
+      }
+
+      .smb-chat-input-area {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 16px;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        background: white;
+        border-top: 1px solid #e5e7eb;
+        z-index: 2;
+      }
+
+      .smb-chat-input-wrapper {
+        gap: 8px;
+      }
+
+      .smb-chat-input {
+        padding: 12px;
+        font-size: 16px; /* Prevents zoom on iOS */
+      }
+
+      .smb-chat-send {
+        padding: 12px 16px;
+        white-space: nowrap;
+      }
+
+      .smb-chat-message-content {
+        max-width: 85%;
+        font-size: 15px;
+      }
+    }
+
+    /* Additional iOS-specific adjustments */
+    @supports (-webkit-touch-callout: none) {
+      .smb-chat-window {
+        height: -webkit-fill-available;
+      }
+
+      .smb-chat-messages {
+        height: calc(100% - 140px - env(safe-area-inset-bottom));
       }
     }
   `;
