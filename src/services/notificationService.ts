@@ -283,3 +283,149 @@ export async function initiateEmergencyVoiceCall(
     // Don't throw the error - we don't want call failures to break the lead capture flow
   }
 }
+
+/**
+ * Sends a confirmation email to the customer after their lead is captured
+ * @param customerEmail - The customer's email address
+ * @param businessName - The name of the business
+ * @param leadDetails - Object containing lead information
+ * @param isEmergency - Whether this was marked as an emergency request
+ */
+export async function sendLeadConfirmationToCustomer(
+  customerEmail: string,
+  businessName: string,
+  leadDetails: any,
+  isEmergency: boolean
+): Promise<void> {
+  try {
+    console.log(`Sending confirmation email to customer ${customerEmail}...`)
+
+    // Create a test account using Ethereal Email
+    const testAccount = await nodemailer.createTestAccount()
+
+    // Create a transporter using the test account credentials
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    })
+
+    // Extract customer name from various possible sources
+    const customerName = leadDetails.contactName || 
+      (leadDetails.capturedData && leadDetails.capturedData["What is your full name?"]) || 
+      'Valued Customer'
+
+    // Build the captured details HTML
+    let capturedDetailsHtml = '<ul>'
+    if (leadDetails.capturedData && typeof leadDetails.capturedData === 'object') {
+      for (const [key, value] of Object.entries(leadDetails.capturedData)) {
+        if (key !== 'emergency_notes') { // Don't show internal emergency notes to customer
+          capturedDetailsHtml += `<li><strong>${key.replace(/_/g, ' ')}:</strong> ${value}</li>`
+        }
+      }
+    }
+    capturedDetailsHtml += '</ul>'
+
+    // Build the HTML email content
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0; }
+          .content { background-color: white; padding: 20px; border: 1px solid #e9ecef; }
+          .footer { 
+            background-color: #f8f9fa; 
+            padding: 15px; 
+            text-align: center; 
+            font-size: 12px; 
+            color: #666;
+            border-radius: 0 0 8px 8px;
+          }
+          .urgent-notice {
+            background-color: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-weight: bold;
+          }
+          ul { list-style-type: none; padding-left: 0; }
+          li { margin-bottom: 10px; }
+          strong { color: #4b5563; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2 style="margin: 0;">Thank You for Contacting ${businessName}</h2>
+          </div>
+          
+          <div class="content">
+            <p>Hi ${customerName},</p>
+            
+            <p>Thank you for contacting ${businessName}. We've received your details regarding your service request and our team will be in touch with you shortly.</p>
+            
+            ${isEmergency ? '<div class="urgent-notice">We\'ve noted your request as urgent and will prioritize it accordingly.</div>' : ''}
+            
+            <p>For your records, here's a summary of the information you provided:</p>
+            ${capturedDetailsHtml}
+            
+            <p>Sincerely,<br>The Team at ${businessName}</p>
+          </div>
+          
+          <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Construct the email options
+    const mailOptions: Mail.Options = {
+      from: `"${businessName}" <noreply@example.com>`,
+      to: customerEmail,
+      subject: `Your inquiry with ${businessName} has been received!`,
+      html: htmlContent,
+      // Also include a text version for better email client compatibility
+      text: `
+Hi ${customerName},
+
+Thank you for contacting ${businessName}. We've received your details regarding your service request and our team will be in touch with you shortly.
+
+${isEmergency ? 'We\'ve noted your request as urgent and will prioritize it accordingly.\n\n' : ''}
+For your records, here's a summary of the information you provided:
+
+${Object.entries(leadDetails.capturedData || {})
+  .filter(([key]) => key !== 'emergency_notes')
+  .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value}`)
+  .join('\n')}
+
+Sincerely,
+The Team at ${businessName}
+
+---
+This is an automated message. Please do not reply to this email.
+      `.trim()
+    }
+
+    // Send the email
+    const info = await transporter.sendMail(mailOptions)
+
+    // Log success and preview URL
+    console.log('Customer confirmation email sent! Message ID:', info.messageId)
+    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+
+  } catch (error) {
+    console.error('Failed to send customer confirmation email:', error)
+    // Don't throw the error - we don't want email failures to break the lead capture flow
+  }
+}

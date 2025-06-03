@@ -1,7 +1,7 @@
 import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
-import { sendLeadNotificationEmail, initiateEmergencyVoiceCall } from '../services/notificationService'
+import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from '../services/notificationService'
 import { LeadCaptureQuestion } from '@prisma/client'
 
 /**
@@ -273,6 +273,18 @@ User's Question: ${message}`
               newLead.priority,
               business.name
             )
+
+            // Send confirmation email to customer if email was captured
+            if (newLead.contactEmail) {
+              try {
+                console.log(`Attempting to send lead confirmation email to customer: ${newLead.contactEmail}`)
+                await sendLeadConfirmationToCustomer(newLead.contactEmail, business.name, newLead, isEmergency)
+              } catch (customerEmailError) {
+                console.error('Failed to send confirmation email to customer:', customerEmailError)
+              }
+            } else {
+              console.log('No customer email captured for confirmation email.')
+            }
 
             // Handle emergency voice call if needed
             if (isEmergency && business.notificationPhoneNumber) {
