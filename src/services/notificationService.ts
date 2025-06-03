@@ -240,12 +240,20 @@ This is an automated notification from your AI Lead Agent.
     }
 
     // Send the email
-    const info = await transporter.sendMail(mailOptions)
-
-    // Log success and preview URL
-    console.log('Lead notification email sent! Message ID:', info.messageId)
-    if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
-      console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    try {
+      const info = await transporter.sendMail(mailOptions)
+      console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
+      if (info && info.messageId) {
+        console.log(`Email Message ID: ${info.messageId}`)
+      } else {
+        console.warn('Email sent, but no messageId found in info object.')
+      }
+      // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
+      if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
+        console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
+      }
+    } catch (error) {
+      console.error(`Error sending email to ${mailOptions.to}:`, error)
     }
 
   } catch (error) {
@@ -288,7 +296,28 @@ export async function initiateEmergencyVoiceCall(
       return
     }
 
-    const messageToSay = `Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${businessName}. ${leadSummary}. Please check your system for details. Repeating: Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${businessName}. ${leadSummary}.`
+    // XML escaping function for safe text insertion
+    const escapeXml = (unsafe: string): string => {
+      return unsafe.replace(/[<>&'"]/g, function (c: string) {
+        switch (c) {
+          case '<': return '&lt;'
+          case '>': return '&gt;'
+          case '&': return '&amp;'
+          case '\'': return '&apos;'
+          case '"': return '&quot;'
+          default: return c
+        }
+      })
+    }
+
+    // Escape the dynamic content
+    const safeBusinessName = escapeXml(businessName)
+    const safeLeadSummary = escapeXml(leadSummary)
+
+    // Construct message with SSML phoneme tag for "lead"
+    const messageToSay = `Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}. Please check your system for details. Repeating: Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}.`
+
+    // Create TwiML response with proper SSML
     const twiml = `<Response><Say voice="alice" language="en-US">${messageToSay}</Say></Response>`
 
     await twilioClient.calls.create({
@@ -428,12 +457,20 @@ This is an automated message. Please do not reply to this email.
     }
 
     // Send the email
-    const info = await transporter.sendMail(mailOptions)
-
-    // Log success and preview URL
-    console.log('Customer confirmation email sent! Message ID:', info.messageId)
-    if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
-      console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    try {
+      const info = await transporter.sendMail(mailOptions)
+      console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
+      if (info && info.messageId) {
+        console.log(`Email Message ID: ${info.messageId}`)
+      } else {
+        console.warn('Email sent, but no messageId found in info object.')
+      }
+      // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
+      if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
+        console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
+      }
+    } catch (error) {
+      console.error(`Error sending email to ${mailOptions.to}:`, error)
     }
 
   } catch (error) {

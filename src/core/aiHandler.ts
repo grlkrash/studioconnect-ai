@@ -319,10 +319,39 @@ User's Question: ${message}`
             if (isEmergency && business.notificationPhoneNumber) {
               try {
                 console.log(`Initiating emergency voice call to ${business.notificationPhoneNumber}...`)
+                
+                // Construct a more detailed lead summary
+                let leadSummaryForCall = `Lead from ${newLead.contactName || 'unknown contact'}.`
+                
+                // Look for issue/problem description in captured data
+                if (newLead.capturedData && typeof newLead.capturedData === 'object') {
+                  const captured = newLead.capturedData as any
+                  
+                  // Try to find the issue description from various possible question patterns
+                  const issueKey = Object.keys(captured).find(key => 
+                    key.toLowerCase().includes('issue') || 
+                    key.toLowerCase().includes('problem') ||
+                    key.toLowerCase().includes('describe') ||
+                    key.toLowerCase().includes('what') && key.toLowerCase().includes('happening')
+                  )
+                  
+                  if (issueKey) {
+                    leadSummaryForCall += ` Issue: ${captured[issueKey]}.`
+                  } else {
+                    // If no specific issue question found, include the first user message as context
+                    const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content
+                    if (firstUserMessage) {
+                      leadSummaryForCall += ` Initial message: ${firstUserMessage}.`
+                    } else {
+                      leadSummaryForCall += ' Details in system.'
+                    }
+                  }
+                }
+                
                 await initiateEmergencyVoiceCall(
                   business.notificationPhoneNumber,
                   business.name,
-                  `Lead from ${newLead.contactName || 'unknown contact'}. Issue: ${capturedData['emergency_notes'] || 'Details in system.'}`
+                  leadSummaryForCall
                 )
                 console.log('Emergency voice call initiated successfully')
               } catch (callError) {
