@@ -268,7 +268,7 @@ export async function initiateEmergencyVoiceCall(
       return
     }
 
-    const messageToSay = `Urgent lead for ${businessName}. ${leadSummary}. Please check your system for details. Repeating: Urgent lead for ${businessName}. ${leadSummary}.`
+    const messageToSay = `Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${businessName}. ${leadSummary}. Please check your system for details. Repeating: Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${businessName}. ${leadSummary}.`
     const twiml = `<Response><Say voice="alice" language="en-US">${messageToSay}</Say></Response>`
 
     await twilioClient.calls.create({
