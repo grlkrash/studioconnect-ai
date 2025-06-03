@@ -13,6 +13,15 @@ const twilioClient = twilio(
 let transporter: nodemailer.Transporter
 
 const initializeTransporter = async () => {
+  // Debug logging for Render environment
+  console.log('=== EMAIL TRANSPORTER DEBUG ===')
+  console.log('NODE_ENV:', process.env.NODE_ENV)
+  console.log('SENDGRID_API_KEY exists:', !!process.env.SENDGRID_API_KEY)
+  console.log('SENDGRID_API_KEY starts with SG.:', process.env.SENDGRID_API_KEY?.startsWith('SG.'))
+  console.log('Production check:', process.env.NODE_ENV === 'production')
+  console.log('Both conditions:', process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY)
+  console.log('================================')
+  
   if (process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY) {
     console.log('Email Service: Initializing SendGrid transporter.')
     const options = { auth: { api_key: process.env.SENDGRID_API_KEY } }
