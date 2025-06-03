@@ -325,31 +325,23 @@
       }
 
       .smb-chat-bubble {
-        bottom: 16px;
+        bottom: calc(32px + env(safe-area-inset-bottom, 0px) + 48px); /* Higher for iOS browser bar */
         right: 16px;
         width: 56px;
         height: 56px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18);
+        border: 2px solid #fff;
+        background: #2563eb;
         animation: none; /* Remove animation on mobile for better performance */
       }
-
       .smb-chat-bubble:active {
         transform: scale(0.95);
       }
-
-      /* Add a subtle pulse animation for better visibility */
       @keyframes pulse {
-        0% {
-          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
-        }
-        50% {
-          box-shadow: 0 4px 24px rgba(37, 99, 235, 0.5);
-        }
-        100% {
-          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
-        }
+        0% { box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18); }
+        50% { box-shadow: 0 12px 40px rgba(37, 99, 235, 0.5), 0 2px 8px rgba(0,0,0,0.22); }
+        100% { box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18); }
       }
-
       .smb-chat-bubble {
         animation: pulse 2s ease-in-out infinite;
       }
