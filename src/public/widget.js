@@ -482,6 +482,7 @@
           messagesArea.scrollTop = 0;
         }, 100);
       }
+      setTimeout(scrollMessagesToBottom, 100)
     } else {
       chatWindow.classList.remove('open');
     }
@@ -633,6 +634,40 @@
     
     // Send to API
     sendMessageToApi(messageText);
+  }
+
+  // --- Keyboard-aware resizing for mobile ---
+  function adjustChatWindowForKeyboard(isKeyboardOpen) {
+    if (window.innerWidth > 600) return // Only on mobile
+    if (!isKeyboardOpen) {
+      chatWindow.style.height = ''
+      messagesArea.style.maxHeight = ''
+      return
+    }
+    // Use visualViewport if available for accurate height
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight
+    // Leave space for input area (approx 70px)
+    chatWindow.style.height = vh + 'px'
+    messagesArea.style.maxHeight = (vh - 110) + 'px'
+  }
+
+  // Always scroll messages to bottom
+  function scrollMessagesToBottom() {
+    messagesArea.scrollTop = messagesArea.scrollHeight
+  }
+
+  // --- Event listeners for keyboard ---
+  inputField.addEventListener('focus', function() {
+    adjustChatWindowForKeyboard(true)
+    setTimeout(scrollMessagesToBottom, 100)
+  })
+  inputField.addEventListener('blur', function() {
+    adjustChatWindowForKeyboard(false)
+  })
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', function() {
+      if (document.activeElement === inputField) adjustChatWindowForKeyboard(true)
+    })
   }
 
   // Event listeners
