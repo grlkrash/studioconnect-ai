@@ -22,7 +22,7 @@ const initializeTransporter = async () => {
   console.log('Both conditions:', process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY)
   console.log('================================')
   
-  if (process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY) {
+  if (process.env.SENDGRID_API_KEY) {
     console.log('Email Service: Initializing SendGrid transporter.')
     const options = { auth: { api_key: process.env.SENDGRID_API_KEY } }
     transporter = nodemailer.createTransport(sgTransport(options))
