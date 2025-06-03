@@ -17,7 +17,7 @@
 
   // Configuration
   const API_BASE_URL = (() => {
-    // Always use the Render URL for now
+    // Use Render deployment server
     const renderUrl = 'https://leads-support-agent.onrender.com/';
     console.log('SMB Chat Widget: Using API at', renderUrl);
     return renderUrl;
