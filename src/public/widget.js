@@ -46,6 +46,7 @@
   // State
   let conversationHistory = [];
   let isOpen = false;
+  let currentFlowState = null; // Add flow state management
 
   // Create CSS styles
   const styles = `
@@ -473,6 +474,7 @@
       
       // Show welcome message if first time
       if (conversationHistory.length === 0) {
+        currentFlowState = null; // Reset flow state on new conversation
         const welcomeMessage = "Hey! How can I help you today?";
         addMessageToChat(welcomeMessage, 'ai');
         // SAFEGUARD: Ensure content is always a string
@@ -538,6 +540,7 @@
     console.log('=== SENDING TO API ===');
     console.log('Message:', messageText);
     console.log('ConversationHistory:', JSON.stringify(conversationHistory, null, 2));
+    console.log('Current Flow State:', currentFlowState);
     console.log('Each message type check:');
     conversationHistory.forEach((msg, index) => {
       console.log(`[${index}] role: ${msg.role}, content type: ${typeof msg.content}, content:`, msg.content);
@@ -549,16 +552,19 @@
       const chatEndpoint = new URL(relativePath, API_BASE_URL).href;
       console.log('SMB Chat Widget: Constructed chat endpoint:', chatEndpoint);
       
+      const bodyPayload = {
+        message: messageText,
+        conversationHistory: conversationHistory,
+        businessId: businessId,
+        currentFlow: currentFlowState // Include current flow state in request
+      };
+
       const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: messageText,
-          conversationHistory: conversationHistory,
-          businessId: businessId
-        })
+        body: JSON.stringify(bodyPayload)
       });
 
       if (!response.ok) {
@@ -576,8 +582,13 @@
         message: data.message,
         responseType: typeof data.response,
         replyType: typeof data.reply,
-        messageType: typeof data.message
+        messageType: typeof data.message,
+        currentFlow: data.currentFlow
       });
+      
+      // Update flow state from response
+      currentFlowState = data.currentFlow || null;
+      console.log('[Widget] Updated currentFlowState:', currentFlowState);
       
       // Remove typing indicator
       removeTypingIndicator();

@@ -15,17 +15,24 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
  */
 export const processMessage = async (
   message: string,
-  conversationHistory: any[], // We'll define a proper type later
-  businessId: string
-): Promise<{ reply: string; [key: string]: any }> => {
+  conversationHistory: any[],
+  businessId: string,
+  currentActiveFlow?: string | null
+): Promise<{ reply: string; currentFlow?: string | null; [key: string]: any }> => {
   try {
     console.log(`AI Handler processing message for business ${businessId}: "${message}"`)
+    console.log('Received currentActiveFlow:', currentActiveFlow)
     
     // DEBUG: Log the received conversation history
     console.log('Received conversationHistory on backend:', JSON.stringify(conversationHistory, null, 2))
 
     // Step 1: Intent Recognition
-    const intentPrompt = `Analyze the user's message and classify their intent.
+    let intent: string
+    if (currentActiveFlow === 'LEAD_CAPTURE') {
+      intent = 'LEAD_CAPTURE'
+      console.log('Continuing LEAD_CAPTURE flow based on state.')
+    } else {
+      const intentPrompt = `Analyze the user's message and classify their intent.
 
 LEAD_CAPTURE indicators (respond with LEAD_CAPTURE if ANY of these apply):
 - Asking about pricing, costs, quotes, estimates, or rates
@@ -55,14 +62,15 @@ User message: '${message}'
 Recent history: ${JSON.stringify(conversationHistory.slice(-3))}
 
 Classify as: LEAD_CAPTURE, FAQ, or OTHER`
+      
+      const intentResponse = await getChatCompletion(
+        intentPrompt,
+        "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, or OTHER."
+      )
+      intent = (intentResponse || 'OTHER').trim().toUpperCase()
+    }
     
-    const intentResponse = await getChatCompletion(
-      intentPrompt,
-      "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, or OTHER."
-    )
-    
-    const intent = (intentResponse || 'OTHER').trim().toUpperCase()
-    console.log(`Classified intent: ${intent}`)
+    console.log(`Effective intent: ${intent}`)
 
     // Fetch agent configuration for persona and settings
     const agentConfig = await prisma.agentConfig.findUnique({
@@ -90,11 +98,17 @@ ${contextSnippets}
 User's Question: ${message}`
         
         const aiResponse = await getChatCompletion(faqPrompt, personaPrompt)
-        return { reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later." }
+        return { 
+          reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
+          currentFlow: null
+        }
       } else {
         // No relevant knowledge found
         console.log('No relevant knowledge found in FAQ flow')
-        return { reply: "I couldn't find specific information on that. How else can I help?" }
+        return { 
+          reply: "I couldn't find specific information on that. How else can I help?",
+          currentFlow: null
+        }
       }
       
     } else if (intent === 'LEAD_CAPTURE') {
@@ -104,7 +118,10 @@ User's Question: ${message}`
       console.log('Agent config questions:', agentConfig?.questions?.map((q: LeadCaptureQuestion) => ({ id: q.id, text: q.questionText, order: q.order })))
       
       if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
-        return { reply: "It looks like our lead capture system isn't set up yet. How else can I assist?" }
+        return { 
+          reply: "It looks like our lead capture system isn't set up yet. How else can I assist?",
+          currentFlow: null
+        }
       }
 
       // Check if the INITIAL message that triggered lead capture was an emergency
@@ -189,7 +206,10 @@ User's Question: ${message}`
       
       if (nextQuestion) {
         // Ask the next question
-        return { reply: nextQuestion.questionText }
+        return { 
+          reply: nextQuestion.questionText,
+          currentFlow: 'LEAD_CAPTURE'
+        }
       } else {
         // All questions answered - create lead
         console.log('\n=== ALL QUESTIONS ANSWERED - CREATING LEAD ===')
@@ -370,11 +390,13 @@ User's Question: ${message}`
         
         if (isEmergency) {
           return { 
-            reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency." 
+            reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.",
+            currentFlow: null
           }
         } else {
           return { 
-            reply: "Thanks for providing that information! Our team will review it and get back to you shortly." 
+            reply: "Thanks for providing that information! Our team will review it and get back to you shortly.",
+            currentFlow: null
           }
         }
       }
@@ -385,7 +407,10 @@ User's Question: ${message}`
       
       // Check if this is the start of a conversation
       if (conversationHistory.length === 0 && agentConfig?.welcomeMessage) {
-        return { reply: agentConfig.welcomeMessage }
+        return { 
+          reply: agentConfig.welcomeMessage,
+          currentFlow: null
+        }
       }
       
       // General chat with persona
@@ -395,13 +420,17 @@ User's Question: ${message}`
         personaPrompt
       )
       
-      return { reply: aiResponse || "How can I help you today?" }
+      return { 
+        reply: aiResponse || "How can I help you today?",
+        currentFlow: null
+      }
     }
     
   } catch (error) {
     console.error('Error in processMessage:', error)
     return { 
-      reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly." 
+      reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly.",
+      currentFlow: null
     }
   }
 } 
