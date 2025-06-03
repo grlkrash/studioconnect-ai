@@ -47,6 +47,7 @@
   let conversationHistory = [];
   let isOpen = false;
   let currentFlowState = null; // Add flow state management
+  let leadCaptureQuestions = []; // Cache of lead questions for flow detection
 
   // Create CSS styles
   const styles = `
@@ -588,7 +589,7 @@
       
       // Update flow state from response
       currentFlowState = data.currentFlow || null;
-      console.log('[Widget] Updated currentFlowState:', currentFlowState);
+      console.log('[Widget] Updated currentFlowState from backend:', currentFlowState);
       
       // Remove typing indicator
       removeTypingIndicator();
@@ -599,9 +600,23 @@
       // SAFEGUARD: Ensure content is always a string
       conversationHistory.push({ role: 'assistant', content: String(aiReply) });
 
+      // DEFENSIVE LOGIC: Detect if AI response is a lead capture question
+      // If the response looks like a question and we're not already in lead capture, set the flow
+      if (!currentFlowState && isLikelyLeadCaptureQuestion(aiReply)) {
+        console.log('[Widget] Detected lead capture question, setting flow state to LEAD_CAPTURE');
+        currentFlowState = 'LEAD_CAPTURE';
+      }
+
+      // DEFENSIVE LOGIC: If we have conversation history that suggests lead capture flow
+      if (!currentFlowState && shouldContinueLeadCapture()) {
+        console.log('[Widget] Detected ongoing lead capture from conversation history');
+        currentFlowState = 'LEAD_CAPTURE';
+      }
+
       // DEBUG: Log after adding AI response
       console.log('=== AFTER AI RESPONSE ===');
       console.log('AI Reply:', aiReply);
+      console.log('Final currentFlowState:', currentFlowState);
       console.log('Updated ConversationHistory:', JSON.stringify(conversationHistory, null, 2));
 
     } catch (error) {
@@ -620,6 +635,45 @@
     }
   }
 
+  // Helper function to detect if a message is likely a lead capture question
+  function isLikelyLeadCaptureQuestion(message) {
+    const leadQuestionIndicators = [
+      'what is your',
+      'what\'s your',
+      'best phone number',
+      'phone number',
+      'full name',
+      'email',
+      'timeline',
+      'when is the best time',
+      'scope of',
+      'describe the situation',
+      'how can I reach you',
+      'contact information'
+    ];
+    
+    const lowerMessage = message.toLowerCase();
+    return leadQuestionIndicators.some(indicator => lowerMessage.includes(indicator)) && 
+           message.includes('?');
+  }
+
+  // Helper function to detect if we should continue lead capture based on conversation history
+  function shouldContinueLeadCapture() {
+    if (conversationHistory.length < 2) return false;
+    
+    // Look for patterns: assistant asks question, user answers, assistant asks another question
+    let questionCount = 0;
+    for (let i = 0; i < conversationHistory.length; i++) {
+      const entry = conversationHistory[i];
+      if (entry.role === 'assistant' && isLikelyLeadCaptureQuestion(entry.content)) {
+        questionCount++;
+      }
+    }
+    
+    // If we've seen multiple lead capture questions, we're likely in that flow
+    return questionCount >= 2;
+  }
+
   function handleSendMessage() {
     const messageText = inputField.value.trim();
     
@@ -632,6 +686,7 @@
     console.log('Input field value:', inputField.value);
     console.log('Trimmed message:', messageText);
     console.log('Type of messageText:', typeof messageText);
+    console.log('Current flow state before sending:', currentFlowState);
 
     // Add user message to chat
     addMessageToChat(messageText, 'user');

@@ -26,11 +26,54 @@ export const processMessage = async (
     // DEBUG: Log the received conversation history
     console.log('Received conversationHistory on backend:', JSON.stringify(conversationHistory, null, 2))
 
+    // Fetch agent configuration for persona and settings
+    const agentConfig = await prisma.agentConfig.findUnique({
+      where: { businessId },
+      include: { questions: { orderBy: { order: 'asc' } } }
+    })
+
+    // DEFENSIVE LOGIC: Detect if we should continue lead capture based on conversation history
+    let shouldForceLeadCapture = false
+    if (!currentActiveFlow && conversationHistory.length > 0) {
+      console.log('No currentActiveFlow provided, analyzing conversation history...')
+      
+      // Check if the last assistant message was a lead capture question
+      const lastAssistantMessage = [...conversationHistory].reverse().find(msg => msg.role === 'assistant')
+      if (lastAssistantMessage && agentConfig?.questions) {
+        const isLastMessageLeadQuestion = agentConfig.questions.some(q => 
+          q.questionText === lastAssistantMessage.content
+        )
+        
+        if (isLastMessageLeadQuestion) {
+          console.log('Last assistant message was a lead capture question, forcing lead capture continuation')
+          shouldForceLeadCapture = true
+        }
+      }
+      
+      // Also check if we've asked multiple lead questions in this conversation
+      if (!shouldForceLeadCapture && agentConfig?.questions) {
+        let leadQuestionCount = 0
+        for (const historyEntry of conversationHistory) {
+          if (historyEntry.role === 'assistant') {
+            const isLeadQuestion = agentConfig.questions.some(q => q.questionText === historyEntry.content)
+            if (isLeadQuestion) {
+              leadQuestionCount++
+            }
+          }
+        }
+        
+        if (leadQuestionCount >= 2) {
+          console.log(`Found ${leadQuestionCount} lead questions in history, forcing lead capture continuation`)
+          shouldForceLeadCapture = true
+        }
+      }
+    }
+
     // Step 1: Intent Recognition
     let intent: string
-    if (currentActiveFlow === 'LEAD_CAPTURE') {
+    if (currentActiveFlow === 'LEAD_CAPTURE' || shouldForceLeadCapture) {
       intent = 'LEAD_CAPTURE'
-      console.log('Continuing LEAD_CAPTURE flow based on state.')
+      console.log('Continuing LEAD_CAPTURE flow based on state or defensive logic.')
     } else {
       const intentPrompt = `Analyze the user's message and classify their intent.
 
@@ -71,12 +114,6 @@ Classify as: LEAD_CAPTURE, FAQ, or OTHER`
     }
     
     console.log(`Effective intent: ${intent}`)
-
-    // Fetch agent configuration for persona and settings
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId },
-      include: { questions: { orderBy: { order: 'asc' } } }
-    })
 
     // Step 2: Route based on intent
     if (intent === 'FAQ') {
@@ -205,7 +242,7 @@ User's Question: ${message}`
       }
       
       if (nextQuestion) {
-        // Ask the next question
+        // Ask the next question and maintain flow state
         return { 
           reply: nextQuestion.questionText,
           currentFlow: 'LEAD_CAPTURE'
