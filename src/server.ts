@@ -50,9 +50,11 @@ const corsOptions = {
       process.env.WIDGET_DEMO_URL,
       process.env.WIDGET_TEST_URL,
       process.env.FRONTEND_PRODUCTION_URL,
-      'http://127.0.0.1:8080', // Add local development server
-      'http://localhost:8080'  // Add local development server
-    ].filter(Boolean)
+      'http://127.0.0.1:8080', // Local development server
+      'http://localhost:8080'  // Local development server
+    ]
+      .filter(Boolean) // Remove undefined/null values
+      .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
 
     console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins)
 
