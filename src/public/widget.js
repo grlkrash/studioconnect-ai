@@ -17,23 +17,10 @@
 
   // Configuration
   const API_BASE_URL = (() => {
-    // Check various localhost scenarios
-    const hostname = window.location.hostname;
-    const isLocalhost = hostname === 'localhost' || 
-                       hostname === '127.0.0.1' || 
-                       hostname === '' || // file:// protocol
-                       hostname.startsWith('192.168.') || // local network
-                       hostname.startsWith('10.'); // local network
-    
-    // For development, always use localhost:3000
-    if (isLocalhost || window.location.protocol === 'file:') {
-      console.log('SMB Chat Widget: Using local API at http://localhost:3000');
-      return 'http://localhost:3000';
-    }
-    
-    // For production, update this with your actual production URL
-    console.log('SMB Chat Widget: Using production API');
-    return 'https://leads-support-agent.onrender.com';
+    // Always use the Render URL for now
+    const renderUrl = 'https://leads-support-agent.onrender.com/';
+    console.log('SMB Chat Widget: Using API at', renderUrl);
+    return renderUrl;
   })();
 
   // State
@@ -389,7 +376,7 @@
       
       // Show welcome message if first time
       if (conversationHistory.length === 0) {
-        const welcomeMessage = "Hello! How can I help you today?";
+        const welcomeMessage = "Hey! How can I help you today?";
         addMessageToChat(welcomeMessage, 'ai');
         // SAFEGUARD: Ensure content is always a string
         conversationHistory.push({ role: 'assistant', content: String(welcomeMessage) });
