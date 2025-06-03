@@ -17,9 +17,29 @@
 
   // Configuration
   const API_BASE_URL = (() => {
-    // Use Render deployment server
+    // Try to get the API URL from the script tag's data attribute
+    const apiUrl = currentScript ? currentScript.getAttribute('data-api-url') : null;
+    
+    if (apiUrl) {
+      console.log('SMB Chat Widget: Using API URL from data attribute:', apiUrl);
+      return apiUrl;
+    }
+    
+    // If no data attribute, try to determine from script source
+    if (currentScript && currentScript.src) {
+      try {
+        const scriptUrl = new URL(currentScript.src);
+        const apiUrl = scriptUrl.origin; // This will be without trailing slash
+        console.log('SMB Chat Widget: Using API URL from script source:', apiUrl);
+        return apiUrl;
+      } catch (e) {
+        console.error('SMB Chat Widget: Error parsing script URL:', e);
+      }
+    }
+    
+    // Fallback to Render deployment server
     const renderUrl = 'https://leads-support-agent.onrender.com';
-    console.log('SMB Chat Widget: Using API at', renderUrl);
+    console.log('SMB Chat Widget: Using fallback API URL:', renderUrl);
     return renderUrl;
   })();
 
@@ -524,8 +544,10 @@
     });
 
     try {
-      const chatEndpoint = `${API_BASE_URL}/api/chat`;
-      console.log('Sending request to:', chatEndpoint);
+      // Use URL constructor for robust URL handling
+      const relativePath = '/api/chat';
+      const chatEndpoint = new URL(relativePath, API_BASE_URL).href;
+      console.log('SMB Chat Widget: Constructed chat endpoint:', chatEndpoint);
       
       const response = await fetch(chatEndpoint, {
         method: 'POST',
