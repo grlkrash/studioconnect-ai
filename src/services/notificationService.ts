@@ -18,14 +18,23 @@ const initializeTransporter = async () => {
   console.log('NODE_ENV:', process.env.NODE_ENV)
   console.log('SENDGRID_API_KEY exists:', !!process.env.SENDGRID_API_KEY)
   console.log('SENDGRID_API_KEY starts with SG.:', process.env.SENDGRID_API_KEY?.startsWith('SG.'))
+  console.log('SENDGRID_API_KEY length:', process.env.SENDGRID_API_KEY?.length || 0)
   console.log('Production check:', process.env.NODE_ENV === 'production')
   console.log('Both conditions:', process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY)
   console.log('================================')
   
   if (process.env.SENDGRID_API_KEY) {
     console.log('Email Service: Initializing SendGrid transporter.')
+    console.log('SendGrid API Key (first 10 chars):', process.env.SENDGRID_API_KEY.substring(0, 10) + '...')
     const options = { auth: { api_key: process.env.SENDGRID_API_KEY } }
-    transporter = nodemailer.createTransport(sgTransport(options))
+    console.log('SendGrid options created:', JSON.stringify(options, null, 2))
+    try {
+      transporter = nodemailer.createTransport(sgTransport(options))
+      console.log('SendGrid transporter created successfully')
+    } catch (error) {
+      console.error('Error creating SendGrid transporter:', error)
+      throw error
+    }
   } else {
     console.log('Email Service: SendGrid not configured or not in production. Initializing Ethereal transporter.')
     try {
@@ -250,13 +259,19 @@ This is an automated notification from your AI Lead Agent.
 
     // Send the email
     try {
+      console.log('About to send email using transporter type:', transporter.transporter?.name || 'unknown')
+      console.log('Transporter options:', JSON.stringify(transporter.options, null, 2))
+      
       const info = await transporter.sendMail(mailOptions)
       console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
+      
       if (info && info.messageId) {
         console.log(`Email Message ID: ${info.messageId}`)
       } else {
         console.warn('Email sent, but no messageId found in info object.')
+        console.warn('This suggests Ethereal or jsonTransport is being used instead of SendGrid')
       }
+      
       // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
       if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
         console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
@@ -467,13 +482,19 @@ This is an automated message. Please do not reply to this email.
 
     // Send the email
     try {
+      console.log('About to send email using transporter type:', transporter.transporter?.name || 'unknown')
+      console.log('Transporter options:', JSON.stringify(transporter.options, null, 2))
+      
       const info = await transporter.sendMail(mailOptions)
       console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
+      
       if (info && info.messageId) {
         console.log(`Email Message ID: ${info.messageId}`)
       } else {
         console.warn('Email sent, but no messageId found in info object.')
+        console.warn('This suggests Ethereal or jsonTransport is being used instead of SendGrid')
       }
+      
       // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
       if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
         console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
