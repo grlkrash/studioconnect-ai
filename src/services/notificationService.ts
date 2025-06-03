@@ -1,12 +1,42 @@
 import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
+import sgTransport from 'nodemailer-sendgrid-transport'
 
 // Initialize Twilio client
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 )
+
+// Initialize email transporter
+let transporter: nodemailer.Transporter
+
+const initializeTransporter = async () => {
+  if (process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY) {
+    console.log('Email Service: Initializing SendGrid transporter.')
+    const options = { auth: { api_key: process.env.SENDGRID_API_KEY } }
+    transporter = nodemailer.createTransport(sgTransport(options))
+  } else {
+    console.log('Email Service: SendGrid not configured or not in production. Initializing Ethereal transporter.')
+    try {
+      const testAccount = await nodemailer.createTestAccount()
+      console.log('Ethereal test account User: %s Pass: %s', testAccount.user, testAccount.pass)
+      transporter = nodemailer.createTransport({
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+      })
+    } catch (err) {
+      console.error('Failed to create Ethereal test account, email sending will fail:', err)
+      transporter = nodemailer.createTransport({ jsonTransport: true })
+    }
+  }
+}
+
+// Initialize transporter when module loads
+initializeTransporter()
 
 /**
  * Sends an email notification to the HSP when a new lead is captured
@@ -22,45 +52,36 @@ export async function sendLeadNotificationEmail(
   businessName: string
 ): Promise<void> {
   try {
+    if (!transporter) {
+      console.error('Email transporter not initialized. Cannot send notification.')
+      return
+    }
+
     console.log(`Sending lead notification email to ${toEmail}...`)
 
     // Extract contact info from capturedData if not in dedicated fields
-    let contactName = leadDetails.contactName;
-    let contactEmail = leadDetails.contactEmail;
-    let contactPhone = leadDetails.contactPhone;
+    let contactName = leadDetails.contactName
+    let contactEmail = leadDetails.contactEmail
+    let contactPhone = leadDetails.contactPhone
 
     // If dedicated fields are empty, try to extract from capturedData
     if (!contactName || !contactEmail || !contactPhone) {
-      const capturedData = leadDetails.capturedData || {};
+      const capturedData = leadDetails.capturedData || {}
       
       // Look for name in common question patterns
       for (const [question, answer] of Object.entries(capturedData)) {
-        const lowerQuestion = question.toLowerCase();
+        const lowerQuestion = question.toLowerCase()
         if (!contactName && (lowerQuestion.includes('name') || lowerQuestion.includes('full name'))) {
-          contactName = answer as string;
+          contactName = answer as string
         }
         if (!contactEmail && (lowerQuestion.includes('email') || lowerQuestion.includes('e-mail'))) {
-          contactEmail = answer as string;
+          contactEmail = answer as string
         }
         if (!contactPhone && (lowerQuestion.includes('phone') || lowerQuestion.includes('number'))) {
-          contactPhone = answer as string;
+          contactPhone = answer as string
         }
       }
     }
-
-    // Create a test account using Ethereal Email
-    const testAccount = await nodemailer.createTestAccount()
-
-    // Create a transporter using the test account credentials
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
-      }
-    })
 
     // Format the priority for display
     const priorityDisplay = leadPriority || 'NORMAL'
@@ -192,11 +213,10 @@ export async function sendLeadNotificationEmail(
 
     // Construct the email options
     const mailOptions: Mail.Options = {
-      from: '"AI Lead Agent" <noreply@example.com>',
+      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
       to: toEmail,
       subject: `New ${priorityDisplay} Priority Lead from ${businessName} AI Agent: ${contactName || 'N/A'}`,
       html: htmlContent,
-      // Also include a text version for better email client compatibility
       text: `
 New ${priorityDisplay} Priority Lead
 
@@ -224,12 +244,12 @@ This is an automated notification from your AI Lead Agent.
 
     // Log success and preview URL
     console.log('Lead notification email sent! Message ID:', info.messageId)
-    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
+      console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    }
 
   } catch (error) {
     console.error('Failed to send lead notification email:', error)
-    // Don't throw the error - we don't want email failures to break the lead capture flow
-    // In production, you might want to log this to a monitoring service
   }
 }
 
@@ -298,21 +318,12 @@ export async function sendLeadConfirmationToCustomer(
   isEmergency: boolean
 ): Promise<void> {
   try {
+    if (!transporter) {
+      console.error('Email transporter not initialized. Cannot send customer confirmation.')
+      return
+    }
+
     console.log(`Sending confirmation email to customer ${customerEmail}...`)
-
-    // Create a test account using Ethereal Email
-    const testAccount = await nodemailer.createTestAccount()
-
-    // Create a transporter using the test account credentials
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
-      }
-    })
 
     // Extract customer name from various possible sources
     const customerName = leadDetails.contactName || 
@@ -391,11 +402,10 @@ export async function sendLeadConfirmationToCustomer(
 
     // Construct the email options
     const mailOptions: Mail.Options = {
-      from: `"${businessName}" <noreply@example.com>`,
+      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
       to: customerEmail,
       subject: `Your inquiry with ${businessName} has been received!`,
       html: htmlContent,
-      // Also include a text version for better email client compatibility
       text: `
 Hi ${customerName},
 
@@ -422,10 +432,12 @@ This is an automated message. Please do not reply to this email.
 
     // Log success and preview URL
     console.log('Customer confirmation email sent! Message ID:', info.messageId)
-    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
+      console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info))
+    }
 
   } catch (error) {
     console.error('Failed to send customer confirmation email:', error)
-    // Don't throw the error - we don't want email failures to break the lead capture flow
   }
+}
 }
