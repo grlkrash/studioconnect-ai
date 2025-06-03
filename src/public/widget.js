@@ -49,75 +49,46 @@
       justify-content: center;
       z-index: 9998;
       transition: transform 0.2s, box-shadow 0.2s;
-      animation: glow 3s ease-in-out infinite;
+      /* Enhanced AI animated glow */
+      animation: ai-glow 2.5s ease-in-out infinite;
     }
 
-    @keyframes glow {
+    @keyframes ai-glow {
       0%, 100% {
-        box-shadow: 
-          0 0 5px rgba(37, 99, 235, 1),
-          0 0 15px rgba(37, 99, 235, 0.9),
-          0 0 25px rgba(37, 99, 235, 0.8),
-          0 0 35px rgba(147, 51, 234, 0.7),
-          0 0 45px rgba(147, 51, 234, 0.6),
-          0 0 55px rgba(236, 72, 153, 0.5),
-          0 0 65px rgba(59, 130, 246, 0.4),
-          0 0 75px rgba(147, 51, 234, 0.3),
-          0 0 85px rgba(37, 99, 235, 0.2),
-          0 0 100px rgba(236, 72, 153, 0.15),
-          inset 0 0 20px rgba(255, 255, 255, 0.3),
-          0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow:
+          0 0 8px 2px #2563eb,
+          0 0 24px 8px #9333ea66,
+          0 0 40px 16px #ec489966,
+          0 4px 12px rgba(0,0,0,0.15);
       }
       25% {
-        box-shadow: 
-          0 0 5px rgba(147, 51, 234, 1),
-          0 0 15px rgba(147, 51, 234, 0.9),
-          0 0 25px rgba(147, 51, 234, 0.8),
-          0 0 35px rgba(236, 72, 153, 0.7),
-          0 0 45px rgba(236, 72, 153, 0.6),
-          0 0 55px rgba(59, 130, 246, 0.5),
-          0 0 65px rgba(37, 99, 235, 0.4),
-          0 0 75px rgba(236, 72, 153, 0.3),
-          0 0 85px rgba(147, 51, 234, 0.2),
-          0 0 100px rgba(59, 130, 246, 0.15),
-          inset 0 0 20px rgba(255, 255, 255, 0.3),
-          0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow:
+          0 0 12px 4px #9333ea,
+          0 0 28px 12px #ec489966,
+          0 0 44px 20px #2563eb66,
+          0 4px 12px rgba(0,0,0,0.15);
       }
       50% {
-        box-shadow: 
-          0 0 5px rgba(236, 72, 153, 1),
-          0 0 15px rgba(236, 72, 153, 0.9),
-          0 0 25px rgba(236, 72, 153, 0.8),
-          0 0 35px rgba(59, 130, 246, 0.7),
-          0 0 45px rgba(59, 130, 246, 0.6),
-          0 0 55px rgba(37, 99, 235, 0.5),
-          0 0 65px rgba(147, 51, 234, 0.4),
-          0 0 75px rgba(59, 130, 246, 0.3),
-          0 0 85px rgba(236, 72, 153, 0.2),
-          0 0 100px rgba(37, 99, 235, 0.15),
-          inset 0 0 20px rgba(255, 255, 255, 0.3),
-          0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow:
+          0 0 16px 6px #ec4899,
+          0 0 32px 16px #2563eb66,
+          0 0 48px 24px #9333ea66,
+          0 4px 12px rgba(0,0,0,0.15);
       }
       75% {
-        box-shadow: 
-          0 0 5px rgba(59, 130, 246, 1),
-          0 0 15px rgba(59, 130, 246, 0.9),
-          0 0 25px rgba(59, 130, 246, 0.8),
-          0 0 35px rgba(37, 99, 235, 0.7),
-          0 0 45px rgba(37, 99, 235, 0.6),
-          0 0 55px rgba(147, 51, 234, 0.5),
-          0 0 65px rgba(236, 72, 153, 0.4),
-          0 0 75px rgba(37, 99, 235, 0.3),
-          0 0 85px rgba(59, 130, 246, 0.2),
-          0 0 100px rgba(147, 51, 234, 0.15),
-          inset 0 0 20px rgba(255, 255, 255, 0.3),
-          0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow:
+          0 0 12px 4px #2563eb,
+          0 0 28px 12px #9333ea66,
+          0 0 44px 20px #ec489966,
+          0 4px 12px rgba(0,0,0,0.15);
       }
     }
 
-    .smb-chat-bubble:hover {
-      transform: scale(1.05);
-      animation-play-state: paused;
+    /* Remove glow when chat is open */
+    .smb-chat-window.open ~ .smb-chat-bubble,
+    .smb-chat-bubble.open {
+      animation: none !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.18);
     }
 
     .smb-chat-bubble-icon {
@@ -325,25 +296,35 @@
       }
 
       .smb-chat-bubble {
-        bottom: calc(32px + env(safe-area-inset-bottom, 0px) + 48px); /* Higher for iOS browser bar */
+        bottom: calc(32px + env(safe-area-inset-bottom, 0px) + 48px);
         right: 16px;
         width: 56px;
         height: 56px;
-        box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18);
         border: 2px solid #fff;
         background: #2563eb;
-        animation: none; /* Remove animation on mobile for better performance */
+        /* Lighter but visible AI glow for mobile */
+        animation: ai-glow-mobile 2.5s ease-in-out infinite;
       }
-      .smb-chat-bubble:active {
-        transform: scale(0.95);
+      @keyframes ai-glow-mobile {
+        0%, 100% {
+          box-shadow:
+            0 0 6px 1px #2563eb,
+            0 0 16px 4px #9333ea44,
+            0 0 24px 8px #ec489944,
+            0 2px 8px rgba(0,0,0,0.12);
+        }
+        50% {
+          box-shadow:
+            0 0 10px 2px #ec4899,
+            0 0 20px 6px #2563eb44,
+            0 0 28px 12px #9333ea44,
+            0 2px 8px rgba(0,0,0,0.12);
+        }
       }
-      @keyframes pulse {
-        0% { box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18); }
-        50% { box-shadow: 0 12px 40px rgba(37, 99, 235, 0.5), 0 2px 8px rgba(0,0,0,0.22); }
-        100% { box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35), 0 2px 8px rgba(0,0,0,0.18); }
-      }
-      .smb-chat-bubble {
-        animation: pulse 2s ease-in-out infinite;
+      .smb-chat-window.open ~ .smb-chat-bubble,
+      .smb-chat-bubble.open {
+        animation: none !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
       }
 
       .smb-chat-bubble-icon {
