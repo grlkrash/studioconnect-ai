@@ -20,10 +20,10 @@ const initializeTransporter = async () => {
   console.log('SENDGRID_API_KEY starts with SG.:', process.env.SENDGRID_API_KEY?.startsWith('SG.'))
   console.log('SENDGRID_API_KEY length:', process.env.SENDGRID_API_KEY?.length || 0)
   console.log('Production check:', process.env.NODE_ENV === 'production')
-  console.log('Both conditions:', process.env.NODE_ENV === 'production' && process.env.SENDGRID_API_KEY)
   console.log('================================')
   
-  if (process.env.SENDGRID_API_KEY) {
+  // Try SendGrid first if API key is properly configured
+  if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY.startsWith('SG.')) {
     console.log('Email Service: Initializing SendGrid transporter.')
     console.log('SendGrid API Key (first 10 chars):', process.env.SENDGRID_API_KEY.substring(0, 10) + '...')
     const options = { auth: { api_key: process.env.SENDGRID_API_KEY } }
@@ -31,25 +31,41 @@ const initializeTransporter = async () => {
     try {
       transporter = nodemailer.createTransport(sgTransport(options))
       console.log('SendGrid transporter created successfully')
+      
+      // Verify the transporter works
+      await transporter.verify()
+      console.log('SendGrid transporter verified successfully - emails will be sent via SendGrid')
+      return // Exit successfully
     } catch (error) {
-      console.error('Error creating SendGrid transporter:', error)
-      throw error
+      console.error('Error with SendGrid transporter:', error)
+      console.log('SendGrid verification failed, falling back to test email...')
     }
   } else {
-    console.log('Email Service: SendGrid not configured or not in production. Initializing Ethereal transporter.')
-    try {
-      const testAccount = await nodemailer.createTestAccount()
-      console.log('Ethereal test account User: %s Pass: %s', testAccount.user, testAccount.pass)
-      transporter = nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-      })
-    } catch (err) {
-      console.error('Failed to create Ethereal test account, email sending will fail:', err)
-      transporter = nodemailer.createTransport({ jsonTransport: true })
+    console.log('Email Service: SendGrid not properly configured.')
+    if (!process.env.SENDGRID_API_KEY) {
+      console.log('Reason: SENDGRID_API_KEY environment variable not set')
+    } else if (!process.env.SENDGRID_API_KEY.startsWith('SG.')) {
+      console.log('Reason: SENDGRID_API_KEY does not start with "SG." - invalid format')
+      console.log('Current key starts with:', process.env.SENDGRID_API_KEY.substring(0, 3))
     }
+  }
+  
+  // Fallback to test email service
+  console.log('Using Ethereal test email service - emails will NOT be delivered to real addresses')
+  try {
+    const testAccount = await nodemailer.createTestAccount()
+    console.log('Ethereal test account User: %s Pass: %s', testAccount.user, testAccount.pass)
+    transporter = nodemailer.createTransport({
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
+      auth: { user: testAccount.user, pass: testAccount.pass },
+    })
+    console.log('Ethereal transporter created - check logs for preview URLs')
+  } catch (err) {
+    console.error('Failed to create Ethereal test account, email sending will fail:', err)
+    transporter = nodemailer.createTransport({ jsonTransport: true })
+    console.log('Using jsonTransport fallback - emails will be logged but not sent')
   }
 }
 

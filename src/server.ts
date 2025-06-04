@@ -35,14 +35,19 @@ const PORT = process.env.PORT || 3000
 // CORS configuration - MUST BE FIRST MIDDLEWARE
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-    console.log("[CORS Debug] Request Origin:", origin)
+    // Only log detailed CORS info for actual browser requests (not health checks/internal calls)
+    if (origin) {
+      console.log("[CORS Debug] Request Origin:", origin)
+    }
     
-    // Debug logs for environment variables at the moment of CORS check
-    console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
-    console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL)
-    console.log("[CORS Env Check] WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL)
-    console.log("[CORS Env Check] WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
-    console.log("[CORS Env Check] FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
+    // Debug logs for environment variables at the moment of CORS check (only for requests with origin)
+    if (origin) {
+      console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL)
+      console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL)
+      console.log("[CORS Env Check] WIDGET_DEMO_URL:", process.env.WIDGET_DEMO_URL)
+      console.log("[CORS Env Check] WIDGET_TEST_URL:", process.env.WIDGET_TEST_URL)
+      console.log("[CORS Env Check] FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL)
+    }
 
     const allowedOrigins = [
       process.env.APP_PRIMARY_URL,
@@ -56,10 +61,15 @@ const corsOptions = {
       .filter(Boolean) // Remove undefined/null values
       .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
 
-    console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins)
+    if (origin) {
+      console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins)
+    }
 
+    // Allow requests without origin (same-origin, Postman, curl, health checks, etc.)
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("[CORS Debug] Allowing origin:", origin || 'undefined/null', "Allowed List:", allowedOrigins)
+      if (origin) {
+        console.log("[CORS Debug] Allowing origin:", origin, "Allowed List:", allowedOrigins)
+      }
       callback(null, true)
     } else {
       console.log("[CORS Debug] Blocking origin:", origin, "| Allowed List:", allowedOrigins)

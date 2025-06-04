@@ -592,6 +592,102 @@ router.get('/logout', (req, res) => {
   res.redirect('/admin/login')
 })
 
+// Test SendGrid configuration endpoint
+router.post('/test-sendgrid', authMiddleware, async (req, res) => {
+  try {
+    const { testEmail } = req.body
+    
+    if (!testEmail || !testEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid test email address required' })
+    }
+
+    console.log('=== TESTING SENDGRID CONFIGURATION ===')
+    console.log('Test email will be sent to:', testEmail)
+    
+    // Check SendGrid configuration
+    if (!process.env.SENDGRID_API_KEY) {
+      console.log('❌ SENDGRID_API_KEY not found in environment')
+      return res.status(500).json({ 
+        error: 'SENDGRID_API_KEY not configured',
+        details: 'Environment variable SENDGRID_API_KEY is missing'
+      })
+    }
+    
+    if (!process.env.SENDGRID_API_KEY.startsWith('SG.')) {
+      console.log('❌ SENDGRID_API_KEY has invalid format')
+      console.log('Key starts with:', process.env.SENDGRID_API_KEY.substring(0, 3))
+      return res.status(500).json({ 
+        error: 'Invalid SENDGRID_API_KEY format',
+        details: 'API key must start with "SG."'
+      })
+    }
+
+    console.log('✅ SENDGRID_API_KEY found and has correct format')
+    console.log('Key length:', process.env.SENDGRID_API_KEY.length)
+    console.log('Key starts with:', process.env.SENDGRID_API_KEY.substring(0, 10) + '...')
+
+    // Test direct SendGrid connection
+    const sgTransport = await import('nodemailer-sendgrid-transport')
+    const nodemailer = await import('nodemailer')
+    
+    const testTransporter = nodemailer.default.createTransport(sgTransport.default({
+      auth: { api_key: process.env.SENDGRID_API_KEY }
+    }))
+
+    console.log('📧 Testing SendGrid transporter verification...')
+    await testTransporter.verify()
+    console.log('✅ SendGrid transporter verified successfully')
+
+    // Send test email
+    console.log('📤 Sending test email...')
+    const testMailOptions = {
+      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
+      to: testEmail,
+      subject: '🧪 SendGrid Test Email - Lead Agent System',
+      html: `
+        <h2>✅ SendGrid Configuration Test Successful!</h2>
+        <p>This test email confirms that your SendGrid configuration is working properly.</p>
+        <p><strong>Sent at:</strong> ${new Date().toISOString()}</p>
+        <p><strong>From:</strong> Your Lead Agent System</p>
+        <hr>
+        <small>This is an automated test email. You can safely delete it.</small>
+      `,
+      text: `
+SendGrid Configuration Test Successful!
+
+This test email confirms that your SendGrid configuration is working properly.
+
+Sent at: ${new Date().toISOString()}
+From: Your Lead Agent System
+
+This is an automated test email. You can safely delete it.
+      `
+    }
+
+    const info = await testTransporter.sendMail(testMailOptions)
+    console.log('✅ Test email sent successfully!')
+    console.log('SendGrid response:', JSON.stringify(info, null, 2))
+
+    res.status(200).json({
+      success: true,
+      message: 'SendGrid test email sent successfully',
+      details: {
+        sentTo: testEmail,
+        messageId: info.messageId,
+        sendGridResponse: info
+      }
+    })
+
+  } catch (error) {
+    console.error('❌ SendGrid test failed:', error)
+    res.status(500).json({
+      success: false,
+      error: 'SendGrid test failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
 // Update Knowledge Base Entry
 router.put('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
   try {
