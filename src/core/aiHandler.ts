@@ -431,8 +431,12 @@ User's Question: ${message}`
             currentFlow: null
           }
         } else {
+          // Use custom completion message if available, otherwise use default
+          const completionMessage = agentConfig?.leadCaptureCompletionMessage || 
+            "Thanks for providing that information! Our team will review it and get back to you shortly."
+          
           return { 
-            reply: "Thanks for providing that information! Our team will review it and get back to you shortly.",
+            reply: completionMessage,
             currentFlow: null
           }
         }

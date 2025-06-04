@@ -151,7 +151,7 @@ router.post('/config', authMiddleware, async (req, res) => {
     const businessId = req.user!.businessId
 
     // Extract configuration details from request body
-    const { agentName, personaPrompt, welcomeMessage, colorTheme } = req.body
+    const { agentName, personaPrompt, welcomeMessage, leadCaptureCompletionMessage, colorTheme } = req.body
 
     // Basic validation
     if (!agentName || !personaPrompt || !welcomeMessage) {
@@ -168,12 +168,14 @@ router.post('/config', authMiddleware, async (req, res) => {
         agentName,
         personaPrompt,
         welcomeMessage,
+        leadCaptureCompletionMessage,
         colorTheme: colorTheme || {}
       },
       update: {
         agentName,
         personaPrompt,
         welcomeMessage,
+        leadCaptureCompletionMessage,
         colorTheme: colorTheme || {}
       }
     })
