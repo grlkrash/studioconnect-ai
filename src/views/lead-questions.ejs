@@ -56,6 +56,17 @@
             font-weight: bold;
             color: #555;
         }
+        label[for="isEssentialForEmergency"] {
+            display: flex;
+            align-items: center;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        label[for="isEssentialForEmergency"] input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
+            margin-bottom: 0;
+        }
         textarea,
         select,
         input[type="text"],
@@ -153,6 +164,7 @@
                         <th>Question Text</th>
                         <th>Expected Format</th>
                         <th>Maps To Lead Field</th>
+                        <th>Essential for Emergency</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -163,13 +175,15 @@
                             <td><%= question.questionText %></td>
                             <td><%= question.expectedFormat %></td>
                             <td><%= question.mapsToLeadField || 'N/A' %></td>
+                            <td><%= question.isEssentialForEmergency ? 'Yes' : 'No' %></td>
                             <td class="action-buttons">
                                 <button class="edit-btn" 
                                         data-id="<%= question.id %>"
                                         data-text="<%= question.questionText %>"
                                         data-format="<%= question.expectedFormat %>"
                                         data-order="<%= question.order %>"
-                                        data-maps-to="<%= question.mapsToLeadField || '' %>">
+                                        data-maps-to="<%= question.mapsToLeadField || '' %>"
+                                        data-essential="<%= question.isEssentialForEmergency %>">
                                     Edit
                                 </button>
                                 <button class="delete-btn" data-id="<%= question.id %>">Delete</button>
@@ -210,6 +224,14 @@
             </div>
 
             <div class="form-group">
+                <label for="isEssentialForEmergency">
+                    <input type="checkbox" id="isEssentialForEmergency" name="isEssentialForEmergency" value="true">
+                    Essential for Emergency Situations
+                </label>
+                <small>Check this if this question should be asked even in emergency situations where we want to minimize questions</small>
+            </div>
+
+            <div class="form-group">
                 <label for="order">Order:</label>
                 <input type="number" id="order" name="order" required>
             </div>
@@ -227,6 +249,7 @@
         const expectedFormatSelect = document.getElementById('expectedFormat');
         const orderInput = document.getElementById('order');
         const mapsToLeadFieldInput = document.getElementById('mapsToLeadField');
+        const isEssentialForEmergencyCheckbox = document.getElementById('isEssentialForEmergency');
         const submitButton = addQuestionForm.querySelector('button[type="submit"]');
         const formFeedback = document.getElementById('formFeedback');
         let currentlyEditingQuestionId = null;
@@ -240,7 +263,8 @@
                 questionText: questionTextInput.value.trim(),
                 expectedFormat: expectedFormatSelect.value,
                 order: parseInt(orderInput.value, 10),
-                mapsToLeadField: mapsToLeadFieldInput.value.trim() || null
+                mapsToLeadField: mapsToLeadFieldInput.value.trim() || null,
+                isEssentialForEmergency: isEssentialForEmergencyCheckbox.checked
             };
 
             let url = '/api/admin/config/questions';
@@ -294,12 +318,14 @@
                 const format = this.dataset.format;
                 const order = this.dataset.order;
                 const mapsTo = this.dataset.mapsTo;
+                const essential = this.dataset.essential;
 
                 // Populate form with question data
                 questionTextInput.value = text;
                 expectedFormatSelect.value = format;
                 orderInput.value = order;
                 mapsToLeadFieldInput.value = mapsTo;
+                isEssentialForEmergencyCheckbox.checked = essential === 'true';
 
                 // Update form state for editing
                 currentlyEditingQuestionId = id;

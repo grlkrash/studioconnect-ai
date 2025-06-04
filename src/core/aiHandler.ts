@@ -67,6 +67,41 @@ export const processMessage = async (
           shouldForceLeadCapture = true
         }
       }
+
+      // Check if the last assistant message was an FAQ fallback offer and user responded positively
+      if (!shouldForceLeadCapture && lastAssistantMessage) {
+        const isFAQFallbackOffer = lastAssistantMessage.content.includes("I couldn't find a specific answer to that in my current knowledge") && 
+                                  lastAssistantMessage.content.includes("Would you like me to take down your details")
+        
+        if (isFAQFallbackOffer) {
+          console.log('Last message was FAQ fallback offer, checking user response...')
+          
+          // Use AI to detect positive intent more intelligently
+          const intentCheckPrompt = `The user was asked: "Would you like me to take down your details so someone from our team can get back to you with the information you need?"
+
+User's response: "${message}"
+
+Does this response indicate they want to proceed with providing their details? Consider responses like:
+- Explicit yes/agreement: "yes", "sure", "okay", "please do"  
+- Implicit agreement: "that would be great", "sounds good", "go ahead"
+- Conditional agreement: "yes, if you could", "that would be helpful"
+- Questions showing interest: "what details do you need?", "how does that work?"
+
+Respond with only YES or NO.`
+          
+          const isPositiveResponse = await getChatCompletion(
+            intentCheckPrompt,
+            "You are an intent detection expert focused on identifying user agreement to proceed with lead capture."
+          )
+          
+          if ((isPositiveResponse || 'NO').trim().toUpperCase() === 'YES') {
+            console.log('User responded positively to FAQ fallback offer, transitioning to lead capture')
+            shouldForceLeadCapture = true
+          } else {
+            console.log('User declined or responded negatively to FAQ fallback offer')
+          }
+        }
+      }
     }
 
     // Step 1: Intent Recognition
@@ -140,10 +175,10 @@ User's Question: ${message}`
           currentFlow: null
         }
       } else {
-        // No relevant knowledge found
-        console.log('No relevant knowledge found in FAQ flow')
+        // No relevant knowledge found - offer to take details for follow-up
+        console.log('No relevant knowledge found in FAQ flow - offering lead capture')
         return { 
-          reply: "I couldn't find specific information on that. How else can I help?",
+          reply: "I couldn't find a specific answer to that in my current knowledge. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
           currentFlow: null
         }
       }
@@ -445,6 +480,40 @@ User's Question: ${message}`
     } else {
       // OTHER/Fallback Flow
       console.log('Entering OTHER/fallback flow...')
+      
+      // Check if user just declined the FAQ fallback offer
+      const lastAssistantMessage = [...conversationHistory].reverse().find(msg => msg.role === 'assistant')
+      if (lastAssistantMessage && 
+          lastAssistantMessage.content.includes("I couldn't find a specific answer to that in my current knowledge") && 
+          lastAssistantMessage.content.includes("Would you like me to take down your details")) {
+        
+        console.log('User appears to have declined FAQ fallback offer, providing alternative help')
+        
+        // Use AI to detect if this is a decline and provide helpful alternative
+        const declineCheckPrompt = `The user was asked: "Would you like me to take down your details so someone from our team can get back to you with the information you need?"
+
+User's response: "${message}"
+
+Does this response indicate they declined or don't want to provide details? Consider responses like:
+- Explicit no: "no", "no thanks", "not right now"
+- Soft decline: "maybe later", "I'll think about it"
+- Deflection: changing subject, asking different questions
+
+Respond with only YES or NO.`
+        
+        const isDeclineResponse = await getChatCompletion(
+          declineCheckPrompt,
+          "You are an intent detection expert focused on identifying user decline or reluctance."
+        )
+        
+        if ((isDeclineResponse || 'NO').trim().toUpperCase() === 'YES') {
+          console.log('User declined FAQ fallback offer, providing alternative assistance')
+          return {
+            reply: "No problem! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
+            currentFlow: null
+          }
+        }
+      }
       
       // Check if this is the start of a conversation
       if (conversationHistory.length === 0 && agentConfig?.welcomeMessage) {

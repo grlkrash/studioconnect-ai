@@ -233,7 +233,7 @@ router.post('/config/questions', authMiddleware, async (req, res) => {
     const businessId = req.user!.businessId
 
     // Extract question details from request body
-    const { questionText, expectedFormat, order } = req.body
+    const { questionText, expectedFormat, order, mapsToLeadField, isEssentialForEmergency } = req.body
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
@@ -268,6 +268,8 @@ router.post('/config/questions', authMiddleware, async (req, res) => {
         questionText,
         expectedFormat: expectedFormat || 'TEXT', // Default to TEXT if not provided
         order: Number(order), // Ensure order is a number
+        mapsToLeadField: mapsToLeadField || null,
+        isEssentialForEmergency: Boolean(isEssentialForEmergency), // Convert to boolean, default false
         configId: agentConfig.id
       }
     })
@@ -302,7 +304,7 @@ router.put('/config/questions/:questionId', authMiddleware, async (req, res) => 
     const questionId = req.params.questionId
 
     // Extract question details from request body
-    const { questionText, expectedFormat, order, mapsToLeadField } = req.body
+    const { questionText, expectedFormat, order, mapsToLeadField, isEssentialForEmergency } = req.body
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
@@ -339,7 +341,8 @@ router.put('/config/questions/:questionId', authMiddleware, async (req, res) => 
         questionText,
         expectedFormat: expectedFormat || 'TEXT',
         order: Number(order),
-        mapsToLeadField
+        mapsToLeadField: mapsToLeadField || null,
+        isEssentialForEmergency: Boolean(isEssentialForEmergency) // Convert to boolean
       }
     })
 
