@@ -85,219 +85,97 @@ export async function sendLeadNotificationEmail(
   leadPriority: string | null,
   businessName: string
 ): Promise<void> {
-  try {
-    if (!transporter) {
-      console.error('Email transporter not initialized. Cannot send notification.')
-      return
-    }
+  if (!transporter) {
+    console.error('Email transporter not initialized. Cannot send HSP notification.');
+    return;
+  }
 
-    console.log(`Sending lead notification email to ${toEmail}...`)
+  const fromEmail = process.env.FROM_EMAIL || '"AI Lead Agent" <noreply@example.com>';
+  const contactName = leadDetails.contactName || (leadDetails.capturedData && leadDetails.capturedData["What is your full name, please?"]) || "N/A";
+  const subject = `New ${leadPriority || 'NORMAL'} Priority Lead for ${businessName}: ${contactName}`;
 
-    // Extract contact info from capturedData if not in dedicated fields
-    let contactName = leadDetails.contactName
-    let contactEmail = leadDetails.contactEmail
-    let contactPhone = leadDetails.contactPhone
+  // --- Start Building Human-Readable HTML Body ---
+  let htmlBody = `<p>Hello ${businessName} team,</p>`;
+  htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> lead captured by your AI Assistant.</p>`;
+  
+  if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
+    htmlBody += `<p style="color:red; font-weight:bold;">Emergency Note: ${leadDetails.capturedData.emergency_notes}</p>`;
+  }
 
-    // If dedicated fields are empty, try to extract from capturedData
-    if (!contactName || !contactEmail || !contactPhone) {
-      const capturedData = leadDetails.capturedData || {}
-      
-      // Look for name in common question patterns
-      for (const [question, answer] of Object.entries(capturedData)) {
-        const lowerQuestion = question.toLowerCase()
-        if (!contactName && (lowerQuestion.includes('name') || lowerQuestion.includes('full name'))) {
-          contactName = answer as string
-        }
-        if (!contactEmail && (lowerQuestion.includes('email') || lowerQuestion.includes('e-mail'))) {
-          contactEmail = answer as string
-        }
-        if (!contactPhone && (lowerQuestion.includes('phone') || lowerQuestion.includes('number'))) {
-          contactPhone = answer as string
-        }
+  htmlBody += `<h3>Lead Details:</h3>`;
+  htmlBody += "<ul>";
+  if (leadDetails.contactName) {
+    htmlBody += `<li><strong>Contact Name:</strong> ${leadDetails.contactName}</li>`;
+  }
+  if (leadDetails.contactEmail) {
+    htmlBody += `<li><strong>Contact Email:</strong> ${leadDetails.contactEmail}</li>`;
+  }
+  if (leadDetails.contactPhone) {
+    htmlBody += `<li><strong>Contact Phone:</strong> ${leadDetails.contactPhone}</li>`;
+  }
+  if (leadDetails.notes) {
+    htmlBody += `<li><strong>Notes/Description:</strong> ${leadDetails.notes}</li>`;
+  }
+  htmlBody += `<li><strong>Status:</strong> ${leadDetails.status || 'NEW'}</li>`;
+  htmlBody += `<li><strong>Captured At:</strong> ${new Date(leadDetails.createdAt).toLocaleString()}</li>`;
+  htmlBody += "</ul>";
+
+  // Format Captured Data (the Q&A from lead capture flow)
+  if (leadDetails.capturedData && typeof leadDetails.capturedData === 'object') {
+    htmlBody += `<h3>All Captured Information:</h3>`;
+    htmlBody += "<ul>";
+    for (const [question, answer] of Object.entries(leadDetails.capturedData)) {
+      // Skip internal notes if you don't want them repeated here
+      if (question !== 'emergency_notes') {
+         htmlBody += `<li><strong>${question.replace(/_/g, ' ')}:</strong> ${answer}</li>`;
       }
     }
+    htmlBody += "</ul>";
+  }
 
-    // Format the priority for display
-    const priorityDisplay = leadPriority || 'NORMAL'
-    const priorityColor = {
-      'URGENT': '#ef4444',
-      'HIGH': '#f59e0b',
-      'NORMAL': '#3b82f6',
-      'LOW': '#6b7280'
-    }[priorityDisplay] || '#3b82f6'
-
-    // Build the HTML email content
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0; }
-          .priority-badge { 
-            display: inline-block; 
-            padding: 5px 15px; 
-            border-radius: 20px; 
-            color: white; 
-            font-weight: bold;
-            background-color: ${priorityColor};
-          }
-          .content { background-color: white; padding: 20px; border: 1px solid #e9ecef; }
-          .field { margin-bottom: 15px; }
-          .field-label { font-weight: bold; color: #666; }
-          .data-box { 
-            background-color: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 14px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-          }
-          .transcript-box {
-            background-color: #f1f5f9;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 10px;
-            font-size: 14px;
-            max-height: 400px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-          }
-          .footer { 
-            background-color: #f8f9fa; 
-            padding: 15px; 
-            text-align: center; 
-            font-size: 12px; 
-            color: #666;
-            border-radius: 0 0 8px 8px;
-          }
-          .emergency-notice {
-            background-color: #fee2e2;
-            border: 2px solid #ef4444;
-            color: #991b1b;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-weight: bold;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2 style="margin: 0;">New Lead Captured</h2>
-            <p style="margin: 10px 0 0 0;">
-              <span class="priority-badge">${priorityDisplay} PRIORITY</span>
-            </p>
-          </div>
-          
-          <div class="content">
-            ${priorityDisplay === 'URGENT' ? '<div class="emergency-notice">⚠️ URGENT: This lead indicated an emergency situation and requires immediate attention!</div>' : ''}
-            
-            <div class="field">
-              <span class="field-label">Business:</span> ${businessName}
-            </div>
-            
-            <div class="field">
-              <span class="field-label">Contact Name:</span> ${contactName || 'Not provided'}
-            </div>
-            
-            <div class="field">
-              <span class="field-label">Contact Email:</span> ${contactEmail || 'Not provided'}
-            </div>
-            
-            <div class="field">
-              <span class="field-label">Contact Phone:</span> ${contactPhone || 'Not provided'}
-            </div>
-            
-            ${leadDetails.notes ? `
-            <div class="field">
-              <span class="field-label">Notes:</span>
-              <div class="data-box">${leadDetails.notes}</div>
-            </div>
-            ` : ''}
-            
-            <div class="field">
-              <span class="field-label">Captured Data:</span>
-              <div class="data-box">${JSON.stringify(leadDetails.capturedData, null, 2)}</div>
-            </div>
-            
-            <div class="field">
-              <span class="field-label">Conversation Transcript:</span>
-              <div class="transcript-box">${leadDetails.conversationTranscript}</div>
-            </div>
-            
-            <div class="field">
-              <span class="field-label">Lead Created:</span> ${new Date().toLocaleString()}
-            </div>
-          </div>
-          
-          <div class="footer">
-            <p>This is an automated notification from your AI Lead Agent.</p>
-            <p>To manage lead notifications, please update your settings in the admin dashboard.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
-
-    // Construct the email options
-    const mailOptions: Mail.Options = {
-      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
-      to: toEmail,
-      subject: `New ${priorityDisplay} Priority Lead from ${businessName} AI Agent: ${contactName || 'N/A'}`,
-      html: htmlContent,
-      text: `
-New ${priorityDisplay} Priority Lead
-
-Business: ${businessName}
-Contact Name: ${contactName || 'Not provided'}
-Contact Email: ${contactEmail || 'Not provided'}
-Contact Phone: ${contactPhone || 'Not provided'}
-${leadDetails.notes ? `Notes: ${leadDetails.notes}` : ''}
-
-Captured Data:
-${JSON.stringify(leadDetails.capturedData, null, 2)}
-
-Conversation Transcript:
-${leadDetails.conversationTranscript}
-
-Lead Created: ${new Date().toLocaleString()}
-
----
-This is an automated notification from your AI Lead Agent.
-      `.trim()
-    }
-
-    // Send the email
+  // Format Conversation Transcript
+  if (leadDetails.conversationTranscript) {
     try {
-      console.log('About to send email using transporter type:', transporter.transporter?.name || 'unknown')
-      console.log('Transporter options:', JSON.stringify(transporter.options, null, 2))
-      
-      const info = await transporter.sendMail(mailOptions)
-      console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
-      
-      if (info && info.messageId) {
-        console.log(`Email Message ID: ${info.messageId}`)
-      } else {
-        console.warn('Email sent, but no messageId found in info object.')
-        console.warn('This suggests Ethereal or jsonTransport is being used instead of SendGrid')
+      const transcript = JSON.parse(leadDetails.conversationTranscript); // It's stored as a JSON string
+      if (Array.isArray(transcript) && transcript.length > 0) {
+        htmlBody += `<h3>Conversation Snippet:</h3>`;
+        htmlBody += "<div style='border:1px solid #eee; padding:10px; max-height:300px; overflow-y:auto;'>";
+        transcript.forEach((entry: { role: string, content: string }) => {
+          if (entry.role === 'user') {
+            htmlBody += `<p><strong>User:</strong> ${entry.content}</p>`;
+          } else if (entry.role === 'assistant') {
+            htmlBody += `<p><em>Assistant:</em> ${entry.content}</p>`;
+          }
+        });
+        htmlBody += "</div>";
       }
-      
-      // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
-      if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
-        console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
-      }
-    } catch (error) {
-      console.error(`Error sending email to ${mailOptions.to}:`, error)
+    } catch (e) {
+      console.error("Could not parse conversation transcript for email:", e);
+      htmlBody += `<p><em>Conversation transcript was not available in a readable format.</em></p>`;
     }
+  }
+  
+  htmlBody += `<p>Please log in to your dashboard to view full details and manage this lead.</p>`;
+  htmlBody += `<p>Thank you,<br>Your AI Lead Agent</p>`;
+  // --- End Building Human-Readable HTML Body ---
 
+  const mailOptions = {
+    from: fromEmail,
+    to: toEmail,
+    subject,
+    html: htmlBody
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`HSP lead notification email sent. Full info object:`, JSON.stringify(info, null, 2));
+    if (info && (info.messageId || (info.message && info.message.includes('success')) || (info.response && info.response.includes('250')) )) { // Broader check for success
+      console.log(`HSP Email successfully processed by provider. Message ID (if available from info object): ${info.messageId}`);
+    } else {
+      console.warn('HSP Email processed by provider, but messageId might be missing or in a different field. Response:', info);
+    }
   } catch (error) {
-    console.error('Failed to send lead notification email:', error)
+    console.error(`Error sending HSP notification email to ${toEmail}:`, error);
   }
 }
 
