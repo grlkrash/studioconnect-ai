@@ -55,6 +55,11 @@ router.get('/settings', authMiddleware, async (req, res) => {
     // Get businessId from authenticated user
     const businessId = req.user.businessId
     
+    // Fetch Business for plan tier checking
+    const business = await prisma.business.findUnique({
+      where: { id: businessId }
+    })
+    
     // Fetch AgentConfig for this business
     const agentConfig = await prisma.agentConfig.findUnique({
       where: { businessId }
@@ -63,6 +68,7 @@ router.get('/settings', authMiddleware, async (req, res) => {
     // Render the agent settings page
     res.render('agent-settings', {
       agentConfig: agentConfig || null,
+      business: business || null,
       user: req.user,
       successMessage: req.query.success
     })

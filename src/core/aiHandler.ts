@@ -149,6 +149,12 @@ FAQ indicators (respond with FAQ if user is ONLY seeking information):
 - Past tense or hypothetical scenarios
 - No indication of current need or purchase intent
 
+END_CALL indicators (respond with END_CALL):
+- User says 'goodbye', 'bye', 'that's all', 'nothing else'
+- Expressions of completion: 'thanks, that's everything', 'I'm all set'
+- Clear intent to end conversation: 'talk to you later', 'have a good day'
+- Dismissive responses indicating they're done: 'okay thanks', 'alright'
+
 OTHER indicators:
 - Greetings, thank you messages
 - Unclear or off-topic messages
@@ -157,11 +163,11 @@ OTHER indicators:
 User message: '${message}'
 Recent history: ${JSON.stringify(conversationHistory.slice(-3))}
 
-Classify as: LEAD_CAPTURE, FAQ, or OTHER`
+Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
       
       const intentResponse = await getChatCompletion(
         intentPrompt,
-        "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, or OTHER."
+        "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, END_CALL, or OTHER."
       )
       intent = (intentResponse || 'OTHER').trim().toUpperCase()
     }
@@ -201,6 +207,14 @@ User's Question: ${message}`
           currentFlow: null,
           showBranding
         }
+      }
+      
+    } else if (intent === 'END_CALL') {
+      console.log('Entering END_CALL flow...')
+      return { 
+        reply: "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!",
+        currentFlow: null,
+        showBranding
       }
       
     } else if (intent === 'LEAD_CAPTURE') {
@@ -331,6 +345,12 @@ User's Question: ${message}`
         // DEBUG: Log final capturedData before saving
         console.log('Final capturedData before saving lead:', JSON.stringify(capturedData, null, 2))
         
+        // Add emergency notes if this was detected as an emergency
+        if (isEmergency && firstUserMessage) {
+          capturedData.emergency_notes = `User indicated an EMERGENCY situation in their initial message: "${firstUserMessage}"`
+          console.log('Added emergency_notes to capturedData:', capturedData.emergency_notes)
+        }
+        
         // Map captured data to specific lead fields based on mapsToLeadField property
         let contactName: string | undefined = undefined
         let contactEmail: string | undefined = undefined
@@ -403,7 +423,8 @@ User's Question: ${message}`
               contactName: newLead.contactName,
               contactEmail: newLead.contactEmail,
               contactPhone: newLead.contactPhone,
-              notes: newLead.notes
+              notes: newLead.notes,
+              createdAt: newLead.createdAt
             }
             
             await sendLeadNotificationEmail(
@@ -430,31 +451,75 @@ User's Question: ${message}`
               try {
                 console.log(`Initiating emergency voice call to ${business.notificationPhoneNumber}...`)
                 
-                // Construct a more detailed lead summary
+                // Construct a more detailed lead summary with improved emergency prioritization
                 let leadSummaryForCall = `Lead from ${newLead.contactName || 'unknown contact'}.`
                 
-                // Look for issue/problem description in captured data
+                // Look for problem description in captured data with enhanced priority logic
                 if (newLead.capturedData && typeof newLead.capturedData === 'object') {
                   const captured = newLead.capturedData as any
+                  let problemDescription = null
                   
-                  // Try to find the issue description from various possible question patterns
-                  const issueKey = Object.keys(captured).find(key => 
-                    key.toLowerCase().includes('issue') || 
-                    key.toLowerCase().includes('problem') ||
-                    key.toLowerCase().includes('describe') ||
-                    key.toLowerCase().includes('what') && key.toLowerCase().includes('happening')
-                  )
+                  // PRIORITY 1: Look for answers to questions marked as isEssentialForEmergency that contain emergency-specific keywords
+                  const emergencyQuestionKeys = Object.keys(captured).filter(key => {
+                    const questionFromConfig = questionsToAsk.find(q => q.questionText === key && q.isEssentialForEmergency)
+                    if (!questionFromConfig) return false
+                    
+                    // Check if the question itself is emergency-focused
+                    const emergencyKeywords = ['emergency', 'urgent', 'describe', 'problem', 'issue', 'situation', 'happening', 'wrong']
+                    return emergencyKeywords.some(keyword => key.toLowerCase().includes(keyword))
+                  })
                   
-                  if (issueKey) {
-                    leadSummaryForCall += ` Issue: ${captured[issueKey]}.`
-                  } else {
-                    // If no specific issue question found, include the first user message as context
+                  if (emergencyQuestionKeys.length > 0) {
+                    // Use the first emergency-specific question answer
+                    problemDescription = captured[emergencyQuestionKeys[0]]
+                    console.log(`Using answer from emergency-specific question: "${emergencyQuestionKeys[0]}"`)
+                  }
+                  
+                  // PRIORITY 2: Look for emergency_notes (initial transcribed emergency message)
+                  if (!problemDescription && captured.emergency_notes) {
+                    // Extract the actual emergency message from emergency_notes
+                    const match = captured.emergency_notes.match(/initial message: "([^"]+)"/i)
+                    if (match && match[1]) {
+                      problemDescription = match[1]
+                      console.log('Using emergency_notes content for voice alert')
+                    } else {
+                      problemDescription = captured.emergency_notes
+                    }
+                  }
+                  
+                  // PRIORITY 3: General issue/problem description questions
+                  if (!problemDescription) {
+                    const issueKey = Object.keys(captured).find(key => 
+                      key.toLowerCase().includes('issue') || 
+                      key.toLowerCase().includes('problem') ||
+                      key.toLowerCase().includes('describe') ||
+                      (key.toLowerCase().includes('what') && key.toLowerCase().includes('happening'))
+                    )
+                    
+                    if (issueKey) {
+                      problemDescription = captured[issueKey]
+                      console.log(`Using general issue description from: "${issueKey}"`)
+                    }
+                  }
+                  
+                  // PRIORITY 4: Fall back to first user message
+                  if (!problemDescription) {
                     const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content
                     if (firstUserMessage) {
-                      leadSummaryForCall += ` Initial message: ${firstUserMessage}.`
-                    } else {
-                      leadSummaryForCall += ' Details in system.'
+                      problemDescription = firstUserMessage
+                      console.log('Using first user message as fallback for voice alert')
                     }
+                  }
+                  
+                  // Construct the summary with the best available description
+                  if (problemDescription) {
+                    // Truncate for voice clarity (max ~150 chars)
+                    const truncatedDescription = problemDescription.length > 150 
+                      ? problemDescription.substring(0, 150) + '...' 
+                      : problemDescription
+                    leadSummaryForCall += ` Issue stated: ${truncatedDescription}`
+                  } else {
+                    leadSummaryForCall += ' Details in system.'
                   }
                 }
                 
@@ -487,7 +552,7 @@ User's Question: ${message}`
         } else {
           // Use custom completion message if available, otherwise use default
           const completionMessage = agentConfig?.leadCaptureCompletionMessage || 
-            "Thanks for providing that information! Our team will review it and get back to you shortly."
+            "Thanks for providing that information! Our team will review it and get back to you ASAP."
           
           return { 
             reply: completionMessage,

@@ -12,6 +12,26 @@ const router = Router()
 const prisma = new PrismaClient()
 const { VoiceResponse } = twilio.twiml
 
+// In-memory session store for voice calls
+const voiceSessions = new Map<string, { history: any[], currentFlow: string | null }>()
+
+// Helper functions for voice session management
+function getVoiceSession(callSid: string): { history: any[], currentFlow: string | null } {
+  if (!voiceSessions.has(callSid)) {
+    voiceSessions.set(callSid, { history: [], currentFlow: null })
+  }
+  return voiceSessions.get(callSid)!
+}
+
+function updateVoiceSession(callSid: string, history: any[], currentFlow: string | null) {
+  voiceSessions.set(callSid, { history, currentFlow })
+}
+
+function clearVoiceSession(callSid: string) {
+  voiceSessions.delete(callSid)
+  console.log(`[Voice Session] Cleared session for CallSid: ${callSid}`)
+}
+
 // POST /incoming - Handle incoming Twilio voice calls
 router.post('/incoming', async (req, res) => {
   try {
@@ -87,10 +107,12 @@ router.post('/handle-recording', async (req, res) => {
     const RecordingUrl = req.body.RecordingUrl
     const Caller = req.body.From
     const TwilioNumberCalled = req.body.To
+    const callSid = req.body.CallSid // Extract CallSid for session management
     
     console.log('[VOICE DEBUG] RecordingUrl:', RecordingUrl)
     console.log('[VOICE DEBUG] Caller:', Caller)
     console.log('[VOICE DEBUG] TwilioNumberCalled:', TwilioNumberCalled)
+    console.log('[VOICE DEBUG] CallSid:', callSid)
     
     // Find business by Twilio phone number
     const business = await prisma.business.findFirst({
@@ -111,6 +133,16 @@ router.post('/handle-recording', async (req, res) => {
     }
     
     console.log('[VOICE DEBUG] Found business:', business.name)
+    
+    // Retrieve session state
+    const session = getVoiceSession(callSid)
+    let currentConversationHistory = session.history
+    let currentActiveFlow = session.currentFlow // Flow state before processing new message
+    
+    console.log('[VOICE DEBUG] Current session state:', { 
+      historyLength: currentConversationHistory.length, 
+      currentFlow: currentActiveFlow 
+    })
     
     // Check if recording URL is present
     if (!RecordingUrl || RecordingUrl.trim() === '') {
@@ -183,38 +215,70 @@ router.post('/handle-recording', async (req, res) => {
         return
       }
       
-      // Process with AI handler
+      // Update conversation history with user's message
+      currentConversationHistory.push({ role: 'user', content: transcribedText })
+      console.log('[VOICE DEBUG] Updated conversation history with user message')
+      
+      // Process with AI handler using full context
       console.log('[VOICE DEBUG] Processing message with AI handler...')
       const aiResponse = await processMessage(
-        transcribedText,
-        [], // Empty conversation history for first interaction
+        transcribedText, // The latest transcribed message
+        currentConversationHistory, // Full conversation history
         business.id,
-        null // No current flow
+        currentActiveFlow // Current flow state before this turn
       )
       
-      console.log('[VOICE DEBUG] AI response:', aiResponse.reply)
+      console.log('[Handle Recording] AI Handler response:', aiResponse)
       
-      // Create TwiML response
-      const twiml = new VoiceResponse()
-      twiml.say(aiResponse.reply)
+      // Update conversation history with AI's response
+      currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
       
-      // Continue conversation with another recording
-      twiml.record({
-        action: '/api/voice/handle-recording',
-        method: 'POST',
-        maxLength: 30,
-        playBeep: true,
-        transcribe: false,
-        timeout: 5
+      // Update current active flow based on AI response
+      currentActiveFlow = aiResponse.currentFlow || null
+      
+      // Save updated session state
+      updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
+      console.log('[VOICE DEBUG] Updated session state:', { 
+        historyLength: currentConversationHistory.length, 
+        newFlow: currentActiveFlow 
       })
       
-      // Fallback if no response
-      twiml.say('We did not receive any input. Goodbye.')
-      twiml.hangup()
+      // Create TwiML response based on flow state
+      const twimlResponse = new VoiceResponse()
+      
+      if (aiResponse && aiResponse.reply) {
+        twimlResponse.say({ voice: 'alice' }, aiResponse.reply)
+      } else {
+        twimlResponse.say({ voice: 'alice' }, "I'm sorry, I encountered an issue.")
+      }
+      
+      // Continue conversation if flow is active, otherwise end call
+      if (currentActiveFlow !== null) {
+        // Flow should continue - prompt for more input
+        twimlResponse.say({ voice: 'alice' }, "Is there anything else, or say 'goodbye' to end.")
+        twimlResponse.record({
+          action: '/api/voice/handle-recording',
+          method: 'POST',
+          maxLength: 30,
+          playBeep: true,
+          timeout: 7, // Seconds of silence before completing recording
+          transcribe: false
+        })
+        
+        // Fallback if no response
+        twimlResponse.say('We did not receive any input. Goodbye.')
+        twimlResponse.hangup()
+      } else {
+        // Flow is complete - end the call
+        twimlResponse.say({ voice: 'alice' }, "Thank you for calling. Goodbye.")
+        twimlResponse.hangup()
+        clearVoiceSession(callSid) // Clean up session for ended call
+        console.log('[VOICE DEBUG] Call ended, session cleared for CallSid:', callSid)
+      }
       
       // Send TwiML response
       res.setHeader('Content-Type', 'application/xml')
-      res.send(twiml.toString())
+      res.send(twimlResponse.toString())
       
     } catch (downloadError: any) {
       console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)

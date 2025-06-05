@@ -208,6 +208,68 @@
                 </small>
             </div>
             
+            <% if (business && business.planTier === 'PRO') { %>
+            <!-- Voice/Call Agent Configuration - PRO Plan Only -->
+            <div style="border-top: 2px solid #e5e7eb; margin-top: 30px; padding-top: 30px;">
+                <h2 style="color: #333; font-size: 20px; margin-bottom: 20px; display: flex; align-items: center;">
+                    🎙️ Voice Agent Configuration 
+                    <span style="background: linear-gradient(45deg, #8b5cf6, #06b6d4); color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; margin-left: 12px; font-weight: 600;">PRO</span>
+                </h2>
+                
+                <div class="form-group">
+                    <label for="voiceGreetingMessage">Voice Greeting Message:</label>
+                    <textarea 
+                        id="voiceGreetingMessage" 
+                        name="voiceGreetingMessage" 
+                        rows="3"
+                        placeholder="Enter the greeting message for voice calls (e.g., 'Hello! I'm your AI assistant from [Business Name]. How can I help you today?')"
+                    ><%= (agentConfig && agentConfig.voiceGreetingMessage) ? agentConfig.voiceGreetingMessage : '' %></textarea>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        This message will be spoken when someone calls your voice agent.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="voiceCompletionMessage">Voice Lead Completion Message:</label>
+                    <textarea 
+                        id="voiceCompletionMessage" 
+                        name="voiceCompletionMessage" 
+                        rows="3"
+                        placeholder="Enter the message spoken after collecting lead information via voice (e.g., 'Thank you for providing your information. Our team will contact you within 2 hours.')"
+                    ><%= (agentConfig && agentConfig.voiceCompletionMessage) ? agentConfig.voiceCompletionMessage : '' %></textarea>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        This message is spoken after successfully capturing a lead through voice.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="voiceEmergencyMessage">Voice Emergency Response Message:</label>
+                    <textarea 
+                        id="voiceEmergencyMessage" 
+                        name="voiceEmergencyMessage" 
+                        rows="3"
+                        placeholder="Enter the message for emergency situations (e.g., 'I understand this is urgent. I'm immediately notifying our emergency response team. Someone will call you back within 5 minutes.')"
+                    ><%= (agentConfig && agentConfig.voiceEmergencyMessage) ? agentConfig.voiceEmergencyMessage : '' %></textarea>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        This message is spoken when an emergency situation is detected during a voice call.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="voiceEndCallMessage">Voice Call Ending Message:</label>
+                    <textarea 
+                        id="voiceEndCallMessage" 
+                        name="voiceEndCallMessage" 
+                        rows="3"
+                        placeholder="Enter the goodbye message for voice calls (e.g., 'Thank you for calling [Business Name]. Have a great day and don't hesitate to call back if you need anything else.')"
+                    ><%= (agentConfig && agentConfig.voiceEndCallMessage) ? agentConfig.voiceEndCallMessage : '' %></textarea>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        This message is spoken when ending a voice call.
+                    </small>
+                </div>
+            </div>
+            <% } %>
+            
             <div class="color-input-group">
                 <div class="form-group">
                     <label for="primaryColor">Primary Color (hex):</label>
@@ -264,6 +326,12 @@
             const primaryColorValue = document.getElementById('primaryColor').value;
             const secondaryColorValue = document.getElementById('secondaryColor').value;
             
+            // Get voice agent configuration values (if PRO plan)
+            const voiceGreetingMessage = document.getElementById('voiceGreetingMessage')?.value || '';
+            const voiceCompletionMessage = document.getElementById('voiceCompletionMessage')?.value || '';
+            const voiceEmergencyMessage = document.getElementById('voiceEmergencyMessage')?.value || '';
+            const voiceEndCallMessage = document.getElementById('voiceEndCallMessage')?.value || '';
+            
             // Construct colorTheme object
             const colorTheme = {
                 primary: primaryColorValue,
@@ -276,7 +344,11 @@
                 personaPrompt,
                 welcomeMessage,
                 leadCaptureCompletionMessage,
-                colorTheme
+                colorTheme,
+                voiceGreetingMessage,
+                voiceCompletionMessage,
+                voiceEmergencyMessage,
+                voiceEndCallMessage
             };
             
             try {

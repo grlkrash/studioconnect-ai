@@ -96,12 +96,21 @@ export async function sendLeadNotificationEmail(
 
   // --- Start Building Human-Readable HTML Body ---
   let htmlBody = `<p>Hello ${businessName} team,</p>`;
+  
+  // URGENT ALERT SECTION - Make emergency transcription highly visible at the top
+  if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
+    htmlBody += `
+      <div style="background-color: #fef2f2; border: 3px solid #ef4444; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 URGENT EMERGENCY ALERT 🚨</h2>
+        <p style="font-size: 18px; font-weight: bold; color: #991b1b; margin: 0; line-height: 1.4;">
+          Customer Stated: "${leadDetails.capturedData.emergency_notes}"
+        </p>
+      </div>
+    `;
+  }
+  
   htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> lead captured by your AI Assistant.</p>`;
   
-  if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
-    htmlBody += `<p style="color:red; font-weight:bold;">Emergency Note: ${leadDetails.capturedData.emergency_notes}</p>`;
-  }
-
   htmlBody += `<h3>Lead Details:</h3>`;
   htmlBody += "<ul>";
   if (leadDetails.contactName) {

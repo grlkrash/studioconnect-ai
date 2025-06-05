@@ -53,6 +53,10 @@ model AgentConfig {
   createdAt                    DateTime              @default(now())
   updatedAt                    DateTime              @updatedAt
   leadCaptureCompletionMessage String?
+  voiceGreetingMessage         String?
+  voiceCompletionMessage       String?
+  voiceEmergencyMessage        String?
+  voiceEndCallMessage          String?
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 

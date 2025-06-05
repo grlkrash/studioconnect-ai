@@ -150,8 +150,29 @@ router.post('/config', authMiddleware, async (req, res) => {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
 
+    // Fetch business to check plan tier
+    const business = await prisma.business.findUnique({
+      where: { id: businessId }
+    })
+
+    if (!business) {
+      return res.status(404).json({ 
+        error: 'Business not found' 
+      })
+    }
+
     // Extract configuration details from request body
-    const { agentName, personaPrompt, welcomeMessage, leadCaptureCompletionMessage, colorTheme } = req.body
+    const { 
+      agentName, 
+      personaPrompt, 
+      welcomeMessage, 
+      leadCaptureCompletionMessage, 
+      colorTheme,
+      voiceGreetingMessage,
+      voiceCompletionMessage,
+      voiceEmergencyMessage,
+      voiceEndCallMessage
+    } = req.body
 
     // Basic validation
     if (!agentName || !personaPrompt || !welcomeMessage) {
@@ -160,24 +181,34 @@ router.post('/config', authMiddleware, async (req, res) => {
       })
     }
 
+    // Prepare base config data
+    const baseConfigData = {
+      agentName,
+      personaPrompt,
+      welcomeMessage,
+      leadCaptureCompletionMessage,
+      colorTheme: colorTheme || {}
+    }
+
+    // Add voice fields only for PRO plan businesses
+    const configData = business.planTier === 'PRO' 
+      ? {
+          ...baseConfigData,
+          voiceGreetingMessage: voiceGreetingMessage || null,
+          voiceCompletionMessage: voiceCompletionMessage || null,
+          voiceEmergencyMessage: voiceEmergencyMessage || null,
+          voiceEndCallMessage: voiceEndCallMessage || null
+        }
+      : baseConfigData
+
     // Upsert the configuration
     const config = await prisma.agentConfig.upsert({
       where: { businessId },
       create: {
         businessId,
-        agentName,
-        personaPrompt,
-        welcomeMessage,
-        leadCaptureCompletionMessage,
-        colorTheme: colorTheme || {}
+        ...configData
       },
-      update: {
-        agentName,
-        personaPrompt,
-        welcomeMessage,
-        leadCaptureCompletionMessage,
-        colorTheme: colorTheme || {}
-      }
+      update: configData
     })
 
     // Send back the created or updated configuration
