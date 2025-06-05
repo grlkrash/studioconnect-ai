@@ -28,7 +28,7 @@ const voiceSessions = new Map<string, { history: any[], currentFlow: string | nu
 
 async function initializeRedis() {
   if (process.env.REDIS_URL) {
-    console.log('[Redis] Attempting to connect to Redis using URL from ENV...');
+    console.log('[Redis] Attempting to connect to Redis using URL from ENV:', process.env.REDIS_URL);
     const client = createClient({ url: process.env.REDIS_URL });
 
     client.on('error', (err) => console.error('[Redis] Connection error:', err));
