@@ -21,6 +21,7 @@ model Business {
   notificationEmail       String?
   notificationPhoneNumber String?
   planTier                PlanTier        @default(FREE)
+  twilioPhoneNumber       String?         @unique
   agentConfig             AgentConfig?
   knowledgeBase           KnowledgeBase[]
   leads                   Lead[]
