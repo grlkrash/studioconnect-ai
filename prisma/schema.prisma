@@ -57,6 +57,8 @@ model AgentConfig {
   voiceCompletionMessage       String?
   voiceEmergencyMessage        String?
   voiceEndCallMessage          String?
+  twilioVoice                  String                @default("alice")
+  twilioLanguage               String                @default("en-US")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 
