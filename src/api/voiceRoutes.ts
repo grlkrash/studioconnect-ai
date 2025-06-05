@@ -32,7 +32,7 @@ const voiceSessions = new Map<string, { history: any[], currentFlow: string | nu
 const MEMORY_CHECK_INTERVAL = 60000; // 1 minute
 const SESSION_CLEANUP_INTERVAL = 300000; // 5 minutes
 const MAX_SESSION_AGE_MS = 1800000; // 30 minutes
-const MAX_MEMORY_USAGE_MB = 512; // Alert threshold
+const MAX_MEMORY_USAGE_MB = 1536; // Alert threshold - increased for 2GB RAM instance (75% of 2GB)
 const MAX_CONVERSATION_HISTORY_LENGTH = 50; // Prevent unbounded growth
 
 // Memory monitoring
