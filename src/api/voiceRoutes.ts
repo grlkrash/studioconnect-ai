@@ -134,6 +134,22 @@ router.post('/handle-recording', async (req, res) => {
     
     console.log('[VOICE DEBUG] Found business:', business.name)
     
+    // Fetch AgentConfig for voice settings
+    let agentConfig = null
+    try {
+      agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: business.id }
+      })
+      console.log('[VOICE DEBUG] Found AgentConfig:', agentConfig ? 'Yes' : 'No')
+    } catch (configError) {
+      console.error('[VOICE DEBUG] Error fetching AgentConfig:', configError)
+    }
+    
+    // Configure voice settings with fallbacks
+    const voiceToUse = (agentConfig?.twilioVoice || 'alice') as any
+    const languageToUse = (agentConfig?.twilioLanguage || 'en-US') as any
+    console.log('[VOICE DEBUG] Voice settings:', { voice: voiceToUse, language: languageToUse })
+    
     // Retrieve session state
     const session = getVoiceSession(callSid)
     let currentConversationHistory = session.history
@@ -148,7 +164,7 @@ router.post('/handle-recording', async (req, res) => {
     if (!RecordingUrl || RecordingUrl.trim() === '') {
       console.log('[VOICE DEBUG] No recording URL found')
       const twiml = new VoiceResponse()
-      twiml.say('Sorry, I didn\'t catch that. Please call back if you need assistance.')
+      twiml.say({ voice: voiceToUse, language: languageToUse }, 'Sorry, I didn\'t catch that. Please call back if you need assistance.')
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -195,7 +211,7 @@ router.post('/handle-recording', async (req, res) => {
       } catch (transcriptionError) {
         console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
         const twiml = new VoiceResponse()
-        twiml.say('I had trouble understanding. Could you please try again or call back later?')
+        twiml.say({ voice: voiceToUse, language: languageToUse }, 'I had trouble understanding. Could you please try again or call back later?')
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -207,7 +223,7 @@ router.post('/handle-recording', async (req, res) => {
       if (!transcribedText || transcribedText.trim() === '') {
         console.log('[VOICE DEBUG] Empty transcription result')
         const twiml = new VoiceResponse()
-        twiml.say('I had trouble understanding. Could you please try again or call back later?')
+        twiml.say({ voice: voiceToUse, language: languageToUse }, 'I had trouble understanding. Could you please try again or call back later?')
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -247,15 +263,15 @@ router.post('/handle-recording', async (req, res) => {
       const twimlResponse = new VoiceResponse()
       
       if (aiResponse && aiResponse.reply) {
-        twimlResponse.say({ voice: 'alice' }, aiResponse.reply)
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, aiResponse.reply)
       } else {
-        twimlResponse.say({ voice: 'alice' }, "I'm sorry, I encountered an issue.")
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "I'm sorry, I encountered an issue.")
       }
       
       // Continue conversation if flow is active, otherwise end call
       if (currentActiveFlow !== null) {
         // Flow should continue - prompt for more input
-        twimlResponse.say({ voice: 'alice' }, "Is there anything else, or say 'goodbye' to end.")
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "Is there anything else, or say 'goodbye' to end.")
         twimlResponse.record({
           action: '/api/voice/handle-recording',
           method: 'POST',
@@ -266,11 +282,11 @@ router.post('/handle-recording', async (req, res) => {
         })
         
         // Fallback if no response
-        twimlResponse.say('We did not receive any input. Goodbye.')
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, 'We did not receive any input. Goodbye.')
         twimlResponse.hangup()
       } else {
         // Flow is complete - end the call
-        twimlResponse.say({ voice: 'alice' }, "Thank you for calling. Goodbye.")
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "Thank you for calling. Goodbye.")
         twimlResponse.hangup()
         clearVoiceSession(callSid) // Clean up session for ended call
         console.log('[VOICE DEBUG] Call ended, session cleared for CallSid:', callSid)
@@ -284,7 +300,7 @@ router.post('/handle-recording', async (req, res) => {
       console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
       
       const twiml = new VoiceResponse()
-      twiml.say('Sorry, I had trouble accessing your message recording. Please try again.')
+      twiml.say({ voice: voiceToUse, language: languageToUse }, 'Sorry, I had trouble accessing your message recording. Please try again.')
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')

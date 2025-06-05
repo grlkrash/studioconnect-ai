@@ -267,6 +267,52 @@
                         This message is spoken when ending a voice call.
                     </small>
                 </div>
+                
+                <div class="form-group">
+                    <label for="twilioVoice">Twilio Voice:</label>
+                    <select 
+                        id="twilioVoice" 
+                        name="twilioVoice"
+                        style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                    >
+                        <option value="alice" <%= (agentConfig && agentConfig.twilioVoice === 'alice') ? 'selected' : '' %>>Alice (Standard Female)</option>
+                        <option value="man" <%= (agentConfig && agentConfig.twilioVoice === 'man') ? 'selected' : '' %>>Man (Standard Male)</option>
+                        <option value="woman" <%= (agentConfig && agentConfig.twilioVoice === 'woman') ? 'selected' : '' %>>Woman (Standard Female)</option>
+                        <option value="Polly.Joanna" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Joanna') ? 'selected' : '' %>>Joanna (Premium Female - US)</option>
+                        <option value="Polly.Matthew" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Matthew') ? 'selected' : '' %>>Matthew (Premium Male - US)</option>
+                        <option value="Polly.Salli" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Salli') ? 'selected' : '' %>>Salli (Premium Female - US)</option>
+                        <option value="Polly.Joey" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Joey') ? 'selected' : '' %>>Joey (Premium Male - US)</option>
+                        <option value="Polly.Kimberly" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Kimberly') ? 'selected' : '' %>>Kimberly (Premium Female - US)</option>
+                        <option value="Polly.Amy" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Amy') ? 'selected' : '' %>>Amy (Premium Female - UK)</option>
+                        <option value="Polly.Brian" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Brian') ? 'selected' : '' %>>Brian (Premium Male - UK)</option>
+                    </select>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        Select the voice to use for Twilio voice calls. Premium voices (Polly) offer better quality and more natural speech.
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="twilioLanguage">Twilio Language:</label>
+                    <select 
+                        id="twilioLanguage" 
+                        name="twilioLanguage"
+                        style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                    >
+                        <option value="en-US" <%= (agentConfig && agentConfig.twilioLanguage === 'en-US') ? 'selected' : '' %>>English (US)</option>
+                        <option value="en-GB" <%= (agentConfig && agentConfig.twilioLanguage === 'en-GB') ? 'selected' : '' %>>English (UK)</option>
+                        <option value="en-AU" <%= (agentConfig && agentConfig.twilioLanguage === 'en-AU') ? 'selected' : '' %>>English (Australia)</option>
+                        <option value="es-US" <%= (agentConfig && agentConfig.twilioLanguage === 'es-US') ? 'selected' : '' %>>Spanish (US)</option>
+                        <option value="es-ES" <%= (agentConfig && agentConfig.twilioLanguage === 'es-ES') ? 'selected' : '' %>>Spanish (Spain)</option>
+                        <option value="fr-FR" <%= (agentConfig && agentConfig.twilioLanguage === 'fr-FR') ? 'selected' : '' %>>French (France)</option>
+                        <option value="fr-CA" <%= (agentConfig && agentConfig.twilioLanguage === 'fr-CA') ? 'selected' : '' %>>French (Canada)</option>
+                        <option value="de-DE" <%= (agentConfig && agentConfig.twilioLanguage === 'de-DE') ? 'selected' : '' %>>German (Germany)</option>
+                        <option value="it-IT" <%= (agentConfig && agentConfig.twilioLanguage === 'it-IT') ? 'selected' : '' %>>Italian (Italy)</option>
+                        <option value="pt-BR" <%= (agentConfig && agentConfig.twilioLanguage === 'pt-BR') ? 'selected' : '' %>>Portuguese (Brazil)</option>
+                    </select>
+                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                        Select the language and locale for Twilio voice calls.
+                    </small>
+                </div>
             </div>
             <% } %>
             
@@ -332,6 +378,10 @@
             const voiceEmergencyMessage = document.getElementById('voiceEmergencyMessage')?.value || '';
             const voiceEndCallMessage = document.getElementById('voiceEndCallMessage')?.value || '';
             
+            // Get Twilio configuration values (if PRO plan)
+            const twilioVoice = document.getElementById('twilioVoice')?.value || 'alice';
+            const twilioLanguage = document.getElementById('twilioLanguage')?.value || 'en-US';
+            
             // Construct colorTheme object
             const colorTheme = {
                 primary: primaryColorValue,
@@ -348,7 +398,9 @@
                 voiceGreetingMessage,
                 voiceCompletionMessage,
                 voiceEmergencyMessage,
-                voiceEndCallMessage
+                voiceEndCallMessage,
+                twilioVoice,
+                twilioLanguage
             };
             
             try {

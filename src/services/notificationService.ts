@@ -2,12 +2,16 @@ import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
 import sgTransport from 'nodemailer-sendgrid-transport'
+import { PrismaClient } from '@prisma/client'
 
 // Initialize Twilio client
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 )
+
+// Initialize Prisma client for AgentConfig fetching
+const prisma = new PrismaClient()
 
 // Initialize email transporter
 let transporter: nodemailer.Transporter
@@ -210,11 +214,13 @@ export async function testEmailConfiguration(): Promise<void> {
  * @param toPhoneNumber - The HSP's phone number to call
  * @param businessName - The name of the business
  * @param leadSummary - A brief summary of the lead details
+ * @param businessId - The business ID to fetch voice configuration
  */
 export async function initiateEmergencyVoiceCall(
   toPhoneNumber: string,
   businessName: string,
-  leadSummary: string
+  leadSummary: string,
+  businessId: string
 ): Promise<void> {
   try {
     const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER
@@ -222,6 +228,22 @@ export async function initiateEmergencyVoiceCall(
       console.error('TWILIO_PHONE_NUMBER environment variable is not set')
       return
     }
+
+    // Fetch AgentConfig for voice settings
+    let agentConfig = null
+    try {
+      agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId }
+      })
+      console.log('[Emergency Call] Found AgentConfig:', agentConfig ? 'Yes' : 'No')
+    } catch (configError) {
+      console.error('[Emergency Call] Error fetching AgentConfig:', configError)
+    }
+
+    // Configure voice settings with fallbacks
+    const voiceToUse = (agentConfig?.twilioVoice || 'alice') as any
+    const languageToUse = (agentConfig?.twilioLanguage || 'en-US') as any
+    console.log('[Emergency Call] Voice settings:', { voice: voiceToUse, language: languageToUse })
 
     // XML escaping function for safe text insertion
     const escapeXml = (unsafe: string): string => {
@@ -244,8 +266,8 @@ export async function initiateEmergencyVoiceCall(
     // Construct message with SSML phoneme tag for "lead"
     const messageToSay = `Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}. Please check your system for details. Repeating: Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}.`
 
-    // Create TwiML response with proper SSML
-    const twiml = `<Response><Say voice="alice" language="en-US">${messageToSay}</Say></Response>`
+    // Create TwiML response with proper SSML and configured voice settings
+    const twiml = `<Response><Say voice="${voiceToUse}" language="${languageToUse}">${messageToSay}</Say></Response>`
 
     await twilioClient.calls.create({
       twiml,
@@ -253,7 +275,7 @@ export async function initiateEmergencyVoiceCall(
       from: twilioPhoneNumber
     })
 
-    console.log(`Emergency voice call initiated to ${toPhoneNumber} for business ${businessName}`)
+    console.log(`Emergency voice call initiated to ${toPhoneNumber} for business ${businessName} using voice: ${voiceToUse}, language: ${languageToUse}`)
   } catch (error) {
     console.error('Failed to initiate emergency voice call:', error)
     // Don't throw the error - we don't want call failures to break the lead capture flow

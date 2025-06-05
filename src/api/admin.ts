@@ -171,7 +171,9 @@ router.post('/config', authMiddleware, async (req, res) => {
       voiceGreetingMessage,
       voiceCompletionMessage,
       voiceEmergencyMessage,
-      voiceEndCallMessage
+      voiceEndCallMessage,
+      twilioVoice,
+      twilioLanguage
     } = req.body
 
     // Basic validation
@@ -197,7 +199,9 @@ router.post('/config', authMiddleware, async (req, res) => {
           voiceGreetingMessage: voiceGreetingMessage || null,
           voiceCompletionMessage: voiceCompletionMessage || null,
           voiceEmergencyMessage: voiceEmergencyMessage || null,
-          voiceEndCallMessage: voiceEndCallMessage || null
+          voiceEndCallMessage: voiceEndCallMessage || null,
+          twilioVoice: twilioVoice || 'alice',
+          twilioLanguage: twilioLanguage || 'en-US'
         }
       : baseConfigData
 
