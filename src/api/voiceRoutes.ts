@@ -15,6 +15,42 @@ const { VoiceResponse } = twilio.twiml
 // In-memory session store for voice calls
 const voiceSessions = new Map<string, { history: any[], currentFlow: string | null }>()
 
+// Helper function for XML escaping to safely use dynamic content in SSML
+function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, function (c: string) {
+    switch (c) {
+      case '<': return '&lt;'
+      case '>': return '&gt;'
+      case '&': return '&amp;'
+      case '\'': return '&apos;'
+      case '"': return '&quot;'
+      default: return c
+    }
+  })
+}
+
+// Helper function to create SSML-enhanced messages
+function createSSMLMessage(message: string, options: { addPause?: boolean, addEmphasis?: boolean, pauseDuration?: string } = {}): string {
+  let ssmlMessage = message
+  
+  if (options.addEmphasis) {
+    // Add emphasis to key words like "urgent", "important", etc.
+    ssmlMessage = ssmlMessage.replace(/\b(urgent|important|emergency|attention)\b/gi, '<emphasis level="strong">$1</emphasis>')
+  }
+  
+  if (options.addPause) {
+    // Add a strategic pause before questions or after greetings
+    const pauseDuration = options.pauseDuration || '300ms'
+    if (ssmlMessage.includes('?')) {
+      ssmlMessage = ssmlMessage.replace(/(\. )?([^.!?]*\?)/g, `$1<break time="${pauseDuration}"/>$2`)
+    } else {
+      ssmlMessage += `<break time="${pauseDuration}"/>`
+    }
+  }
+  
+  return ssmlMessage
+}
+
 // Helper functions for voice session management
 function getVoiceSession(callSid: string): { history: any[], currentFlow: string | null } {
   if (!voiceSessions.has(callSid)) {
@@ -61,8 +97,12 @@ router.post('/incoming', async (req, res) => {
       }
     }
     
-    // Create welcome message with business name
-    const welcomeMessage = `Hey! Thank you for calling ${businessName}. Please tell me how I can help you after the beep. Recording will stop after 30 seconds of speech or a period of silence.`
+    // Create welcome message with business name and SSML enhancements
+    const safeBusinessName = escapeXml(businessName)
+    const welcomeMessage = createSSMLMessage(
+      `Hey! Thank you for calling ${safeBusinessName}. <break time="300ms"/> Please tell me how I can help you after the beep. <break time="200ms"/> Recording will stop after 30 seconds of speech or a period of silence.`,
+      { addEmphasis: true }
+    )
     
     // Say the welcome message
     twiml.say(welcomeMessage)
@@ -77,8 +117,12 @@ router.post('/incoming', async (req, res) => {
       timeout: 5
     })
     
-    // If no input is received, provide a fallback message
-    twiml.say('We did not receive any input. Goodbye.')
+    // If no input is received, provide a fallback message with pause
+    const fallbackMessage = createSSMLMessage(
+      'We did not receive any input. <break time="500ms"/> Goodbye.',
+      { addEmphasis: true }
+    )
+    twiml.say(fallbackMessage)
     twiml.hangup()
     
     // Set response content type and send TwiML
@@ -88,9 +132,13 @@ router.post('/incoming', async (req, res) => {
   } catch (error) {
     console.error('[VOICE DEBUG] Error in /incoming route:', error)
     
-    // Create fallback TwiML response
+    // Create fallback TwiML response with SSML
     const twiml = new VoiceResponse()
-    twiml.say('Sorry, we are experiencing technical difficulties. Please try again later or contact us directly.')
+    const errorMessage = createSSMLMessage(
+      'Sorry, we are experiencing technical difficulties. <break time="300ms"/> Please try again later or contact us directly.',
+      { addEmphasis: true }
+    )
+    twiml.say(errorMessage)
     twiml.hangup()
     
     res.setHeader('Content-Type', 'application/xml')
@@ -124,7 +172,11 @@ router.post('/handle-recording', async (req, res) => {
     if (!business) {
       console.error('[VOICE DEBUG] No business found for Twilio number:', TwilioNumberCalled)
       const twiml = new VoiceResponse()
-      twiml.say('This number is not configured for our service. Please contact support.')
+      const errorMessage = createSSMLMessage(
+        'This number is not configured for our service. <break time="300ms"/> Please contact support.',
+        { addEmphasis: true }
+      )
+      twiml.say(errorMessage)
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -164,7 +216,11 @@ router.post('/handle-recording', async (req, res) => {
     if (!RecordingUrl || RecordingUrl.trim() === '') {
       console.log('[VOICE DEBUG] No recording URL found')
       const twiml = new VoiceResponse()
-      twiml.say({ voice: voiceToUse, language: languageToUse }, 'Sorry, I didn\'t catch that. Please call back if you need assistance.')
+      const noRecordingMessage = createSSMLMessage(
+        'Sorry, I didn\'t catch that. <break time="300ms"/> Please call back if you need assistance.',
+        { addEmphasis: true }
+      )
+      twiml.say({ voice: voiceToUse, language: languageToUse }, noRecordingMessage)
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -211,7 +267,11 @@ router.post('/handle-recording', async (req, res) => {
       } catch (transcriptionError) {
         console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
         const twiml = new VoiceResponse()
-        twiml.say({ voice: voiceToUse, language: languageToUse }, 'I had trouble understanding. Could you please try again or call back later?')
+        const transcriptionErrorMessage = createSSMLMessage(
+          'I had trouble understanding. <break time="300ms"/> Could you please try again or call back later?',
+          { addEmphasis: true }
+        )
+        twiml.say({ voice: voiceToUse, language: languageToUse }, transcriptionErrorMessage)
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -223,7 +283,11 @@ router.post('/handle-recording', async (req, res) => {
       if (!transcribedText || transcribedText.trim() === '') {
         console.log('[VOICE DEBUG] Empty transcription result')
         const twiml = new VoiceResponse()
-        twiml.say({ voice: voiceToUse, language: languageToUse }, 'I had trouble understanding. Could you please try again or call back later?')
+        const emptyTranscriptionMessage = createSSMLMessage(
+          'I had trouble understanding. <break time="300ms"/> Could you please try again or call back later?',
+          { addEmphasis: true }
+        )
+        twiml.say({ voice: voiceToUse, language: languageToUse }, emptyTranscriptionMessage)
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -263,15 +327,19 @@ router.post('/handle-recording', async (req, res) => {
       const twimlResponse = new VoiceResponse()
       
       if (aiResponse && aiResponse.reply) {
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, aiResponse.reply)
+        // Add a brief pause before speaking the AI's main reply
+        const enhancedReply = `<break time="300ms"/>${escapeXml(aiResponse.reply)}`
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, enhancedReply)
       } else {
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "I'm sorry, I encountered an issue.")
+        const fallbackMessage = `<break time="300ms"/>I'm sorry, I encountered an issue. <break time="300ms"/> Let me try to help you differently.`
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, fallbackMessage)
       }
       
       // Continue conversation if flow is active, otherwise end call
       if (currentActiveFlow !== null) {
-        // Flow should continue - prompt for more input
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "Is there anything else, or say 'goodbye' to end.")
+        // Flow should continue - prompt for more input with pause
+        const continuePrompt = `<break time="500ms"/>What else can I help you with? <break time="200ms"/> Or, say 'goodbye' to end the call.`
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, continuePrompt)
         twimlResponse.record({
           action: '/api/voice/handle-recording',
           method: 'POST',
@@ -281,12 +349,14 @@ router.post('/handle-recording', async (req, res) => {
           transcribe: false
         })
         
-        // Fallback if no response
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, 'We did not receive any input. Goodbye.')
+        // Fallback if no response with pause
+        const noResponseMessage = `<break time="300ms"/>We did not receive any input. <break time="300ms"/> Goodbye.`
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, noResponseMessage)
         twimlResponse.hangup()
       } else {
-        // Flow is complete - end the call
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, "Thank you for calling. Goodbye.")
+        // Flow is complete - end the call with pause
+        const endCallMessage = `<break time="300ms"/>Thank you for calling. <break time="300ms"/> Goodbye.`
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, endCallMessage)
         twimlResponse.hangup()
         clearVoiceSession(callSid) // Clean up session for ended call
         console.log('[VOICE DEBUG] Call ended, session cleared for CallSid:', callSid)
@@ -300,7 +370,11 @@ router.post('/handle-recording', async (req, res) => {
       console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
       
       const twiml = new VoiceResponse()
-      twiml.say({ voice: voiceToUse, language: languageToUse }, 'Sorry, I had trouble accessing your message recording. Please try again.')
+      const downloadErrorMessage = createSSMLMessage(
+        'Sorry, I had trouble accessing your message recording. <break time="300ms"/> Please try again.',
+        { addEmphasis: true }
+      )
+      twiml.say({ voice: voiceToUse, language: languageToUse }, downloadErrorMessage)
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -313,7 +387,11 @@ router.post('/handle-recording', async (req, res) => {
     
     // Create fallback TwiML response
     const twiml = new VoiceResponse()
-    twiml.say('Sorry, we are experiencing technical difficulties. Please try again later.')
+    const generalErrorMessage = createSSMLMessage(
+      'Sorry, we are experiencing technical difficulties. <break time="300ms"/> Please try again later.',
+      { addEmphasis: true }
+    )
+    twiml.say(generalErrorMessage)
     twiml.hangup()
     
     res.setHeader('Content-Type', 'application/xml')

@@ -10,6 +10,31 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
 }
 
 /**
+ * Generate a natural acknowledgment to prepend to questions
+ */
+const getQuestionAcknowledgment = (isFirstQuestion: boolean = false): string => {
+  if (isFirstQuestion) {
+    const firstAcknowledgments = [
+      "Perfect!",
+      "Great!",
+      "Alright,",
+      "Okay,",
+      "Sure thing!"
+    ]
+    return firstAcknowledgments[Math.floor(Math.random() * firstAcknowledgments.length)]
+  } else {
+    const followUpAcknowledgments = [
+      "Got it.",
+      "Okay.",
+      "Alright,",
+      "Thanks.",
+      "Perfect."
+    ]
+    return followUpAcknowledgments[Math.floor(Math.random() * followUpAcknowledgments.length)]
+  }
+}
+
+/**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
@@ -186,7 +211,7 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
         const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n')
         const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant."
         
-        const faqPrompt = `Based on the following context, answer the user's question. If the context doesn't provide an answer, politely say you don't have that information. 
+        const faqPrompt = `You are a helpful assistant with a conversational and friendly tone. Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available. 
 
 Context:
 ${contextSnippets}
@@ -194,8 +219,20 @@ ${contextSnippets}
 User's Question: ${message}`
         
         const aiResponse = await getChatCompletion(faqPrompt, personaPrompt)
+        
+        // Add natural acknowledgment prefix to FAQ responses
+        const faqAcknowledgments = [
+          "I found this information for you: ",
+          "Here's what I can tell you about that: ",
+          "Based on our information: ",
+          "Let me help with that - ",
+          "I can answer that: "
+        ]
+        const randomAcknowledgment = faqAcknowledgments[Math.floor(Math.random() * faqAcknowledgments.length)]
+        const finalFaqReply = `${randomAcknowledgment}${aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later."}`
+        
         return { 
-          reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
+          reply: finalFaqReply,
           currentFlow: null,
           showBranding
         }
@@ -203,7 +240,7 @@ User's Question: ${message}`
         // No relevant knowledge found - offer to take details for follow-up
         console.log('No relevant knowledge found in FAQ flow - offering lead capture')
         return { 
-          reply: "I couldn't find a specific answer to that in my current knowledge. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
+          reply: "Hmm, I checked my notes but couldn't find specific information on that. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
           currentFlow: null,
           showBranding
         }
@@ -312,9 +349,22 @@ User's Question: ${message}`
       }
       
       if (nextQuestion) {
-        // Ask the next question and maintain flow state
+        // Determine if this is a follow-up question by checking conversation history
+        let questionPrefix = ""
+        const assistantLeadQuestions = conversationHistory.filter(m => 
+          m.role === 'assistant' && questionsToAsk.some(q => q.questionText === m.content)
+        )
+        
+        // If we've already asked at least one lead question, this is a follow-up
+        if (assistantLeadQuestions.length > 0) {
+          const followUpPrefixes = ["Okay, and ", "Got it. ", "Alright. ", "Thanks. "]
+          questionPrefix = followUpPrefixes[Math.floor(Math.random() * followUpPrefixes.length)]
+        }
+        
+        const leadQuestionReply = `${questionPrefix}${nextQuestion.questionText}`
+        
         return { 
-          reply: nextQuestion.questionText,
+          reply: leadQuestionReply,
           currentFlow: 'LEAD_CAPTURE',
           showBranding
         }
@@ -526,7 +576,8 @@ User's Question: ${message}`
                 await initiateEmergencyVoiceCall(
                   business.notificationPhoneNumber,
                   business.name,
-                  leadSummaryForCall
+                  leadSummaryForCall,
+                  newLead.id
                 )
                 console.log('Emergency voice call initiated successfully')
               } catch (callError) {

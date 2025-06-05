@@ -240,12 +240,12 @@ export async function initiateEmergencyVoiceCall(
       console.error('[Emergency Call] Error fetching AgentConfig:', configError)
     }
 
-    // Configure voice settings with fallbacks
-    const voiceToUse = (agentConfig?.twilioVoice || 'alice') as any
+    // Configure voice settings with fallbacks - prioritize ENV var for HSP alerts
+    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || agentConfig?.twilioVoice || 'alice') as any
     const languageToUse = (agentConfig?.twilioLanguage || 'en-US') as any
     console.log('[Emergency Call] Voice settings:', { voice: voiceToUse, language: languageToUse })
 
-    // XML escaping function for safe text insertion
+    // Enhanced XML escaping function for safe text insertion in SSML
     const escapeXml = (unsafe: string): string => {
       return unsafe.replace(/[<>&'"]/g, function (c: string) {
         switch (c) {
@@ -263,14 +263,22 @@ export async function initiateEmergencyVoiceCall(
     const safeBusinessName = escapeXml(businessName)
     const safeLeadSummary = escapeXml(leadSummary)
 
-    // Construct message with SSML phoneme tag for "lead"
-    const messageToSay = `Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}. Please check your system for details. Repeating: Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ${safeLeadSummary}.`
+    // Create enhanced SSML message with strategic pauses and better pacing
+    const messageToSay = 
+      `<emphasis level="strong">Urgent</emphasis> <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}.` +
+      `<break time="500ms"/>` +
+      `Caller stated: ${safeLeadSummary}.` +
+      `<break time="500ms"/>` +
+      `Please check your email or dashboard for full details.` +
+      `<break time="700ms"/>` +
+      `Repeating: <break time="200ms"/> Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. <break time="200ms"/> Caller stated: ${safeLeadSummary}.`
 
-    // Create TwiML response with proper SSML and configured voice settings
-    const twiml = `<Response><Say voice="${voiceToUse}" language="${languageToUse}">${messageToSay}</Say></Response>`
+    // Create TwiML response using Twilio VoiceResponse class
+    const twiml = new twilio.twiml.VoiceResponse()
+    twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay)
 
     await twilioClient.calls.create({
-      twiml,
+      twiml: twiml.toString(),
       to: toPhoneNumber,
       from: twilioPhoneNumber
     })
