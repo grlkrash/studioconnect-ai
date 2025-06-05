@@ -48,6 +48,7 @@
   let isOpen = false;
   let currentFlowState = null; // Add flow state management
   let leadCaptureQuestions = []; // Cache of lead questions for flow detection
+  let agentName = 'AI Assistant'; // Default agent name that can be updated from backend
 
   // Create CSS styles
   const styles = `
@@ -142,76 +143,118 @@
     }
 
     .smb-chat-header {
-      background: #2563eb;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: white;
       padding: 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.2);
     }
 
     .smb-chat-header-title {
       font-size: 18px;
       font-weight: 600;
+      max-width: calc(100% - 50px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .smb-chat-close {
-      background: none;
+      background: rgba(255, 255, 255, 0.1);
       border: none;
       color: white;
-      font-size: 24px;
+      font-size: 20px;
       cursor: pointer;
-      padding: 0;
-      width: 30px;
-      height: 30px;
+      padding: 8px;
+      width: 36px;
+      height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
-      transition: background 0.2s;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      font-weight: 500;
     }
 
     .smb-chat-close:hover {
       background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    .smb-chat-close:active {
+      transform: scale(0.95);
     }
 
     .smb-chat-messages {
       flex: 1;
       overflow-y: auto;
       padding: 20px;
-      background: #f9fafb;
+      background: #f8fafc;
     }
 
     .smb-chat-message {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       display: flex;
+      flex-direction: column;
       align-items: flex-start;
     }
 
     .smb-chat-message.user {
-      justify-content: flex-end;
+      align-items: flex-end;
     }
 
     .smb-chat-message-content {
-      max-width: 70%;
-      padding: 12px 16px;
-      border-radius: 12px;
+      max-width: 75%;
+      padding: 14px 18px;
+      border-radius: 18px;
       font-size: 14px;
       line-height: 1.5;
       word-wrap: break-word;
+      position: relative;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(10px);
     }
 
     .smb-chat-message.user .smb-chat-message-content {
-      background: #2563eb;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
       color: white;
-      border-bottom-right-radius: 4px;
+      border-bottom-right-radius: 6px;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
     }
 
     .smb-chat-message.ai .smb-chat-message-content {
-      background: white;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
       color: #1f2937;
-      border: 1px solid #e5e7eb;
-      border-bottom-left-radius: 4px;
+      border: 1px solid #e2e8f0;
+      border-bottom-left-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .smb-chat-timestamp {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+      margin-bottom: 0;
+      opacity: 0.8;
+      font-weight: 400;
+      letter-spacing: 0.025em;
+      transition: opacity 0.2s ease;
+    }
+
+    .smb-chat-message:hover .smb-chat-timestamp {
+      opacity: 1;
+    }
+
+    .smb-chat-message.user .smb-chat-timestamp {
+      text-align: right;
+      color: #64748b;
+    }
+
+    .smb-chat-message.ai .smb-chat-timestamp {
+      text-align: left;
+      color: #64748b;
     }
 
     .smb-chat-input-area {
@@ -222,78 +265,152 @@
 
     .smb-chat-input-wrapper {
       display: flex;
-      gap: 10px;
+      gap: 12px;
     }
 
     .smb-chat-input {
       flex: 1;
-      padding: 12px 16px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
+      padding: 14px 18px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
       font-size: 14px;
       outline: none;
-      transition: border-color 0.2s;
+      transition: all 0.2s ease;
+      background: #f8fafc;
     }
 
     .smb-chat-input:focus {
       border-color: #2563eb;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
     .smb-chat-send {
-      padding: 12px 20px;
-      background: #2563eb;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+      min-width: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .smb-chat-send-icon {
+      font-size: 16px;
+      transform: rotate(-45deg);
+      transition: transform 0.2s ease;
+    }
+
+    .smb-chat-send:hover .smb-chat-send-icon {
+      transform: rotate(-45deg) translateX(2px) translateY(-2px);
     }
 
     .smb-chat-send:hover {
-      background: #1d4ed8;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+    }
+
+    .smb-chat-send:active {
+      transform: translateY(0);
+    }
+
+    .smb-chat-send:active .smb-chat-send-icon {
+      transform: rotate(-45deg) scale(0.95);
     }
 
     .smb-chat-send:disabled {
       background: #9ca3af;
       cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .smb-chat-send:disabled .smb-chat-send-icon {
+      transform: rotate(-45deg);
+    }
+
+    .smb-chat-branding {
+      font-size: 10px;
+      text-align: center;
+      padding: 8px 12px 4px 12px;
+      color: #999;
+      background: #fafafa;
+      border-top: 1px solid #eee;
+      display: none;
+      line-height: 1.2;
+    }
+
+    .smb-chat-branding a {
+      color: #777;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .smb-chat-branding a:hover {
+      color: #2563eb;
+      text-decoration: underline;
     }
 
     .smb-chat-typing {
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 12px 16px;
+      gap: 6px;
+      padding: 14px 18px;
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px;
-      border-bottom-left-radius: 4px;
-      max-width: 60px;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      border-bottom-left-radius: 6px;
+      max-width: 80px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      animation: subtle-bounce 2s ease-in-out infinite;
+    }
+
+    @keyframes subtle-bounce {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-1px);
+      }
     }
 
     .smb-chat-typing span {
-      width: 8px;
-      height: 8px;
-      background: #9ca3af;
+      width: 6px;
+      height: 6px;
+      background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);
       border-radius: 50%;
-      animation: typing 1.4s infinite;
+      animation: typing-dots 1.6s ease-in-out infinite;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .smb-chat-typing span:nth-child(1) {
+      animation-delay: 0s;
     }
 
     .smb-chat-typing span:nth-child(2) {
-      animation-delay: 0.2s;
+      animation-delay: 0.3s;
     }
 
     .smb-chat-typing span:nth-child(3) {
-      animation-delay: 0.4s;
+      animation-delay: 0.6s;
     }
 
-    @keyframes typing {
+    @keyframes typing-dots {
       0%, 60%, 100% {
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
+        opacity: 0.7;
       }
       30% {
-        transform: translateY(-10px);
+        transform: translateY(-8px) scale(1.1);
+        opacity: 1;
       }
     }
 
@@ -355,16 +472,31 @@
       }
 
       .smb-chat-header {
-        padding: 12px 16px;
+        padding: 16px;
         position: sticky;
         top: 0;
         z-index: 1;
       }
 
+      .smb-chat-header-title {
+        font-size: 16px;
+      }
+
+      .smb-chat-close {
+        width: 32px;
+        height: 32px;
+        font-size: 18px;
+      }
+
       .smb-chat-messages {
-        padding: 12px 16px;
-        padding-bottom: calc(70px + env(safe-area-inset-bottom));
+        padding: 16px;
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
         max-height: calc(85vh - 140px);
+      }
+
+      .smb-chat-branding {
+        font-size: 9px;
+        padding: 6px 12px 3px 12px;
       }
 
       .smb-chat-input-area {
@@ -372,35 +504,55 @@
         bottom: 0;
         left: 0;
         right: 0;
-        padding: 12px 16px;
-        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        padding: 16px;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
         background: white;
         border-top: 1px solid #e5e7eb;
         z-index: 2;
       }
 
       .smb-chat-input-wrapper {
-        gap: 8px;
+        gap: 10px;
       }
 
       .smb-chat-input {
-        padding: 10px 12px;
+        padding: 12px 16px;
         font-size: 16px;
       }
 
       .smb-chat-send {
-        padding: 10px 16px;
+        padding: 12px 16px;
         white-space: nowrap;
+        min-width: 44px;
+      }
+
+      .smb-chat-send-icon {
+        font-size: 14px;
       }
 
       .smb-chat-message-content {
         max-width: 85%;
         font-size: 15px;
-        padding: 10px 14px;
+        padding: 12px 16px;
       }
 
       .smb-chat-message {
-        margin-bottom: 12px;
+        margin-bottom: 16px;
+      }
+
+      .smb-chat-timestamp {
+        font-size: 10px;
+        margin-top: 3px;
+      }
+
+      .smb-chat-typing {
+        max-width: 70px;
+        padding: 12px 16px;
+      }
+
+      .smb-chat-typing span {
+        width: 5px;
+        height: 5px;
       }
     }
 
@@ -439,10 +591,13 @@
   chatWindow.className = 'smb-chat-window';
   chatWindow.innerHTML = `
     <div class="smb-chat-header">
-      <div class="smb-chat-header-title">AI Assistant</div>
+      <div class="smb-chat-header-title" id="smb-chat-header-title">${agentName}</div>
       <button class="smb-chat-close">&times;</button>
     </div>
     <div class="smb-chat-messages" id="smb-chat-messages"></div>
+    <div class="smb-chat-branding" id="smb-chat-branding">
+      Powered by <a href="https://cincyaisolutions.com" target="_blank">CincyAISolutions</a>
+    </div>
     <div class="smb-chat-input-area">
       <div class="smb-chat-input-wrapper">
         <input 
@@ -451,7 +606,9 @@
           id="smb-chat-input" 
           placeholder="Type your message..."
         />
-        <button class="smb-chat-send" id="smb-chat-send">Send</button>
+        <button class="smb-chat-send" id="smb-chat-send">
+          <span class="smb-chat-send-icon">✈️</span>
+        </button>
       </div>
     </div>
   `;
@@ -465,8 +622,17 @@
   const inputField = document.getElementById('smb-chat-input');
   const sendButton = document.getElementById('smb-chat-send');
   const closeButton = chatWindow.querySelector('.smb-chat-close');
+  const headerTitle = document.getElementById('smb-chat-header-title');
 
   // Functions
+  function updateAgentName(name) {
+    if (name && name.trim()) {
+      agentName = name.trim();
+      headerTitle.textContent = agentName;
+      console.log('[Widget] Updated agent name to:', agentName);
+    }
+  }
+
   function toggleChat() {
     isOpen = !isOpen;
     if (isOpen) {
@@ -500,7 +666,17 @@
     contentDiv.className = 'smb-chat-message-content';
     contentDiv.textContent = message;
     
+    // Create timestamp
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'smb-chat-timestamp';
+    const now = new Date();
+    timestampDiv.textContent = now.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
     messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(timestampDiv);
     messagesArea.appendChild(messageDiv);
     
     // Scroll to bottom
@@ -584,12 +760,29 @@
         responseType: typeof data.response,
         replyType: typeof data.reply,
         messageType: typeof data.message,
-        currentFlow: data.currentFlow
+        currentFlow: data.currentFlow,
+        agentName: data.agentName
       });
+      
+      // Update agent name if provided in response
+      if (data.agentName) {
+        updateAgentName(data.agentName);
+      }
       
       // Update flow state from response
       currentFlowState = data.currentFlow || null;
       console.log('[Widget] Updated currentFlowState from backend:', currentFlowState);
+      
+      // Handle branding visibility
+      const shouldShowBranding = data.showBranding;
+      const brandingDiv = document.getElementById('smb-chat-branding');
+      if (brandingDiv) {
+        if (shouldShowBranding === true) {
+          brandingDiv.style.display = 'block';
+        } else {
+          brandingDiv.style.display = 'none';
+        }
+      }
       
       // Remove typing indicator
       removeTypingIndicator();

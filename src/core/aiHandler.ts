@@ -2,7 +2,7 @@ import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from '../services/notificationService'
-import { LeadCaptureQuestion } from '@prisma/client'
+import { LeadCaptureQuestion, PlanTier } from '@prisma/client'
 
 // Extend the LeadCaptureQuestion type to include isEssentialForEmergency
 type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
@@ -18,13 +18,31 @@ export const processMessage = async (
   conversationHistory: any[],
   businessId: string,
   currentActiveFlow?: string | null
-): Promise<{ reply: string; currentFlow?: string | null; [key: string]: any }> => {
+): Promise<{ reply: string; currentFlow?: string | null; showBranding?: boolean; [key: string]: any }> => {
   try {
     console.log(`AI Handler processing message for business ${businessId}: "${message}"`)
     console.log('Received currentActiveFlow:', currentActiveFlow)
     
     // DEBUG: Log the received conversation history
     console.log('Received conversationHistory on backend:', JSON.stringify(conversationHistory, null, 2))
+
+    // Fetch the Business record to get the planTier
+    const business = await prisma.business.findUnique({
+      where: { id: businessId }
+    })
+
+    if (!business) {
+      console.error(`Business not found for ID: ${businessId}. Cannot determine branding or agent config.`)
+      return { 
+        reply: "Sorry, I'm having trouble finding configuration for this business.",
+        showBranding: true // Default to showing branding if business not found
+      }
+    }
+
+    // Determine if branding should be shown
+    // Show branding for FREE and BASIC tiers, hide for PRO
+    const showBranding = business.planTier === PlanTier.FREE || business.planTier === PlanTier.BASIC
+    console.log(`Business planTier: ${business.planTier}, Show Branding: ${showBranding}`)
 
     // Fetch agent configuration for persona and settings
     const agentConfig = await prisma.agentConfig.findUnique({
@@ -172,14 +190,16 @@ User's Question: ${message}`
         const aiResponse = await getChatCompletion(faqPrompt, personaPrompt)
         return { 
           reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
-          currentFlow: null
+          currentFlow: null,
+          showBranding
         }
       } else {
         // No relevant knowledge found - offer to take details for follow-up
         console.log('No relevant knowledge found in FAQ flow - offering lead capture')
         return { 
           reply: "I couldn't find a specific answer to that in my current knowledge. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
-          currentFlow: null
+          currentFlow: null,
+          showBranding
         }
       }
       
@@ -192,7 +212,8 @@ User's Question: ${message}`
       if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
         return { 
           reply: "It looks like our lead capture system isn't set up yet. How else can I assist?",
-          currentFlow: null
+          currentFlow: null,
+          showBranding
         }
       }
 
@@ -280,7 +301,8 @@ User's Question: ${message}`
         // Ask the next question and maintain flow state
         return { 
           reply: nextQuestion.questionText,
-          currentFlow: 'LEAD_CAPTURE'
+          currentFlow: 'LEAD_CAPTURE',
+          showBranding
         }
       } else {
         // All questions answered - create lead
@@ -371,10 +393,6 @@ User's Question: ${message}`
         
         // Send email notification to the business owner
         try {
-          const business = await prisma.business.findUnique({ 
-            where: { id: businessId } 
-          })
-          
           if (business && business.notificationEmail) {
             console.log(`Sending lead notification email to ${business.notificationEmail}...`)
             
@@ -463,7 +481,8 @@ User's Question: ${message}`
         if (isEmergency) {
           return { 
             reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.",
-            currentFlow: null
+            currentFlow: null,
+            showBranding
           }
         } else {
           // Use custom completion message if available, otherwise use default
@@ -472,7 +491,8 @@ User's Question: ${message}`
           
           return { 
             reply: completionMessage,
-            currentFlow: null
+            currentFlow: null,
+            showBranding
           }
         }
       }
@@ -510,7 +530,8 @@ Respond with only YES or NO.`
           console.log('User declined FAQ fallback offer, providing alternative assistance')
           return {
             reply: "No problem! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
-            currentFlow: null
+            currentFlow: null,
+            showBranding
           }
         }
       }
@@ -519,7 +540,8 @@ Respond with only YES or NO.`
       if (conversationHistory.length === 0 && agentConfig?.welcomeMessage) {
         return { 
           reply: agentConfig.welcomeMessage,
-          currentFlow: null
+          currentFlow: null,
+          showBranding
         }
       }
       
@@ -532,7 +554,8 @@ Respond with only YES or NO.`
       
       return { 
         reply: aiResponse || "How can I help you today?",
-        currentFlow: null
+        currentFlow: null,
+        showBranding
       }
     }
     
@@ -540,7 +563,8 @@ Respond with only YES or NO.`
     console.error('Error in processMessage:', error)
     return { 
       reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly.",
-      currentFlow: null
+      currentFlow: null,
+      showBranding: true // Default to showing branding in error cases
     }
   }
 } 

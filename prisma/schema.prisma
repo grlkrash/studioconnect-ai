@@ -1,25 +1,124 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-// recheck schema - force migration
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
-  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
   previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
-  extensions = [pgvector(map: "vector")]
+  extensions = [vector]
 }
 
-// Enums for type safety
+model Business {
+  id                      String          @id @default(cuid())
+  name                    String
+  businessType            BusinessType    @default(OTHER)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  notificationEmail       String?
+  notificationPhoneNumber String?
+  planTier                PlanTier        @default(FREE)
+  agentConfig             AgentConfig?
+  knowledgeBase           KnowledgeBase[]
+  leads                   Lead[]
+  users                   User[]
+
+  @@map("businesses")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  businessId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
+
+model AgentConfig {
+  id                           String                @id @default(cuid())
+  businessId                   String                @unique
+  agentName                    String                @default("AI Assistant")
+  personaPrompt                String                @default("You are a helpful and friendly assistant.")
+  welcomeMessage               String                @default("Hello! How can I help you today?")
+  colorTheme                   Json                  @default("{\"primary\": \"#0ea5e9\", \"secondary\": \"#64748b\"}")
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+  leadCaptureCompletionMessage String?
+  business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  questions                    LeadCaptureQuestion[]
+
+  @@map("agent_configs")
+}
+
+model LeadCaptureQuestion {
+  id                      String         @id @default(cuid())
+  configId                String
+  questionText            String
+  expectedFormat          ExpectedFormat @default(TEXT)
+  order                   Int
+  isRequired              Boolean        @default(true)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  mapsToLeadField         String?
+  isEssentialForEmergency Boolean        @default(false)
+  config                  AgentConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, order])
+  @@map("lead_capture_questions")
+}
+
+model KnowledgeBase {
+  id         String                 @id @default(cuid())
+  businessId String
+  content    String
+  sourceURL  String?
+  embedding  Unsupported("vector")?
+  metadata   Json?                  @default("{}")
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  business   Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_base")
+}
+
+model Lead {
+  id                     String       @id @default(cuid())
+  businessId             String
+  capturedData           Json         @default("{}")
+  conversationTranscript String
+  status                 LeadStatus   @default(NEW)
+  contactEmail           String?
+  contactPhone           String?
+  contactName            String?
+  notes                  String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  priority               LeadPriority @default(NORMAL)
+  business               Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("leads")
+}
+
+model Conversation {
+  id         String    @id @default(cuid())
+  businessId String
+  sessionId  String    @unique
+  messages   Json      @default("[]")
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  leadId     String?
+
+  @@map("conversations")
+}
+
 enum BusinessType {
   REAL_ESTATE
   LAW
@@ -31,6 +130,12 @@ enum BusinessType {
 enum UserRole {
   ADMIN
   USER
+}
+
+enum PlanTier {
+  FREE
+  BASIC
+  PRO
 }
 
 enum ExpectedFormat {
@@ -51,129 +156,4 @@ enum LeadPriority {
   NORMAL
   HIGH
   URGENT
-}
-
-// Main business entity
-model Business {
-  id           String        @id @default(cuid())
-  name         String
-  businessType BusinessType  @default(OTHER)
-  notificationEmail String?  // Email for receiving lead notifications
-  notificationPhoneNumber String? // Optional: Phone number for SMS/Voice alerts
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  // Relations
-  users        User[]
-  agentConfig  AgentConfig?
-  leads        Lead[]
-  knowledgeBase KnowledgeBase[]
-
-  @@map("businesses")
-}
-
-// User management
-model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(USER)
-  businessId   String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  // Relations
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@map("users")
-}
-
-// AI agent configuration
-model AgentConfig {
-  id             String    @id @default(cuid())
-  businessId     String    @unique
-  agentName      String    @default("AI Assistant")
-  personaPrompt  String    @default("You are a helpful and friendly assistant.")
-  welcomeMessage String    @default("Hello! How can I help you today?")
-  leadCaptureCompletionMessage String? // Custom message shown after lead capture completion
-  colorTheme     Json      @default("{\"primary\": \"#0ea5e9\", \"secondary\": \"#64748b\"}")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  // Relations
-  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  questions      LeadCaptureQuestion[]
-
-  @@map("agent_configs")
-}
-
-// Lead capture flow questions
-model LeadCaptureQuestion {
-  id             String         @id @default(cuid())
-  configId       String
-  questionText   String
-  expectedFormat ExpectedFormat @default(TEXT)
-  order          Int
-  isRequired     Boolean        @default(true)
-  mapsToLeadField String?       // Maps to lead fields: contactName, contactEmail, contactPhone, notes
-  isEssentialForEmergency Boolean @default(false)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-
-  // Relations
-  config         AgentConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  @@unique([configId, order])
-  @@map("lead_capture_questions")
-}
-
-// Knowledge base for RAG
-model KnowledgeBase {
-  id         String                     @id @default(cuid())
-  businessId String
-  content    String                     @db.Text
-  sourceURL  String?
-  embedding  Unsupported("vector(1536)")?
-  metadata   Json?                      @default("{}")
-  createdAt  DateTime                   @default(now())
-  updatedAt  DateTime                   @updatedAt
-
-  // Relations
-  business   Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@map("knowledge_base")
-}
-
-// Captured leads
-model Lead {
-  id                     String       @id @default(cuid())
-  businessId             String
-  capturedData           Json         @default("{}")
-  conversationTranscript String       @db.Text
-  status                 LeadStatus   @default(NEW)
-  priority               LeadPriority @default(NORMAL)
-  contactEmail           String?
-  contactPhone           String?
-  contactName            String?
-  notes                  String?      @db.Text
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
-
-  // Relations
-  business               Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@map("leads")
-}
-
-// Conversation tracking (optional - for detailed analytics)
-model Conversation {
-  id         String   @id @default(cuid())
-  businessId String
-  sessionId  String   @unique
-  messages   Json     @default("[]")
-  startedAt  DateTime @default(now())
-  endedAt    DateTime?
-  leadId     String?
-
-  @@map("conversations")
 }

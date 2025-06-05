@@ -5,6 +5,7 @@ const db_1 = require("../services/db");
 const openai_1 = require("../services/openai");
 const ragService_1 = require("./ragService");
 const notificationService_1 = require("../services/notificationService");
+const client_1 = require("@prisma/client");
 /**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
@@ -15,6 +16,21 @@ const processMessage = async (message, conversationHistory, businessId, currentA
         console.log('Received currentActiveFlow:', currentActiveFlow);
         // DEBUG: Log the received conversation history
         console.log('Received conversationHistory on backend:', JSON.stringify(conversationHistory, null, 2));
+        // Fetch the Business record to get the planTier
+        const business = await db_1.prisma.business.findUnique({
+            where: { id: businessId }
+        });
+        if (!business) {
+            console.error(`Business not found for ID: ${businessId}. Cannot determine branding or agent config.`);
+            return {
+                reply: "Sorry, I'm having trouble finding configuration for this business.",
+                showBranding: true // Default to showing branding if business not found
+            };
+        }
+        // Determine if branding should be shown
+        // Show branding for FREE and BASIC tiers, hide for PRO
+        const showBranding = business.planTier === client_1.PlanTier.FREE || business.planTier === client_1.PlanTier.BASIC;
+        console.log(`Business planTier: ${business.planTier}, Show Branding: ${showBranding}`);
         // Fetch agent configuration for persona and settings
         const agentConfig = await db_1.prisma.agentConfig.findUnique({
             where: { businessId },
@@ -137,7 +153,8 @@ User's Question: ${message}`;
                 const aiResponse = await (0, openai_1.getChatCompletion)(faqPrompt, personaPrompt);
                 return {
                     reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
-                    currentFlow: null
+                    currentFlow: null,
+                    showBranding
                 };
             }
             else {
@@ -145,7 +162,8 @@ User's Question: ${message}`;
                 console.log('No relevant knowledge found in FAQ flow - offering lead capture');
                 return {
                     reply: "I couldn't find a specific answer to that in my current knowledge. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
-                    currentFlow: null
+                    currentFlow: null,
+                    showBranding
                 };
             }
         }
@@ -156,7 +174,8 @@ User's Question: ${message}`;
             if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
                 return {
                     reply: "It looks like our lead capture system isn't set up yet. How else can I assist?",
-                    currentFlow: null
+                    currentFlow: null,
+                    showBranding
                 };
             }
             // Check if the INITIAL message that triggered lead capture was an emergency
@@ -231,7 +250,8 @@ User's Question: ${message}`;
                 // Ask the next question and maintain flow state
                 return {
                     reply: nextQuestion.questionText,
-                    currentFlow: 'LEAD_CAPTURE'
+                    currentFlow: 'LEAD_CAPTURE',
+                    showBranding
                 };
             }
             else {
@@ -311,9 +331,6 @@ User's Question: ${message}`;
                 });
                 // Send email notification to the business owner
                 try {
-                    const business = await db_1.prisma.business.findUnique({
-                        where: { id: businessId }
-                    });
                     if (business && business.notificationEmail) {
                         console.log(`Sending lead notification email to ${business.notificationEmail}...`);
                         // Prepare lead details for the email
@@ -389,7 +406,8 @@ User's Question: ${message}`;
                 if (isEmergency) {
                     return {
                         reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.",
-                        currentFlow: null
+                        currentFlow: null,
+                        showBranding
                     };
                 }
                 else {
@@ -398,7 +416,8 @@ User's Question: ${message}`;
                         "Thanks for providing that information! Our team will review it and get back to you shortly.";
                     return {
                         reply: completionMessage,
-                        currentFlow: null
+                        currentFlow: null,
+                        showBranding
                     };
                 }
             }
@@ -428,7 +447,8 @@ Respond with only YES or NO.`;
                     console.log('User declined FAQ fallback offer, providing alternative assistance');
                     return {
                         reply: "No problem! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
-                        currentFlow: null
+                        currentFlow: null,
+                        showBranding
                     };
                 }
             }
@@ -436,7 +456,8 @@ Respond with only YES or NO.`;
             if (conversationHistory.length === 0 && agentConfig?.welcomeMessage) {
                 return {
                     reply: agentConfig.welcomeMessage,
-                    currentFlow: null
+                    currentFlow: null,
+                    showBranding
                 };
             }
             // General chat with persona
@@ -444,7 +465,8 @@ Respond with only YES or NO.`;
             const aiResponse = await (0, openai_1.getChatCompletion)(message, personaPrompt);
             return {
                 reply: aiResponse || "How can I help you today?",
-                currentFlow: null
+                currentFlow: null,
+                showBranding
             };
         }
     }
@@ -452,7 +474,8 @@ Respond with only YES or NO.`;
         console.error('Error in processMessage:', error);
         return {
             reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly.",
-            currentFlow: null
+            currentFlow: null,
+            showBranding: true // Default to showing branding in error cases
         };
     }
 };
