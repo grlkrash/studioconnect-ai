@@ -7,6 +7,56 @@ const ragService_1 = require("./ragService");
 const notificationService_1 = require("../services/notificationService");
 const client_1 = require("@prisma/client");
 /**
+ * Enhances prompts for voice-friendly responses with SSML guidance
+ */
+const enhancePromptForVoice = (basePrompt, businessName) => {
+    const voiceGuidance = `
+You are a highly articulate and empathetic AI voice assistant${businessName ? ` for ${businessName}` : ''}. Your responses will be spoken aloud, so craft them to sound natural and conversational when heard.
+
+VOICE RESPONSE GUIDELINES:
+- Use a warm, professional, and conversational tone
+- Speak as if you're having a friendly phone conversation
+- Use natural speech patterns with appropriate pauses
+- Keep sentences clear and not too long
+- Use contractions naturally (I'm, you're, we'll, that's)
+- Include verbal acknowledgments (Got it, Okay, Alright, Perfect)
+- Ask follow-up questions naturally
+- Avoid complex punctuation or special characters that don't translate well to speech
+
+For emphasis on important information, you may optionally use simple SSML tags:
+- <break time="300ms"/> for brief pauses
+- <emphasis level="moderate">important word</emphasis> for key information
+- Use sparingly and only where it genuinely improves clarity
+
+${basePrompt}`;
+    return voiceGuidance;
+};
+/**
+ * Generate a natural acknowledgment to prepend to questions
+ */
+const getQuestionAcknowledgment = (isFirstQuestion = false) => {
+    if (isFirstQuestion) {
+        const firstAcknowledgments = [
+            "Perfect!",
+            "Great!",
+            "Alright,",
+            "Okay,",
+            "Sure thing!"
+        ];
+        return firstAcknowledgments[Math.floor(Math.random() * firstAcknowledgments.length)];
+    }
+    else {
+        const followUpAcknowledgments = [
+            "Got it.",
+            "Okay.",
+            "Alright,",
+            "Thanks.",
+            "Perfect."
+        ];
+        return followUpAcknowledgments[Math.floor(Math.random() * followUpAcknowledgments.length)];
+    }
+};
+/**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
@@ -122,6 +172,12 @@ FAQ indicators (respond with FAQ if user is ONLY seeking information):
 - Past tense or hypothetical scenarios
 - No indication of current need or purchase intent
 
+END_CALL indicators (respond with END_CALL):
+- User says 'goodbye', 'bye', 'that's all', 'nothing else'
+- Expressions of completion: 'thanks, that's everything', 'I'm all set'
+- Clear intent to end conversation: 'talk to you later', 'have a good day'
+- Dismissive responses indicating they're done: 'okay thanks', 'alright'
+
 OTHER indicators:
 - Greetings, thank you messages
 - Unclear or off-topic messages
@@ -130,8 +186,8 @@ OTHER indicators:
 User message: '${message}'
 Recent history: ${JSON.stringify(conversationHistory.slice(-3))}
 
-Classify as: LEAD_CAPTURE, FAQ, or OTHER`;
-            const intentResponse = await (0, openai_1.getChatCompletion)(intentPrompt, "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, or OTHER.");
+Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`;
+            const intentResponse = await (0, openai_1.getChatCompletion)(intentPrompt, "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, END_CALL, or OTHER.");
             intent = (intentResponse || 'OTHER').trim().toUpperCase();
         }
         console.log(`Effective intent: ${intent}`);
@@ -144,15 +200,27 @@ Classify as: LEAD_CAPTURE, FAQ, or OTHER`;
                 // Found relevant snippets - construct context-aware response
                 const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n');
                 const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant.";
-                const faqPrompt = `Based on the following context, answer the user's question. If the context doesn't provide an answer, politely say you don't have that information. 
+                const baseFaqPrompt = `Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available. 
 
 Context:
 ${contextSnippets}
 
 User's Question: ${message}`;
-                const aiResponse = await (0, openai_1.getChatCompletion)(faqPrompt, personaPrompt);
+                // Enhance the prompt for voice interaction
+                const voiceEnhancedPrompt = enhancePromptForVoice(baseFaqPrompt, business.name);
+                const aiResponse = await (0, openai_1.getChatCompletion)(voiceEnhancedPrompt, personaPrompt);
+                // Add natural acknowledgment prefix to FAQ responses for voice
+                const faqAcknowledgments = [
+                    "I can help with that. ",
+                    "Here's what I found: ",
+                    "Let me share that information: ",
+                    "I've got the answer for you: ",
+                    "Sure, here's what I know: "
+                ];
+                const randomAcknowledgment = faqAcknowledgments[Math.floor(Math.random() * faqAcknowledgments.length)];
+                const finalFaqReply = `${randomAcknowledgment}${aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later."}`;
                 return {
-                    reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
+                    reply: finalFaqReply,
                     currentFlow: null,
                     showBranding
                 };
@@ -161,11 +229,19 @@ User's Question: ${message}`;
                 // No relevant knowledge found - offer to take details for follow-up
                 console.log('No relevant knowledge found in FAQ flow - offering lead capture');
                 return {
-                    reply: "I couldn't find a specific answer to that in my current knowledge. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
+                    reply: "I checked my information but couldn't find specific details on that. Would you like me to take down your contact information so someone from our team can get back to you with the answer you need?",
                     currentFlow: null,
                     showBranding
                 };
             }
+        }
+        else if (intent === 'END_CALL') {
+            console.log('Entering END_CALL flow...');
+            return {
+                reply: "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!",
+                currentFlow: null,
+                showBranding
+            };
         }
         else if (intent === 'LEAD_CAPTURE') {
             // Lead Capture Flow - Guide through questions
@@ -247,9 +323,17 @@ User's Question: ${message}`;
                 }
             }
             if (nextQuestion) {
-                // Ask the next question and maintain flow state
+                // Determine if this is a follow-up question by checking conversation history
+                let questionPrefix = "";
+                const assistantLeadQuestions = conversationHistory.filter(m => m.role === 'assistant' && questionsToAsk.some(q => q.questionText === m.content));
+                // If we've already asked at least one lead question, this is a follow-up
+                if (assistantLeadQuestions.length > 0) {
+                    const followUpPrefixes = ["Okay, and ", "Got it. ", "Alright. ", "Thanks. "];
+                    questionPrefix = followUpPrefixes[Math.floor(Math.random() * followUpPrefixes.length)];
+                }
+                const leadQuestionReply = `${questionPrefix}${nextQuestion.questionText}`;
                 return {
-                    reply: nextQuestion.questionText,
+                    reply: leadQuestionReply,
                     currentFlow: 'LEAD_CAPTURE',
                     showBranding
                 };
@@ -276,6 +360,11 @@ User's Question: ${message}`;
                 }
                 // DEBUG: Log final capturedData before saving
                 console.log('Final capturedData before saving lead:', JSON.stringify(capturedData, null, 2));
+                // Add emergency notes if this was detected as an emergency
+                if (isEmergency && firstUserMessage) {
+                    capturedData.emergency_notes = `User indicated an EMERGENCY situation in their initial message: "${firstUserMessage}"`;
+                    console.log('Added emergency_notes to capturedData:', capturedData.emergency_notes);
+                }
                 // Map captured data to specific lead fields based on mapsToLeadField property
                 let contactName = undefined;
                 let contactEmail = undefined;
@@ -340,7 +429,8 @@ User's Question: ${message}`;
                             contactName: newLead.contactName,
                             contactEmail: newLead.contactEmail,
                             contactPhone: newLead.contactPhone,
-                            notes: newLead.notes
+                            notes: newLead.notes,
+                            createdAt: newLead.createdAt
                         };
                         await (0, notificationService_1.sendLeadNotificationEmail)(business.notificationEmail, leadDetails, newLead.priority, business.name);
                         // Send confirmation email to customer if email was captured
@@ -360,31 +450,70 @@ User's Question: ${message}`;
                         if (isEmergency && business.notificationPhoneNumber) {
                             try {
                                 console.log(`Initiating emergency voice call to ${business.notificationPhoneNumber}...`);
-                                // Construct a more detailed lead summary
+                                // Construct a more detailed lead summary with improved emergency prioritization
                                 let leadSummaryForCall = `Lead from ${newLead.contactName || 'unknown contact'}.`;
-                                // Look for issue/problem description in captured data
+                                // Look for problem description in captured data with enhanced priority logic
                                 if (newLead.capturedData && typeof newLead.capturedData === 'object') {
                                     const captured = newLead.capturedData;
-                                    // Try to find the issue description from various possible question patterns
-                                    const issueKey = Object.keys(captured).find(key => key.toLowerCase().includes('issue') ||
-                                        key.toLowerCase().includes('problem') ||
-                                        key.toLowerCase().includes('describe') ||
-                                        key.toLowerCase().includes('what') && key.toLowerCase().includes('happening'));
-                                    if (issueKey) {
-                                        leadSummaryForCall += ` Issue: ${captured[issueKey]}.`;
+                                    let problemDescription = null;
+                                    // PRIORITY 1: Look for answers to questions marked as isEssentialForEmergency that contain emergency-specific keywords
+                                    const emergencyQuestionKeys = Object.keys(captured).filter(key => {
+                                        const questionFromConfig = questionsToAsk.find(q => q.questionText === key && q.isEssentialForEmergency);
+                                        if (!questionFromConfig)
+                                            return false;
+                                        // Check if the question itself is emergency-focused
+                                        const emergencyKeywords = ['emergency', 'urgent', 'describe', 'problem', 'issue', 'situation', 'happening', 'wrong'];
+                                        return emergencyKeywords.some(keyword => key.toLowerCase().includes(keyword));
+                                    });
+                                    if (emergencyQuestionKeys.length > 0) {
+                                        // Use the first emergency-specific question answer
+                                        problemDescription = captured[emergencyQuestionKeys[0]];
+                                        console.log(`Using answer from emergency-specific question: "${emergencyQuestionKeys[0]}"`);
                                     }
-                                    else {
-                                        // If no specific issue question found, include the first user message as context
-                                        const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content;
-                                        if (firstUserMessage) {
-                                            leadSummaryForCall += ` Initial message: ${firstUserMessage}.`;
+                                    // PRIORITY 2: Look for emergency_notes (initial transcribed emergency message)
+                                    if (!problemDescription && captured.emergency_notes) {
+                                        // Extract the actual emergency message from emergency_notes
+                                        const match = captured.emergency_notes.match(/initial message: "([^"]+)"/i);
+                                        if (match && match[1]) {
+                                            problemDescription = match[1];
+                                            console.log('Using emergency_notes content for voice alert');
                                         }
                                         else {
-                                            leadSummaryForCall += ' Details in system.';
+                                            problemDescription = captured.emergency_notes;
                                         }
                                     }
+                                    // PRIORITY 3: General issue/problem description questions
+                                    if (!problemDescription) {
+                                        const issueKey = Object.keys(captured).find(key => key.toLowerCase().includes('issue') ||
+                                            key.toLowerCase().includes('problem') ||
+                                            key.toLowerCase().includes('describe') ||
+                                            (key.toLowerCase().includes('what') && key.toLowerCase().includes('happening')));
+                                        if (issueKey) {
+                                            problemDescription = captured[issueKey];
+                                            console.log(`Using general issue description from: "${issueKey}"`);
+                                        }
+                                    }
+                                    // PRIORITY 4: Fall back to first user message
+                                    if (!problemDescription) {
+                                        const firstUserMessage = conversationHistory.find(entry => entry.role === 'user')?.content;
+                                        if (firstUserMessage) {
+                                            problemDescription = firstUserMessage;
+                                            console.log('Using first user message as fallback for voice alert');
+                                        }
+                                    }
+                                    // Construct the summary with the best available description
+                                    if (problemDescription) {
+                                        // Truncate for voice clarity (max ~150 chars)
+                                        const truncatedDescription = problemDescription.length > 150
+                                            ? problemDescription.substring(0, 150) + '...'
+                                            : problemDescription;
+                                        leadSummaryForCall += ` Issue stated: ${truncatedDescription}`;
+                                    }
+                                    else {
+                                        leadSummaryForCall += ' Details in system.';
+                                    }
                                 }
-                                await (0, notificationService_1.initiateEmergencyVoiceCall)(business.notificationPhoneNumber, business.name, leadSummaryForCall);
+                                await (0, notificationService_1.initiateEmergencyVoiceCall)(business.notificationPhoneNumber, business.name, leadSummaryForCall, newLead.id);
                                 console.log('Emergency voice call initiated successfully');
                             }
                             catch (callError) {
@@ -413,7 +542,7 @@ User's Question: ${message}`;
                 else {
                     // Use custom completion message if available, otherwise use default
                     const completionMessage = agentConfig?.leadCaptureCompletionMessage ||
-                        "Thanks for providing that information! Our team will review it and get back to you shortly.";
+                        "Thanks for providing that information! Our team will review it and get back to you ASAP.";
                     return {
                         reply: completionMessage,
                         currentFlow: null,

@@ -1,219 +1,272 @@
 # Product Requirements Document: Leads Support AI Agent
-**Version:** 3.0 (Post-MVP, Pre-Live Demo)
-**Date:** June 2, 2025
+**Version:** 4.0 (Voice Agent & Plan Tier Implementation)
+**Date:** December 2024
 **Project Owner:** Sonia
-**Author:** Gemini AI Assistant (in collaboration with Sonia)
+**Author:** AI Assistant (in collaboration with Sonia)
 
 ## 1. Introduction
 
 ### 1.1. Purpose of this Document
-This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the Minimum Viable Product (MVP) that has been developed, tested, and deployed to a staging/development environment on Render. It serves as a central reference for current functionality, future development, and stakeholder alignment.
+This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the **Voice-Enabled Multi-Channel Platform** that has evolved from the original MVP to include comprehensive voice calling capabilities, plan-based feature tiers, enhanced emergency handling, and advanced analytics. The system is currently deployed and operational with both chat and voice functionalities.
 
 ### 1.2. Project Vision
-To empower Small to Medium-Sized Businesses (SMBs) with an intelligent, affordable, and highly effective AI-powered chat assistant. The Agent aims to seamlessly integrate into their customer interaction workflows, dramatically enhancing customer engagement, automating and optimizing lead capture and qualification, providing 24/7 instant and accurate FAQ support, and ultimately enabling SMBs to save valuable time, minimize missed opportunities, and accelerate business growth.
+To empower Small to Medium-Sized Businesses (SMBs) with an intelligent, **multi-channel AI platform** that seamlessly handles both chat and voice interactions. The Agent provides 24/7 availability across communication channels, sophisticated emergency detection and response, plan-based access to advanced features that scale with business needs, and comprehensive analytics to help SMBs understand and optimize their customer interactions.
 
 ### 1.3. Product Goals
 
-#### MVP Goals (Functionally Achieved & Deployed to Staging)
-* **Stable & Reliable Core Application:** A Dockerized backend application serving multiple SMB clients (multi-tenant by design) deployed on Render.
-* **Intelligent Conversation Core:** Implement an AI core capable of:
-    * Accurate user intent classification (FAQ, Lead Capture, Emergency Lead Capture, Other).
-    * Effective FAQ answering using a Retrieval-Augmented Generation (RAG) system with business-specific knowledge bases and OpenAI embeddings.
-    * A configurable, sequential lead capture flow that populates both structured lead data and specific contact fields.
-* **Actionable Lead Management:**
-    * Implement emergency lead prioritization.
-    * Provide immediate email notifications to the SMB for new leads, highlighting urgency.
-    * Provide automated email confirmation to the customer upon lead submission.
-* **Functional Interfaces:**
-    * Deliver a functional frontend chat widget (`widget.js`) easily embeddable on SMB websites.
-    * Provide a secure Admin Dashboard for SMBs to:
-        * Log in.
-        * Configure core agent settings (Agent Name, Persona Prompt, Welcome Message, Chat Widget Color Theme).
-        * Manage Lead Capture Questions (Add, View, Edit, Delete, including mapping to specific lead data fields like `contactName`, `contactEmail`, `contactPhone`).
-        * Manage Knowledge Base content (Add, View, Edit, Delete, with automatic embedding generation and regeneration on updates).
-        * View Captured Leads with key details populated and allow for status updates and internal notes.
+#### Current Implementation (V4.0 - Fully Deployed)
+* **Voice-Enabled AI Platform:** Complete integration with Twilio for incoming call handling, speech processing, and natural language voice responses
+* **Plan-Tier Architecture:** Three-tier system (FREE, BASIC, PRO) with progressive feature access and plan-based UI rendering
+* **Enhanced Emergency System:** Cross-channel emergency detection with priority voice notifications and essential question flagging
+* **Advanced Session Management:** Redis-backed session storage with comprehensive analytics and health monitoring
+* **Multi-Channel Lead Capture:** Seamless lead management across chat and voice with sophisticated routing
 
-#### Long-Term Goals (V1.1 and Beyond)
-* Achieve a fully self-serve SaaS model enabling SMBs to independently sign up, subscribe, configure, and deploy the agent.
-* Expand to multi-channel communication (SMS, Voice Calls via Twilio, Social Media DMs).
-* Offer deep, bi-directional integrations with popular SMB CRMs (e.g., HubSpot, Salesforce, industry-specific CRMs).
-* Continuously enhance AI capabilities: contextual awareness, proactive engagement, dynamic clarifying questions.
-* Provide advanced analytics, reporting, and insights for SMBs on agent performance and lead quality.
+#### Achieved Core Features
+* **Sophisticated Voice Agent:**
+  - Twilio integration with webhook handling for incoming calls
+  - OpenAI Whisper transcription and SSML-enhanced speech synthesis
+  - Multiple voice options (Standard, Premium Neural, Generative)
+  - Multi-language support (English variants, Spanish, French, German, Italian, Portuguese)
+  - Dynamic voice actions (CONTINUE, HANGUP, TRANSFER, VOICEMAIL)
+* **Advanced Analytics Platform:**
+  - Session-based conversation tracking with Redis
+  - Entity extraction and intent classification
+  - Voice call duration and interaction metrics
+  - Health monitoring with system status dashboards
+* **Plan-Based Feature Gating:**
+  - FREE tier with basic chat functionality
+  - BASIC tier with enhanced lead capture
+  - PRO tier with full voice agent access and advanced features
+
+#### Long-Term Goals (V5.0 and Beyond)
+* **Advanced AI Capabilities:** Contextual memory across sessions, proactive engagement triggers
+* **CRM Integrations:** Direct sync with HubSpot, Salesforce, and industry-specific CRMs
+* **Advanced Voice Features:** Voice cloning, multi-party conference calls, voicemail-to-text
+* **Self-Service SaaS:** Complete subscription management with automated billing and onboarding
+* **Mobile App:** Native mobile applications for business owners to manage interactions on-the-go
 
 ### 1.4. Target Audience
-Primary users are Small to Medium-Sized Businesses (SMBs) in service-oriented industries that rely heavily on inbound customer inquiries for lead generation, appointments, and sales. These businesses often face challenges with 24/7 availability, efficiently handling high volumes of repetitive questions, and promptly capturing and qualifying leads.
+Primary users are Small to Medium-Sized Businesses (SMBs) in service-oriented industries that require immediate response capabilities and sophisticated lead management across multiple communication channels.
 
-**Initial Customer Profiles (ICPs) for MVP focus:**
-* **Home Service Professionals (HSPs):** Plumbers, electricians, HVAC technicians, landscapers, roofers, etc.
-* **Real Estate Agencies & Agents.**
-* **Law Offices** (for initial non-advisory information gathering and consultation scheduling).
-* **Med Spas & Aesthetics Clinics** (for non-PHI related inquiries, service information, and appointment booking).
+**Current Customer Profiles (Validated ICPs):**
+* **Home Service Professionals (HSPs):** Plumbers, electricians, HVAC technicians requiring emergency response capabilities
+* **Medical Practices:** Clinics and med spas needing appointment scheduling and non-PHI inquiry handling
+* **Real Estate Agencies:** Agents requiring 24/7 lead capture and immediate response to urgent inquiries
+* **Legal Practices:** Law offices needing initial consultation scheduling and information gathering
+* **Service Contractors:** Landscapers, roofers, contractors requiring multi-channel communication
 
 ### 1.5. Scope
-* **In Scope for Current MVP (Deployed):** All features listed under "MVP Goals" and detailed in Section 4.
-* **Out of Scope for Current MVP (Future Considerations):** Direct billing/subscription management UI, self-serve signup, advanced multi-channel integrations beyond email, deep CRM syncs, full UI polish beyond basic functionality.
+* **In Scope (Current V4.0 Implementation):** All voice agent features, plan tier system, enhanced emergency handling, Redis session management, advanced analytics
+* **Phase 1 Future Development:** CRM integrations, advanced voice features, mobile applications
+* **Phase 2 Future Development:** Self-service SaaS platform, automated billing, advanced AI capabilities
 
 ## 2. Product Overview
 
 ### 2.1. Core Problem & Solution
-Many SMBs lose potential business and spend excessive time on repetitive inquiries due to limited availability and resources. The Leads Support AI Agent provides an always-on, intelligent chatbot that instantly engages website visitors, answers common questions accurately, captures and qualifies leads efficiently, and alerts the business to new opportunities, especially urgent ones.
+SMBs lose significant business opportunities due to inability to handle immediate customer needs, especially emergency situations, across multiple communication channels. The Voice-Enabled AI Agent provides comprehensive coverage with intelligent routing, sophisticated emergency detection, and plan-based access to advanced features that scale with business needs.
 
-### 2.2. Key Differentiators (Planned & Inherent)
-* **Tailored for Service SMBs:** Focus on lead quality, emergency handling, and practical information delivery.
-* **Ease of Configuration:** Admin dashboard designed for non-technical SMB owners.
-* **RAG Accuracy:** Provides answers based on the SMB's own verified knowledge base.
-* **Proactive Lead Handling:** Prioritization and immediate notifications for HSPs.
-* **Affordability:** Designed to be accessible for SMB budgets.
+### 2.2. Key Differentiators (Implemented & Validated)
+* **True Multi-Channel Platform:** Seamless integration between chat and voice with unified session management
+* **Advanced Emergency Response:** Cross-channel emergency detection with priority voice notifications to business owners
+* **Plan-Based Value Proposition:** Clear feature progression from FREE to BASIC to PRO tiers
+* **Voice-First Design:** SSML-enhanced natural speech synthesis optimized for business conversations
+* **Sophisticated Analytics:** Real-time session tracking with entity extraction and intent analysis
+* **Service SMB Focus:** Built specifically for emergency-responsive service businesses
 
-## 3. User Personas & Stories (MVP Summary)
+## 3. User Personas & Stories (Current Implementation)
 
-### 3.1. Helen the HSP (Plumber)
-* **As Helen,** I want an AI agent to answer calls/chats about my service area and hours when I'm on a job, so I don't miss new customers.
-* **As Helen,** I need the AI to get a customer's name, phone, email, and a description of their plumbing issue, so I have all the details before I call back.
-* **As Helen,** if a customer says "my basement is flooding," I need an immediate alert (email, and ideally SMS/call later) so I can respond instantly.
-* **As Helen,** I want to easily update the list of questions the AI asks and the answers it gives for FAQs via a simple web page.
-* **As Helen,** I want to see a list of all leads captured, with their urgency and details clearly displayed, and be able to mark their status (e.g., "Contacted," "Job Booked").
+### 3.1. Helen the HSP (Plumber) - PRO Tier User
+* **As Helen,** I receive voice calls directly to my business number when customers have plumbing emergencies, and the AI handles initial triage with natural conversation
+* **As Helen,** I get immediate voice calls to my mobile when the AI detects flooding or burst pipe emergencies, with enhanced SSML messaging for urgency
+* **As Helen,** I can customize voice greetings and messages for my specific business needs in my PRO admin dashboard
+* **As Helen,** I access detailed analytics showing call duration, intent analysis, and peak emergency times to optimize my response strategy
+* **As Helen,** I can choose from premium voice options (Polly Neural, Generative) to match my brand personality
 
-### 3.2. Charlie the Client (Homeowner with a plumbing issue)
-* **As Charlie,** when I have a burst pipe at night, I want to quickly tell a plumbing service my problem and know my request is received and treated as urgent.
-* **As Charlie,** I want to ask about service costs or if they handle specific issues before committing to a call.
-* **As Charlie,** I want to receive a confirmation that my service request was submitted successfully.
+### 3.2. Sarah the Small Business Owner - BASIC Tier User
+* **As Sarah,** I have access to enhanced chat functionality and advanced lead capture without voice features
+* **As Sarah,** I can set up unlimited lead capture questions for my consultation scheduling service
+* **As Sarah,** I receive priority email notifications for new leads with basic analytics
+* **As Sarah,** I can upgrade to PRO tier when my business grows and needs voice capabilities
 
-## 4. Detailed Feature Specifications (MVP - Current Deployed State)
+### 3.3. Mike the Startup Owner - FREE Tier User
+* **As Mike,** I get basic chat widget functionality with up to 5 lead capture questions to validate my business concept
+* **As Mike,** I see system branding to understand what platform powers my agent
+* **As Mike,** I can upgrade to BASIC or PRO tiers as my business scales
 
-### 4.1. AI Chat Widget (`widget.js`)
-* **Embedding:** Deployed via a single `<script>` tag on the SMB's website, configured with a `data-business-id`. Dynamically determines API endpoint from its own load source.
-* **User Interface:**
-    * Fixed chat bubble button.
-    * Click-to-open chat window with header (agent name, close button), scrollable message display area, text input field, and send button.
-    * Basic color theme configurable via Admin Dashboard.
-* **Core Functionality:**
-    * Retrieves `businessId` from its `data-business-id` attribute.
-    * Displays a welcome message (from `AgentConfig`) on first open.
-    * Sends user messages to `POST /api/chat` backend endpoint.
-    * Request payload includes `message`, `businessId`, and `conversationHistory`.
-    * `conversationHistory` is maintained client-side as an array of `{role: 'user' | 'assistant', content: string}`.
-    * Displays AI responses in the chat window.
-    * Handles basic error display (e.g., "trouble connecting") if API connection fails.
+### 3.4. Charlie the Emergency Customer
+* **As Charlie,** when I call about a burst pipe emergency, I speak naturally to an AI that understands urgency and routes me appropriately
+* **As Charlie,** I get immediate confirmation through voice that my emergency request is being treated as priority
+* **As Charlie,** I can continue the conversation across channels (start with chat, escalate to voice call) with full context preservation
 
-### 4.2. AI Core Logic (`aiHandler.ts`, `ragService.ts`, `openai.ts`)
-* **OpenAI Service (`openai.ts`):**
-    * Initializes OpenAI client with `OPENAI_API_KEY` from environment.
-    * Provides `getEmbedding(text, model)` (uses `text-embedding-3-small`).
-    * Provides `getChatCompletion(userPrompt, systemPrompt, model)` (uses `gpt-4o` or configurable).
-* **RAG Service (`ragService.ts`):**
-    * `generateAndStoreEmbedding(knowledgeBaseId)`: Fetches `KnowledgeBase.content`, gets embedding via `openai.ts`, updates `KnowledgeBase` record with the vector.
-    * `findRelevantKnowledge(userQuery, businessId, limit)`: Generates embedding for `userQuery`, performs vector similarity search (cosine distance) against `KnowledgeBase` entries for the `businessId` (where `embedding IS NOT NULL`), returns top `limit` results.
-* **AI Handler (`aiHandler.ts` - `processMessage` function):**
-    * **Intent Classification:** Uses `getChatCompletion` with a detailed prompt (including examples for FAQ, LEAD_CAPTURE, OTHER, and emergency indicators) and recent `conversationHistory` to classify intent.
-    * Fetches `AgentConfig` (including ordered `questions`) for the `businessId`.
-    * **FAQ Flow:**
-        * If intent is "FAQ", calls `findRelevantKnowledge`.
-        * If context found, constructs prompt for `getChatCompletion` using `AgentConfig.personaPrompt`, retrieved context, and user's question.
-        * Returns AI-generated answer or "I don't have that information" if context is insufficient.
-        * If no context found by RAG, returns a polite "I couldn't find specific information" message.
-    * **Lead Capture Flow:**
-        * If intent is "LEAD_CAPTURE" (or includes emergency indicators).
-        * Checks for valid `AgentConfig` and `questions`.
-        * Determines next unanswered question from `agentConfig.questions` by analyzing `conversationHistory`.
-        * If a question is pending, returns `question.questionText`.
-        * If all questions answered:
-            * Extracts answers from `conversationHistory` into `capturedData` JSON object.
-            * Populates specific `Lead` model fields (`contactName`, `contactEmail`, `contactPhone`, `notes`) based on `mapsToLeadField` property of `LeadCaptureQuestion`s by looking up answers in `capturedData`.
-            * **Emergency Detection:** Checks initial user message for keywords to set `isEmergency` flag.
-            * Creates `Lead` record with `businessId`, `capturedData`, `conversationTranscript`, `status: 'NEW'`, `priority: (isEmergency ? 'URGENT' : 'NORMAL')`, and populated contact fields.
-            * Triggers `sendLeadNotificationEmail` to HSP.
-            * Triggers `sendLeadConfirmationToCustomer` to the captured customer email (if available).
-            * Returns a concluding message (customized if emergency).
-    * **Other/Fallback Flow:** Returns `AgentConfig.welcomeMessage` for new conversations or a general response using `getChatCompletion` with `AgentConfig.personaPrompt`.
-    * Includes comprehensive `try...catch` for error handling, returning a polite error message to the chat.
+## 4. Detailed Feature Specifications (V4.0 Current Implementation)
 
-### 4.3. Admin Backend APIs (`src/api/admin.ts`, `src/api/authMiddleware.ts`)
-* All routes under `/api/admin` (except `/login`, `/logout`) are protected by `authMiddleware`.
-* **Authentication (`authMiddleware.ts`):** Verifies JWT from HttpOnly `token` cookie, populates `req.user` (`userId`, `businessId`, `role`). Returns 401 JSON for API errors.
-* **Login (`POST /api/admin/login`):** Validates credentials, generates JWT, sets HttpOnly cookie.
-* **Logout (`GET /api/admin/logout`):** Clears `token` cookie, redirects to `/admin/login`.
-* **User Info (`GET /api/admin/me`):** Returns `req.user` (JWT payload).
-* **Agent Configuration (`POST /api/admin/config`, `GET /api/admin/config`):** Full CRUD for `AgentConfig` scoped to `req.user.businessId`.
-* **Lead Capture Questions (`POST /api/admin/config/questions`, `GET /api/admin/config/questions`, `PUT /api/admin/config/questions/:questionId`, `DELETE /api/admin/config/questions/:questionId`):** Full CRUD for `LeadCaptureQuestion`s, linked to the business's `AgentConfig`.
-* **Knowledge Base (`POST /api/admin/knowledgebase`, `GET /api/admin/knowledgebase`, `PUT /api/admin/knowledgebase/:kbId`, `DELETE /api/admin/knowledgebase/:kbId`):** Full CRUD for `KnowledgeBase` entries. `POST` and `PUT` (if content changes) trigger `generateAndStoreEmbedding`.
-* **Leads (`GET /api/admin/leads`, `PUT /api/admin/leads/:leadId`):**
-    * `GET`: Retrieves all `Lead` records for the `businessId`.
-    * `PUT`: Updates `Lead` record (e.g., for `status`, `notes`).
+### 4.1. Voice Agent System (Complete Implementation)
 
-### 4.4. Admin Dashboard (Frontend - EJS Views at `/admin/*`, served by `src/api/viewRoutes.ts`)
-* View routes are protected using `authMiddleware` (currently sends JSON 401; ideal for views is redirect).
-* **Login Page (`/admin/login` -> `login.ejs`):** Form with client-side JS `fetch` to `/api/admin/login`, redirects to `/admin/dashboard` on success.
-* **Main Dashboard Page (`/admin/dashboard` -> `dashboard.ejs`):** Welcome message with Business Name, navigation links.
-* **Manage Agent Settings Page (`/admin/settings` -> `agent-settings.ejs`):** Form pre-filled, client-side JS `fetch` to `POST /api/admin/config`.
-* **Manage Lead Capture Questions Page (`/admin/lead-questions` -> `lead-questions.ejs`):** Displays list, form to add (including `mapsToLeadField`), client-side JS for Add, Edit, Delete via API calls.
-* **Manage Knowledge Base Page (`/admin/knowledge-base` -> `knowledge-base.ejs`):** Displays list, form to add, client-side JS for Add, Edit, Delete via API calls.
-* **View Captured Leads Page (`/admin/leads` -> `view-leads.ejs`):** Displays leads in a table with key fields populated. UI for status updates and notes editing.
+#### Voice Infrastructure
+* **Twilio Integration:** Complete webhook system handling incoming calls with business phone number routing
+* **Speech Processing Pipeline:**
+  - OpenAI Whisper transcription with noise filtering
+  - AI-powered response generation with voice optimization
+  - SSML-enhanced speech synthesis with multiple voice providers
+* **Voice Options (Plan-Dependent):**
+  - **Standard (All Tiers):** Alice, Man, Woman
+  - **Premium (PRO Only):** Amazon Polly Neural voices
+  - **Generative (PRO Only):** Google Chirp3-HD, Amazon Polly Generative
 
-### 4.5. Notifications (`notificationService.ts`)
-* Uses `Nodemailer`, configured with Ethereal.email for development.
-* `sendLeadNotificationEmail(toEmail, leadDetails, leadPriority, businessName)`: Sends detailed lead notification to the HSP's configured `Business.notificationEmail`.
-* `sendLeadConfirmationToCustomer(customerEmail, businessName, leadDetails, isEmergency)`: Sends confirmation email to the customer after lead submission.
+#### Multi-Language Support
+* **Supported Languages:** English (US/UK/AU), Spanish (es-ES/es-MX), French (fr-FR), German (de-DE), Italian (it-IT), Portuguese (pt-BR)
+* **Voice Matching:** Automatic voice selection based on chosen language
+* **SSML Localization:** Language-appropriate speech patterns and emphasis
 
-### 4.6. Database (PostgreSQL with `pgvector`)
-* Schema defined in `prisma/schema.prisma`.
-* Models: `Business` (with `notificationEmail`, `notificationPhoneNumber`), `User`, `AgentConfig` (with `colorTheme` JSON), `LeadCaptureQuestion` (with `mapsToLeadField`), `KnowledgeBase` (with `embedding vector(1536)`), `Lead` (with `priority`, `contactName`, `contactEmail`, `contactPhone`, `notes`, `capturedData` JSONB, `conversationTranscript` Text).
-* `pgvector` extension enabled for `KnowledgeBase.embedding`.
+#### Voice Session Management
+* **Redis-Backed Sessions:** Robust session storage with automatic failover to in-memory backup
+* **Session Analytics:** Real-time tracking of conversation flow, intent classification, entity extraction
+* **Dynamic Actions:** CONTINUE, HANGUP, TRANSFER, VOICEMAIL routing based on conversation context
 
-## 5. Technical Overview
+### 4.2. Plan Tier System (Fully Implemented)
 
-* **Containerized Application:** Docker & Docker Compose manage the Node.js application container and a PostgreSQL/pgvector database container, ensuring a consistent development and deployment environment.
-* **Backend API:** Node.js/Express.js/TypeScript RESTful API. Handles business logic, AI orchestration, data persistence (Prisma), authentication (JWT), and serves Admin Dashboard views (EJS) and static assets.
-* **AI Core:**
-    * **OpenAI Service:** Wrapper for OpenAI API calls (embeddings, chat completions).
-    * **RAG Service:** Manages knowledge base embedding generation and vector similarity search for context retrieval.
-    * **AI Handler:** Orchestrates intent classification, RAG, and lead capture conversational flows.
-* **Database:** PostgreSQL with `pgvector` extension.
-* **Frontend Chat Widget:** Vanilla JavaScript, dynamically injected into SMB websites.
-* **Admin Dashboard:** Server-Side Rendered EJS templates with client-side JavaScript for enhanced interactivity and API communication.
-* **Deployment Target:** Render.com (PaaS).
+#### FREE Tier Features
+* **Chat Widget:** Basic functionality with system branding visible
+* **Lead Capture:** Up to 5 questions maximum
+* **FAQ System:** Standard RAG-based knowledge base querying
+* **Email Notifications:** Basic lead alerts
+* **Analytics:** Basic conversation logging
 
-## 6. Future Roadmap / V1.1+ Features
+#### BASIC Tier Features
+* **Enhanced Chat:** Advanced conversation flows with system branding
+* **Unlimited Lead Capture:** No question limits with advanced mapping
+* **Priority Notifications:** Enhanced email alerts with better formatting
+* **Basic Analytics:** Conversation history and basic metrics
+* **Knowledge Base:** Enhanced management interface
 
-* **Advanced AI & Conversation:**
-    * AI dynamically asks clarifying questions.
-    * Deeper contextual awareness and memory.
-* **Admin Dashboard Enhancements:**
-    * More sophisticated Lead Management in "View Leads" (filtering, sorting, detailed view, advanced note-taking).
-    * UI for re-ordering Lead Capture Questions.
-    * Analytics dashboard for agent performance.
-* **Multi-Channel & Integrations:**
-    * Twilio integration for SMS and/or Voice Call notifications for emergency leads.
-    * Social Media DM integration (Facebook, Instagram).
-    * Direct CRM integrations (HubSpot, Salesforce, industry-specific).
-* **Chat Widget Enhancements:**
-    * Advanced UI customization (avatars, themes beyond color).
-    * Proactive chat triggers.
-    * Voice input/dictation within the widget.
-* **Self-Serve SaaS Model:**
-    * Public user/business sign-up.
-    * Subscription tiers and billing integration (e.g., Stripe).
-    * Automated, wizard-style onboarding for new SMBs.
-* **Testing & Operations:**
-    * Comprehensive automated testing suite (unit, integration, E2E).
-    * Production-grade logging and monitoring.
-    * Scalability and performance optimizations.
+#### PRO Tier Features (Premium)
+* **Full Voice Agent:** Complete Twilio integration with custom phone numbers
+* **Advanced Voice Configuration:**
+  - Custom voice greetings and completion messages
+  - Emergency-specific messaging
+  - End-call message customization
+  - Voice and language selection interface
+* **Premium Voice Options:** Access to Neural and Generative voices
+* **Emergency Voice Calls:** Immediate voice notifications to business owners
+* **Advanced Analytics:** Session tracking, entity extraction, intent analysis
+* **Branding Removal:** Clean, professional interface without system branding
+* **Priority Support:** Enhanced customer service level
 
-## 7. Success Metrics (MVP & Beyond)
+### 4.3. Enhanced Emergency Handling (Cross-Channel)
 
-* **SMB Adoption:**
-    * Number of active SMB clients.
-    * Ease of setup and configuration time by admins.
-    * Admin dashboard engagement (logins, configurations made).
-* **Agent Performance:**
-    * Number of leads captured per agent.
-    * Lead quality/conversion rate (requires feedback from SMBs).
-    * Number of FAQs successfully handled (reduction in SMB support time).
-    * Accuracy of intent classification.
-* **End-User (Customer) Satisfaction:**
-    * Successful task completion rate (lead submitted, question answered).
-    * (Future) CSAT scores from chat interactions.
-* **System Health:**
-    * Service uptime (Render).
-    * API response times.
-    * Error rates. 
+#### Emergency Detection Engine
+* **Multi-Channel Recognition:** Works across both chat and voice interactions
+* **Intent Classification:** Advanced emergency keyword detection with context analysis
+* **Priority Scoring:** Automatic priority assignment (LOW, NORMAL, HIGH, URGENT)
+* **Essential Question Flagging:** `isEssentialForEmergency` database field for streamlined flows
+
+#### Emergency Response System
+* **Immediate Voice Alerts (PRO):** SSML-enhanced phone calls to business owners
+* **Priority Email Notifications:** Enhanced formatting with emergency indicators
+* **Context Preservation:** Full conversation context maintained across channels
+* **Emergency Notes:** Dedicated field for emergency-specific information capture
+
+### 4.4. Advanced Session Management & Analytics
+
+#### Redis-Powered Architecture
+* **Session Storage:** Robust Redis implementation with in-memory fallback
+* **Real-Time Analytics:** Live conversation tracking with timestamp precision
+* **Health Monitoring:** System status checks with Redis connectivity monitoring
+* **Automatic Cleanup:** Session expiration and garbage collection
+
+#### Analytics Dashboard (PRO Feature)
+* **Session Metrics:** Duration, message count, completion rates
+* **Intent Analysis:** Classification accuracy and confidence scoring
+* **Entity Extraction:** Automatic capture of emails, phones, names, dates, amounts, locations
+* **Call Analytics:** Voice-specific metrics including call duration and voice action usage
+
+### 4.5. Enhanced Admin Interface (Plan-Aware)
+
+#### Plan-Based UI Rendering
+* **Conditional Features:** UI elements show/hide based on user's plan tier
+* **Upgrade Prompts:** Clear calls-to-action for tier upgrades
+* **Feature Previews:** Visual indicators of PRO-only features
+
+#### Voice Configuration Interface (PRO Only)
+* **Message Customization:**
+  - Voice greeting message
+  - Lead completion message
+  - Emergency-specific messaging
+  - End-call message
+* **Voice Selection:** Dropdown interface with categorized voice options
+* **Language Configuration:** Multi-language support with voice matching
+* **SSML Preview:** Live testing of voice messages with SSML markup
+
+### 4.6. Enhanced Chat Widget (Multi-Channel Integration)
+
+#### Core Chat Features
+* **Dynamic Configuration:** Plan-aware feature loading
+* **Voice Integration Hooks:** Seamless transition capabilities to voice calls
+* **Emergency Awareness:** Priority handling for urgent chat interactions
+* **Session Continuity:** Context preservation across channel switches
+
+#### Plan-Based Widget Behavior
+* **Branding Display:** Conditional system branding based on plan tier
+* **Feature Availability:** Access to advanced features based on subscription
+* **Upgrade Integration:** In-widget upgrade prompts for premium features
+
+### 4.7. Advanced Notification System
+
+#### Multi-Channel Notifications
+* **Email Notifications:** Enhanced formatting with emergency prioritization
+* **Voice Notifications (PRO):** SSML-enhanced phone calls for urgent leads
+* **Customer Confirmation:** Automated confirmations across all channels
+* **Analytics Integration:** Notification effectiveness tracking
+
+#### SSML-Enhanced Voice Notifications
+* **Natural Speech Patterns:** Conversational interjections and appropriate pauses
+* **Urgency Emphasis:** Enhanced SSML markup for emergency situations
+* **Business Context:** Personalized messaging with business-specific information
+
+## 5. Technical Architecture Overview (Current V4.0)
+
+### 5.1. Core Infrastructure
+* **Containerized Application:** Docker-based deployment with multi-service architecture
+* **Database:** PostgreSQL with pgvector extension for AI embeddings
+* **Session Management:** Redis primary with in-memory fallback
+* **Voice Infrastructure:** Twilio Voice API with webhook handling
+
+### 5.2. AI & Voice Processing
+* **OpenAI Integration:** GPT-4 for conversations, Whisper for transcription, text-embedding-3-small for RAG
+* **SSML Processing:** Advanced speech synthesis with natural language patterns
+* **Entity Extraction:** Advanced NLP for contact information and intent classification
+* **Voice Optimization:** Specialized prompts and processing for voice interactions
+
+### 5.3. API Architecture
+* **RESTful Design:** Express.js-based API with comprehensive error handling
+* **Webhook System:** Twilio webhook handling for voice events
+* **Authentication:** JWT-based security with plan-aware middleware
+* **Rate Limiting:** Plan-based API access controls
+
+## 6. Future Roadmap (V5.0+ Features)
+
+### 6.1. Advanced AI Capabilities
+* **Contextual Memory:** Cross-session conversation awareness
+* **Proactive Engagement:** AI-initiated conversations based on website behavior
+* **Voice Cloning:** Custom voice synthesis for brand consistency
+* **Multi-Party Calls:** Conference call capabilities for complex service scenarios
+
+### 6.2. Platform Integrations
+* **CRM Synchronization:** Direct integration with HubSpot, Salesforce, industry-specific CRMs
+* **Calendar Integration:** Automatic appointment scheduling with Google Calendar, Outlook
+* **Payment Processing:** Integration with Stripe, Square for service booking
+* **Inventory Management:** Connection to service management platforms
+
+### 6.3. Self-Service SaaS Platform
+* **Automated Onboarding:** Wizard-based setup for new businesses
+* **Subscription Management:** Stripe-powered billing with automatic tier management
+* **Usage Analytics:** Detailed reporting on agent performance and ROI
+* **White-Label Options:** Custom branding solutions for agencies
+
+### 6.4. Mobile & Advanced Features
+* **Native Mobile Apps:** iOS/Android applications for business owners
+* **Push Notifications:** Real-time mobile alerts for critical interactions
+* **Offline Capability:** Basic functionality during connectivity issues
+* **Advanced Analytics:** Machine learning insights for business optimization
+
+This comprehensive platform now serves as a complete multi-channel AI solution for SMBs, with sophisticated voice capabilities, intelligent emergency handling, and scalable plan-based architecture that grows with business needs. 

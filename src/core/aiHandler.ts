@@ -10,6 +10,48 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
 }
 
 /**
+ * Enhances prompts for voice-friendly responses with SSML guidance
+ */
+const enhancePromptForVoice = (basePrompt: string, businessName?: string): string => {
+  const voiceGuidance = `
+You are a highly articulate and empathetic AI voice assistant${businessName ? ` for ${businessName}` : ''}. Your responses will be spoken aloud, so craft them to sound natural and conversational when heard.
+
+VOICE RESPONSE GUIDELINES:
+- Use a warm, professional, and conversational tone
+- Speak as if you're having a friendly phone conversation
+- Use natural speech patterns with appropriate pauses
+- Keep sentences clear and not too long
+- Use contractions naturally (I'm, you're, we'll, that's)
+- Include verbal acknowledgments (Got it, Okay, Alright, Perfect)
+- Ask follow-up questions naturally
+- Avoid complex punctuation or special characters that don't translate well to speech
+
+NATURAL INTERJECTIONS & CONVERSATIONAL FLOW:
+- Begin responses with natural interjections like "Okay," "I see," "Alright," "Mhm," "Right," "Sure," or "Got it"
+- Use contextual acknowledgments: "That makes sense," "I understand," "Absolutely," "Of course"
+- Vary your interjections to avoid repetition - don't use the same one consecutively
+- Use longer acknowledgments when appropriate: "I hear what you're saying," "That's a great question," "Let me help with that"
+- Include transitional phrases: "So," "Well," "Now," "In that case," "Let's see"
+- Use these naturally - they should feel like genuine responses, not forced additions
+
+CONTEXTUAL USAGE:
+- After user provides information: "Got it," "I see," "Okay," "Perfect"
+- Before answering questions: "Right," "Well," "Let me think," "So"
+- When transitioning topics: "Alright," "Now," "In that case"
+- Showing understanding: "That makes sense," "I understand," "Absolutely"
+- Before asking follow-ups: "Okay," "Now," "So," "And"
+
+For emphasis on important information, you may optionally use simple SSML tags:
+- <break time="300ms"/> for brief pauses
+- <emphasis level="moderate">important word</emphasis> for key information
+- Use sparingly and only where it genuinely improves clarity
+
+${basePrompt}`
+
+  return voiceGuidance
+}
+
+/**
  * Generate a natural acknowledgment to prepend to questions
  */
 const getQuestionAcknowledgment = (isFirstQuestion: boolean = false): string => {
@@ -35,6 +77,98 @@ const getQuestionAcknowledgment = (isFirstQuestion: boolean = false): string => 
 }
 
 /**
+ * Checks if a user's response is clear and complete for the given context
+ */
+const isResponseClear = async (
+  userResponse: string,
+  expectedContext: string,
+  currentGoal: string
+): Promise<boolean> => {
+  try {
+    const clarityCheckPrompt = `Evaluate if the user's response is clear and complete for the current context.
+
+Current Goal/Question: ${currentGoal}
+Expected Context: ${expectedContext}
+User's Response: "${userResponse}"
+
+Consider unclear responses:
+- Very short or vague responses like "later", "maybe", "hmm", "okay"
+- Responses that don't address the question asked
+- Ambiguous transcriptions with unclear words
+- Incomplete information when specific details are needed
+- Non-sequitur responses that seem unrelated
+
+Consider clear responses:
+- Direct answers that address the question
+- Complete information as requested
+- Clear intent even if brief (e.g., "yes", "no" for yes/no questions)
+- Properly formatted information (phone numbers, emails, names)
+
+Respond with only YES if clear and complete, or NO if unclear/incomplete.`
+
+    const clarityResponse = await getChatCompletion(
+      clarityCheckPrompt,
+      "You are a clarity assessment expert focused on evaluating user response completeness and clarity."
+    )
+
+    return (clarityResponse || 'NO').trim().toUpperCase() === 'YES'
+  } catch (error) {
+    console.error('Error checking response clarity:', error)
+    // Default to clear if we can't check
+    return true
+  }
+}
+
+/**
+ * Generates a clarifying question based on unclear user input
+ */
+const generateClarifyingQuestion = async (
+  unclearResponse: string,
+  originalQuestion: string,
+  context: string,
+  businessName?: string
+): Promise<string> => {
+  try {
+    const clarifyingPrompt = `The user gave an unclear response. Generate a brief, polite clarifying question to get the information needed.
+
+Original Question/Context: ${originalQuestion}
+User's Unclear Response: "${unclearResponse}"
+Context: ${context}
+${businessName ? `Business: ${businessName}` : ''}
+
+Generate a clarifying question that:
+- Begins with a natural interjection or acknowledgment ("I see," "Okay," "Alright," "Hmm," etc.)
+- Is brief and conversational (voice-friendly)
+- Politely acknowledges their response
+- Asks for specific clarification needed
+- Uses natural speech patterns and transitions
+- Includes examples if helpful
+- Flows naturally in conversation
+
+Examples of good clarifying questions with natural interjections:
+- "Okay, I want to make sure I heard that correctly - could you repeat your phone number?"
+- "Alright, I didn't quite catch that. Could you tell me your name again?"
+- "I see. When you say 'later', do you mean you'd like us to call you at a specific time, or would you prefer email contact?"
+- "Right, I heard something about a plumbing issue - could you describe what's happening specifically?"
+- "Mhm, let me make sure I understand - are you saying the problem is urgent?"
+
+Generate only the clarifying question text:`
+
+    const voiceEnhancedPrompt = enhancePromptForVoice(clarifyingPrompt, businessName)
+    
+    const clarifyingQuestion = await getChatCompletion(
+      voiceEnhancedPrompt,
+      "You are a helpful assistant focused on generating clear, conversational clarifying questions for voice interactions."
+    )
+
+    return clarifyingQuestion || "I didn't quite catch that. Could you please repeat what you said?"
+  } catch (error) {
+    console.error('Error generating clarifying question:', error)
+    return "I didn't quite catch that. Could you please repeat what you said?"
+  }
+}
+
+/**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
@@ -43,7 +177,13 @@ export const processMessage = async (
   conversationHistory: any[],
   businessId: string,
   currentActiveFlow?: string | null
-): Promise<{ reply: string; currentFlow?: string | null; showBranding?: boolean; [key: string]: any }> => {
+): Promise<{ 
+  reply: string; 
+  currentFlow?: string | null; 
+  showBranding?: boolean; 
+  nextVoiceAction?: 'CONTINUE' | 'HANGUP' | 'TRANSFER' | 'VOICEMAIL';
+  [key: string]: any 
+}> => {
   try {
     console.log(`AI Handler processing message for business ${businessId}: "${message}"`)
     console.log('Received currentActiveFlow:', currentActiveFlow)
@@ -60,7 +200,8 @@ export const processMessage = async (
       console.error(`Business not found for ID: ${businessId}. Cannot determine branding or agent config.`)
       return { 
         reply: "Sorry, I'm having trouble finding configuration for this business.",
-        showBranding: true // Default to showing branding if business not found
+        showBranding: true, // Default to showing branding if business not found
+        nextVoiceAction: 'HANGUP'
       }
     }
 
@@ -74,6 +215,101 @@ export const processMessage = async (
       where: { businessId },
       include: { questions: { orderBy: { order: 'asc' } } }
     })
+
+    // Helper function to determine next voice action based on intent and flow state
+    const determineNextVoiceAction = (
+      intent: string,
+      currentFlow: string | null,
+      isEndingCall: boolean = false
+    ): 'CONTINUE' | 'HANGUP' | 'TRANSFER' | 'VOICEMAIL' => {
+      // If explicitly ending the call
+      if (isEndingCall || intent === 'END_CALL') {
+        return 'HANGUP'
+      }
+      
+      // If we have an active flow (lead capture, FAQ clarification), continue
+      if (currentFlow !== null) {
+        return 'CONTINUE'
+      }
+      
+      // If it's FAQ response without follow-up needed, hang up
+      if (intent === 'FAQ') {
+        return 'HANGUP'
+      }
+      
+      // If it's lead capture completion, hang up
+      if (intent === 'LEAD_CAPTURE' && currentFlow === null) {
+        return 'HANGUP'
+      }
+      
+      // For other cases where we might want to continue conversation
+      if (intent === 'LEAD_CAPTURE' || intent === 'OTHER') {
+        return 'CONTINUE'
+      }
+      
+      // Default to hanging up
+      return 'HANGUP'
+    }
+
+    // Handle clarification flows first
+    if (currentActiveFlow?.startsWith('FAQ_CLARIFYING')) {
+      console.log('Handling FAQ clarification flow...')
+      
+      // Extract original question from flow state if needed
+      const clarificationContext = "your previous question"
+      
+      // Check if the clarification response is now clear
+      const isClarificationClear = await isResponseClear(
+        message,
+        "FAQ clarification",
+        "providing a clearer version of your question"
+      )
+      
+      if (!isClarificationClear) {
+        // Still unclear - ask for clarification again or fall back
+        const fallbackClarification = await generateClarifyingQuestion(
+          message,
+          "your question",
+          "FAQ assistance",
+          business.name
+        )
+        
+        return {
+          reply: fallbackClarification,
+          currentFlow: 'FAQ_CLARIFYING',
+          showBranding,
+          nextVoiceAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
+        }
+      }
+      
+      // Now clear - proceed with FAQ flow using the clarified message
+      console.log('Clarification received, proceeding with FAQ flow...')
+      // Continue to FAQ processing below with the clarified message
+    }
+    
+    if (currentActiveFlow?.startsWith('LEAD_CAPTURE_CLARIFYING')) {
+      console.log('Handling Lead Capture clarification flow...')
+      
+      // Extract the question being clarified from the flow state
+      const questionContext = currentActiveFlow.replace('LEAD_CAPTURE_CLARIFYING_', '')
+      
+      // Check if the clarification response is now clear
+      const isClarificationClear = await isResponseClear(
+        message,
+        `clarification for ${questionContext}`,
+        `providing a clear answer to the ${questionContext} question`
+      )
+      
+      if (!isClarificationClear) {
+        // Still unclear - try one more clarification or proceed anyway
+        console.log('Clarification still unclear, proceeding with lead capture anyway')
+      }
+      
+      // Proceed with lead capture flow using the clarified (or best-effort) response
+      console.log('Clarification received, continuing lead capture flow...')
+      // Set flow back to LEAD_CAPTURE to continue the process
+      currentActiveFlow = 'LEAD_CAPTURE'
+    }
 
     // DEFENSIVE LOGIC: Detect if we should continue lead capture based on conversation history
     let shouldForceLeadCapture = false
@@ -152,6 +388,9 @@ Respond with only YES or NO.`
     if (currentActiveFlow === 'LEAD_CAPTURE' || shouldForceLeadCapture) {
       intent = 'LEAD_CAPTURE'
       console.log('Continuing LEAD_CAPTURE flow based on state or defensive logic.')
+    } else if (currentActiveFlow?.startsWith('FAQ_CLARIFYING')) {
+      intent = 'FAQ'
+      console.log('Continuing FAQ flow after clarification.')
     } else {
       const intentPrompt = `Analyze the user's message and classify their intent.
 
@@ -204,6 +443,30 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
       // FAQ Flow - Use RAG to find relevant information
       console.log('Entering FAQ flow...')
       
+      // Check if the user's question is clear enough for FAQ processing
+      const isQuestionClear = await isResponseClear(
+        message,
+        "FAQ assistance",
+        "asking a clear question that can be answered from our knowledge base"
+      )
+      
+      if (!isQuestionClear) {
+        console.log('User question is unclear, asking for clarification...')
+        const clarifyingQuestion = await generateClarifyingQuestion(
+          message,
+          "your question",
+          "FAQ assistance - helping you find information",
+          business.name
+        )
+        
+        return {
+          reply: clarifyingQuestion,
+          currentFlow: 'FAQ_CLARIFYING',
+          showBranding,
+          nextVoiceAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
+        }
+      }
+      
       const relevantKnowledge = await findRelevantKnowledge(message, businessId, 3)
       
       if (relevantKnowledge && relevantKnowledge.length > 0) {
@@ -211,38 +474,34 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
         const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n')
         const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant."
         
-        const faqPrompt = `You are a helpful assistant with a conversational and friendly tone. Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available. 
+        const baseFaqPrompt = `Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available.
+
+Start your response with a natural interjection or acknowledgment (like "I can help with that," "Let me share what I know," "Great question," etc.) and flow naturally into your answer.
 
 Context:
 ${contextSnippets}
 
 User's Question: ${message}`
         
-        const aiResponse = await getChatCompletion(faqPrompt, personaPrompt)
+        // Enhance the prompt for voice interaction
+        const voiceEnhancedPrompt = enhancePromptForVoice(baseFaqPrompt, business.name)
         
-        // Add natural acknowledgment prefix to FAQ responses
-        const faqAcknowledgments = [
-          "I found this information for you: ",
-          "Here's what I can tell you about that: ",
-          "Based on our information: ",
-          "Let me help with that - ",
-          "I can answer that: "
-        ]
-        const randomAcknowledgment = faqAcknowledgments[Math.floor(Math.random() * faqAcknowledgments.length)]
-        const finalFaqReply = `${randomAcknowledgment}${aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later."}`
+        const aiResponse = await getChatCompletion(voiceEnhancedPrompt, personaPrompt)
         
         return { 
-          reply: finalFaqReply,
+          reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
           currentFlow: null,
-          showBranding
+          showBranding,
+          nextVoiceAction: determineNextVoiceAction('FAQ', null)
         }
       } else {
         // No relevant knowledge found - offer to take details for follow-up
         console.log('No relevant knowledge found in FAQ flow - offering lead capture')
         return { 
-          reply: "Hmm, I checked my notes but couldn't find specific information on that. Would you like me to take down your details so someone from our team can get back to you with the information you need?",
+          reply: "Hmm, I checked my information but couldn't find specific details on that. Would you like me to take down your contact information so someone from our team can get back to you with the answer you need?",
           currentFlow: null,
-          showBranding
+          showBranding,
+          nextVoiceAction: 'CONTINUE' // Continue to see if they want to provide details
         }
       }
       
@@ -251,7 +510,8 @@ User's Question: ${message}`
       return { 
         reply: "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!",
         currentFlow: null,
-        showBranding
+        showBranding,
+        nextVoiceAction: 'HANGUP'
       }
       
     } else if (intent === 'LEAD_CAPTURE') {
@@ -264,7 +524,8 @@ User's Question: ${message}`
         return { 
           reply: "It looks like our lead capture system isn't set up yet. How else can I assist?",
           currentFlow: null,
-          showBranding
+          showBranding,
+          nextVoiceAction: 'CONTINUE'
         }
       }
 
@@ -330,6 +591,35 @@ User's Question: ${message}`
           if (matchedQuestion && nextEntry && nextEntry.role === 'user') {
             console.log(`  ✓ Matched question: "${matchedQuestion.questionText}" (ID: ${matchedQuestion.id})`)
             console.log(`  ✓ User answer: "${nextEntry.content}"`)
+            
+            // Check if the user's answer to this question was clear
+            const isAnswerClear = await isResponseClear(
+              nextEntry.content,
+              `answer to: ${matchedQuestion.questionText}`,
+              `providing a clear answer to the question about ${matchedQuestion.questionText.toLowerCase()}`
+            )
+            
+            if (!isAnswerClear) {
+              console.log(`Answer "${nextEntry.content}" to question "${matchedQuestion.questionText}" is unclear, asking for clarification`)
+              
+              const clarifyingQuestion = await generateClarifyingQuestion(
+                nextEntry.content,
+                matchedQuestion.questionText,
+                "lead capture - collecting your information",
+                business.name
+              )
+              
+              // Create a flow state that indicates we're clarifying this specific question
+              const clarificationFlow = `LEAD_CAPTURE_CLARIFYING_${matchedQuestion.questionText.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}`
+              
+              return {
+                reply: clarifyingQuestion,
+                currentFlow: clarificationFlow,
+                showBranding,
+                nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', clarificationFlow)
+              }
+            }
+            
             answeredQuestions.add(matchedQuestion.id)
           }
         }
@@ -357,8 +647,12 @@ User's Question: ${message}`
         
         // If we've already asked at least one lead question, this is a follow-up
         if (assistantLeadQuestions.length > 0) {
-          const followUpPrefixes = ["Okay, and ", "Got it. ", "Alright. ", "Thanks. "]
+          const followUpPrefixes = ["Okay, and ", "Got it. ", "Alright. ", "Thanks. ", "Perfect. ", "I see. "]
           questionPrefix = followUpPrefixes[Math.floor(Math.random() * followUpPrefixes.length)]
+        } else {
+          // First question - use more welcoming interjections
+          const firstQuestionPrefixes = ["Alright, ", "Okay, ", "Sure thing! ", "Perfect. ", "Great! "]
+          questionPrefix = firstQuestionPrefixes[Math.floor(Math.random() * firstQuestionPrefixes.length)]
         }
         
         const leadQuestionReply = `${questionPrefix}${nextQuestion.questionText}`
@@ -366,7 +660,8 @@ User's Question: ${message}`
         return { 
           reply: leadQuestionReply,
           currentFlow: 'LEAD_CAPTURE',
-          showBranding
+          showBranding,
+          nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
         }
       } else {
         // All questions answered - create lead
@@ -598,7 +893,8 @@ User's Question: ${message}`
           return { 
             reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.",
             currentFlow: null,
-            showBranding
+            showBranding,
+            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', null)
           }
         } else {
           // Use custom completion message if available, otherwise use default
@@ -608,7 +904,8 @@ User's Question: ${message}`
           return { 
             reply: completionMessage,
             currentFlow: null,
-            showBranding
+            showBranding,
+            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', null)
           }
         }
       }
@@ -645,9 +942,10 @@ Respond with only YES or NO.`
         if ((isDeclineResponse || 'NO').trim().toUpperCase() === 'YES') {
           console.log('User declined FAQ fallback offer, providing alternative assistance')
           return {
-            reply: "No problem! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
+            reply: "No problem at all! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
             currentFlow: null,
-            showBranding
+            showBranding,
+            nextVoiceAction: determineNextVoiceAction('OTHER', null)
           }
         }
       }
@@ -657,21 +955,31 @@ Respond with only YES or NO.`
         return { 
           reply: agentConfig.welcomeMessage,
           currentFlow: null,
-          showBranding
+          showBranding,
+          nextVoiceAction: determineNextVoiceAction('OTHER', null)
         }
       }
       
       // General chat with persona
       const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant."
+      
+      // Enhance the general chat prompt for voice interaction
+      const generalChatPrompt = `Respond to the user's message naturally and helpfully. Start with a natural interjection or acknowledgment to make the conversation feel more human and conversational.
+
+User's message: ${message}`
+      
+      const voiceEnhancedGeneralPrompt = enhancePromptForVoice(generalChatPrompt, business.name)
+      
       const aiResponse = await getChatCompletion(
-        message,
+        voiceEnhancedGeneralPrompt,
         personaPrompt
       )
       
       return { 
         reply: aiResponse || "How can I help you today?",
         currentFlow: null,
-        showBranding
+        showBranding,
+        nextVoiceAction: determineNextVoiceAction('OTHER', null)
       }
     }
     
@@ -680,7 +988,8 @@ Respond with only YES or NO.`
     return { 
       reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly.",
       currentFlow: null,
-      showBranding: true // Default to showing branding in error cases
+      showBranding: true, // Default to showing branding in error cases
+      nextVoiceAction: 'HANGUP'
     }
   }
 } 

@@ -11,10 +11,14 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 // Load environment variables
 dotenv_1.default.config();
+// Import Redis and session service
+const redis_1 = __importDefault(require("./config/redis"));
+const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
 // Import route handlers
 const chatRoutes_1 = __importDefault(require("./api/chatRoutes"));
 const admin_1 = __importDefault(require("./api/admin"));
 const viewRoutes_1 = __importDefault(require("./api/viewRoutes"));
+const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
@@ -95,6 +99,7 @@ app.use('/admin', viewRoutes_1.default);
 // 2. Mount API routes
 app.use('/api/chat', chatRoutes_1.default);
 app.use('/api/admin', admin_1.default);
+app.use('/api/voice', voiceRoutes_1.default);
 // 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
     // Using process.cwd() for more explicit path resolution
@@ -129,13 +134,63 @@ app.get('/widget.js', (req, res) => {
     }
 });
 // 4. Health check endpoint
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        version: process.env.npm_package_version || '1.0.0'
-    });
+app.get('/health', async (req, res) => {
+    try {
+        const redisManager = redis_1.default.getInstance();
+        const sessionService = voiceSessionService_1.default.getInstance();
+        // Check Redis connection status
+        const redisStatus = redisManager.isClientConnected() ? 'connected' : 'disconnected';
+        // Get session statistics
+        let sessionStats = {
+            activeRedisSessions: 0,
+            activeFallbackSessions: 0,
+            totalActiveSessions: 0
+        };
+        let activeSessions = [];
+        try {
+            sessionStats = await sessionService.getSessionStats();
+            activeSessions = await sessionService.getAllActiveSessions();
+        }
+        catch (error) {
+            console.error('[Health Check] Error getting session stats:', error);
+        }
+        // Get sample session analytics if there are active sessions
+        let sampleAnalytics = null;
+        if (activeSessions.length > 0) {
+            try {
+                const sampleCallSid = activeSessions[0];
+                sampleAnalytics = await sessionService.getSessionAnalytics(sampleCallSid);
+            }
+            catch (error) {
+                console.error('[Health Check] Error getting sample analytics:', error);
+            }
+        }
+        res.status(200).json({
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            version: process.env.npm_package_version || '1.0.0',
+            services: {
+                redis: {
+                    status: redisStatus,
+                    configured: !!process.env.REDIS_URL || !!process.env.REDIS_HOST
+                },
+                voiceSessions: {
+                    ...sessionStats,
+                    activeSessionIds: activeSessions.slice(0, 5), // Show first 5 for debugging
+                    sampleAnalytics
+                }
+            }
+        });
+    }
+    catch (error) {
+        console.error('[Health Check] Error:', error);
+        res.status(500).json({
+            status: 'unhealthy',
+            timestamp: new Date().toISOString(),
+            error: 'Health check failed'
+        });
+    }
 });
 // 5. Debug route to test routing
 app.get('/admin-test', (req, res) => {
@@ -175,23 +230,57 @@ app.use((err, req, res, next) => {
         message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
     });
 });
+// Initialize Redis connection
+async function initializeRedis() {
+    try {
+        const redisManager = redis_1.default.getInstance();
+        await redisManager.connect();
+        console.log('✅ Redis connection established');
+        // Set up cleanup interval for expired sessions
+        const sessionService = voiceSessionService_1.default.getInstance();
+        setInterval(async () => {
+            await sessionService.cleanupExpiredSessions();
+        }, 5 * 60 * 1000); // Run cleanup every 5 minutes
+    }
+    catch (error) {
+        console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error);
+    }
+}
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
+    // Initialize Redis after server starts
+    await initializeRedis();
 });
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
+    try {
+        const redisManager = redis_1.default.getInstance();
+        await redisManager.disconnect();
+        console.log('✅ Redis disconnected');
+    }
+    catch (error) {
+        console.error('Error disconnecting Redis:', error);
+    }
     server.close(() => {
         console.log('Process terminated');
     });
 });
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('SIGINT received, shutting down gracefully');
+    try {
+        const redisManager = redis_1.default.getInstance();
+        await redisManager.disconnect();
+        console.log('✅ Redis disconnected');
+    }
+    catch (error) {
+        console.error('Error disconnecting Redis:', error);
+    }
     server.close(() => {
         console.log('Process terminated');
     });

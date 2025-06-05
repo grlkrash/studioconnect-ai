@@ -263,15 +263,20 @@ export async function initiateEmergencyVoiceCall(
     const safeBusinessName = escapeXml(businessName)
     const safeLeadSummary = escapeXml(leadSummary)
 
-    // Create enhanced SSML message with strategic pauses and better pacing
+    // Create enhanced SSML message with strategic pauses, emphasis, and professional urgency
     const messageToSay = 
-      `<emphasis level="strong">Urgent</emphasis> <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}.` +
-      `<break time="500ms"/>` +
-      `Caller stated: ${safeLeadSummary}.` +
-      `<break time="500ms"/>` +
-      `Please check your email or dashboard for full details.` +
-      `<break time="700ms"/>` +
-      `Repeating: <break time="200ms"/> Urgent <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. <break time="200ms"/> Caller stated: ${safeLeadSummary}.`
+      `<prosody rate="fast"><emphasis level="strong">Urgent Alert!</emphasis></prosody>` +
+      `<break strength="medium"/>` +
+      `This is an emergency <phoneme alphabet="ipa" ph="liːd">lead</phoneme> notification for ${safeBusinessName}.` +
+      `<break strength="medium"/>` +
+      `A customer has reported an emergency. Issue stated: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
+      `<break strength="medium"/>` +
+      `Please check your email or dashboard immediately for full details and contact information.` +
+      `<break strength="strong"/>` +
+      `Repeating: <break time="300ms"/> ` +
+      `<emphasis level="strong">Urgent</emphasis> emergency <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ` +
+      `Issue: <emphasis level="moderate">${safeLeadSummary}</emphasis>. ` +
+      `Check your email for complete details.`
 
     // Create TwiML response using Twilio VoiceResponse class
     const twiml = new twilio.twiml.VoiceResponse()
