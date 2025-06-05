@@ -10,13 +10,15 @@ dotenv.config()
 
 // Import Redis and session service
 import RedisManager from './config/redis'
-import VoiceSessionService from './services/voiceSessionService'
+// TEMPORARY: Disabled to fix memory leak
+// import VoiceSessionService from './services/voiceSessionService'
 
 // Import route handlers
 import chatRoutes from './api/chatRoutes'
 import adminRoutes from './api/admin'
 import viewRoutes from './api/viewRoutes'
-import voiceRoutes from './api/voiceRoutes'
+// TEMPORARY: Disabled voice routes import to fix memory leak
+// import voiceRoutes from './api/voiceRoutes'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -110,7 +112,8 @@ app.use('/admin', viewRoutes)
 // 2. Mount API routes
 app.use('/api/chat', chatRoutes)
 app.use('/api/admin', adminRoutes)
-app.use('/api/voice', voiceRoutes)
+// TEMPORARY: Disabled voice routes to fix memory leak
+// app.use('/api/voice', voiceRoutes)
 
 // 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
@@ -148,36 +151,17 @@ app.get('/widget.js', (req, res) => {
 app.get('/health', async (req, res) => {
   try {
     const redisManager = RedisManager.getInstance()
-    const sessionService = VoiceSessionService.getInstance()
+    // TEMPORARY: Disabled VoiceSessionService to fix memory leak
+    // const sessionService = VoiceSessionService.getInstance()
     
     // Check Redis connection status
     const redisStatus = redisManager.isClientConnected() ? 'connected' : 'disconnected'
     
-    // Get session statistics
-    let sessionStats = {
+    // TEMPORARY: Simplified session stats without voice service
+    const sessionStats = {
       activeRedisSessions: 0,
       activeFallbackSessions: 0,
       totalActiveSessions: 0
-    }
-    
-    let activeSessions: string[] = []
-    
-    try {
-      sessionStats = await sessionService.getSessionStats()
-      activeSessions = await sessionService.getAllActiveSessions()
-    } catch (error) {
-      console.error('[Health Check] Error getting session stats:', error)
-    }
-    
-    // Get sample session analytics if there are active sessions
-    let sampleAnalytics = null
-    if (activeSessions.length > 0) {
-      try {
-        const sampleCallSid = activeSessions[0]
-        sampleAnalytics = await sessionService.getSessionAnalytics(sampleCallSid)
-      } catch (error) {
-        console.error('[Health Check] Error getting sample analytics:', error)
-      }
     }
     
     res.status(200).json({
@@ -185,16 +169,17 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       version: process.env.npm_package_version || '1.0.0',
+      memory: {
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+      },
       services: {
         redis: {
           status: redisStatus,
           configured: !!process.env.REDIS_URL || !!process.env.REDIS_HOST
         },
-        voiceSessions: {
-          ...sessionStats,
-          activeSessionIds: activeSessions.slice(0, 5), // Show first 5 for debugging
-          sampleAnalytics
-        }
+        voiceSessions: sessionStats
       }
     })
   } catch (error) {
@@ -257,11 +242,11 @@ async function initializeRedis() {
     await redisManager.connect()
     console.log('✅ Redis connection established')
     
-    // Set up cleanup interval for expired sessions
-    const sessionService = VoiceSessionService.getInstance()
-    setInterval(async () => {
-      await sessionService.cleanupExpiredSessions()
-    }, 5 * 60 * 1000) // Run cleanup every 5 minutes
+    // TEMPORARY: Disabled session cleanup to fix memory leak
+    // const sessionService = VoiceSessionService.getInstance()
+    // setInterval(async () => {
+    //   await sessionService.cleanupExpiredSessions()
+    // }, 5 * 60 * 1000) // Run cleanup every 5 minutes
     
   } catch (error) {
     console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error)
