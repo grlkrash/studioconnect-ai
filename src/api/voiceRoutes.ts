@@ -5,6 +5,7 @@ import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { createClient, RedisClientType } from 'redis'
 import { getTranscription } from '../services/openai'
 import { processMessage } from '../core/aiHandler'
 import VoiceSessionService, { 
@@ -20,6 +21,35 @@ const { VoiceResponse } = twilio.twiml
 
 // Initialize voice session service
 const voiceSessionService = VoiceSessionService.getInstance()
+
+// Redis client and fallback storage
+let redisClient: RedisClientType | undefined;
+const voiceSessions = new Map<string, { history: any[], currentFlow: string | null }>(); // Keep as fallback
+
+async function initializeRedis() {
+  if (process.env.REDIS_URL) {
+    console.log('[Redis] Attempting to connect to Redis using URL from ENV...');
+    const client = createClient({ url: process.env.REDIS_URL });
+
+    client.on('error', (err) => console.error('[Redis] Connection error:', err));
+    client.on('connect', () => console.log('[Redis] Connected to Redis server.'));
+    client.on('reconnecting', () => console.log('[Redis] Reconnecting to Redis server...'));
+    client.on('ready', () => console.log('[Redis] Redis client ready.'));
+
+    try {
+      await client.connect();
+      redisClient = client as RedisClientType; // Cast after successful connection
+    } catch (err) {
+      console.error('[Redis] Failed to connect during initialization:', err);
+      // Fallback to in-memory if Redis connection fails on startup
+      console.warn('[Voice Session] Defaulting to in-memory session due to Redis connection failure.');
+    }
+  } else {
+    console.warn('[Voice Session] REDIS_URL not found in ENV. Defaulting to in-memory session.');
+  }
+}
+
+initializeRedis(); // Call on module load
 
 // Helper function for XML escaping to safely use dynamic content in SSML
 function escapeXml(unsafe: string): string {
@@ -102,40 +132,56 @@ function createSSMLMessage(message: string, options: {
   return ssmlMessage
 }
 
-// Enhanced helper functions for voice session management
+// Enhanced helper functions for voice session management with Redis support
 async function getVoiceSession(callSid: string): Promise<{ history: any[], currentFlow: string | null }> {
-  try {
-    const session = await voiceSessionService.getVoiceSession(callSid)
-    // Convert enhanced history back to legacy format for backwards compatibility
-    const legacyHistory = session.history.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }))
-    
-    return {
-      history: legacyHistory,
-      currentFlow: session.currentFlow
+  if (redisClient && redisClient.isReady) {
+    try {
+      const sessionData = await redisClient.get(`voiceSession:${callSid}`);
+      if (sessionData) {
+        console.log(`[Voice Session] Retrieved session from Redis for CallSid: ${callSid}`);
+        return JSON.parse(sessionData);
+      }
+    } catch (err) {
+      console.error(`[Redis] Error getting session for ${callSid}:`, err);
     }
-  } catch (error) {
-    console.error('[Voice Session] Error getting session:', error)
-    return { history: [], currentFlow: null }
   }
+  // Fallback or if not found in Redis
+  console.log(`[Voice Session] No session in Redis or Redis not ready for ${callSid}, using/creating in-memory fallback.`);
+  if (!voiceSessions.has(callSid)) {
+    voiceSessions.set(callSid, { history: [], currentFlow: null });
+  }
+  return voiceSessions.get(callSid)!;
 }
 
 async function updateVoiceSession(callSid: string, history: any[], currentFlow: string | null): Promise<void> {
-  try {
-    await voiceSessionService.updateVoiceSession(callSid, history, currentFlow)
-  } catch (error) {
-    console.error('[Voice Session] Error updating session:', error)
+  const sessionData = JSON.stringify({ history, currentFlow });
+  if (redisClient && redisClient.isReady) {
+    try {
+      await redisClient.set(`voiceSession:${callSid}`, sessionData, { EX: 3600 }); // Expire in 1 hour
+      console.log(`[Voice Session] Updated session in Redis for CallSid: ${callSid}`);
+      return;
+    } catch (err) {
+      console.error(`[Redis] Error setting session for ${callSid}:`, err);
+    }
   }
+  // Fallback
+  voiceSessions.set(callSid, { history, currentFlow });
+  console.log(`[Voice Session] Updated in-memory session for CallSid: ${callSid} (Redis not ready/configured).`);
 }
 
 async function clearVoiceSession(callSid: string): Promise<void> {
-  try {
-    await voiceSessionService.clearVoiceSession(callSid)
-  } catch (error) {
-    console.error('[Voice Session] Error clearing session:', error)
+  if (redisClient && redisClient.isReady) {
+    try {
+      await redisClient.del(`voiceSession:${callSid}`);
+      console.log(`[Voice Session] Cleared session from Redis for CallSid: ${callSid}`);
+      return;
+    } catch (err) {
+      console.error(`[Redis] Error deleting session for ${callSid}:`, err);
+    }
   }
+  // Fallback
+  voiceSessions.delete(callSid);
+  console.log(`[Voice Session] Cleared in-memory session for CallSid: ${callSid} (Redis not ready/configured).`);
 }
 
 // Enhanced session management functions
@@ -325,24 +371,36 @@ router.post('/incoming', async (req, res) => {
       try {
         const business = await prisma.business.findFirst({
           where: {
-            notificationPhoneNumber: toPhoneNumber
+            twilioPhoneNumber: toPhoneNumber  // Fixed: should match twilioPhoneNumber field
           }
         })
         
         if (business) {
           businessName = business.name || 'our business'
+          console.log('[VOICE DEBUG] Found business:', business.name, 'for phone:', toPhoneNumber)
+        } else {
+          console.log('[VOICE DEBUG] No business found for phone:', toPhoneNumber)
         }
       } catch (dbError) {
         console.error('[VOICE DEBUG] Error fetching business by phone number:', dbError)
       }
+    } else {
+      console.log('[VOICE DEBUG] No toPhoneNumber provided in request')
     }
+    
+    // Add debugging for business name before escaping
+    console.log('[VOICE DEBUG] Business name for greeting:', businessName)
     
     // Create welcome message with business name and SSML enhancements
     const safeBusinessName = escapeXml(businessName)
+    console.log('[VOICE DEBUG] Safe business name after XML escaping:', safeBusinessName)
+    
     const welcomeMessage = createSSMLMessage(
       `Hey! Thank you for calling ${safeBusinessName}. Please tell me how I can help you after the beep. Recording will stop after 30 seconds of speech or a period of silence.`,
       { isGreeting: true, isConversational: true, addEmphasis: true }
     )
+    
+    console.log('[VOICE DEBUG] Final welcome message SSML:', welcomeMessage)
     
     // Say the welcome message
     twiml.say(welcomeMessage)
