@@ -792,6 +792,7 @@ User's Question: ${message}`
             }
 
             // Handle emergency voice call if needed
+            /* TEMPORARILY DISABLED FOR DEBUGGING MEMORY ISSUES ON RENDER
             if (isEmergency && business.notificationPhoneNumber) {
               try {
                 console.log(`Initiating emergency voice call to ${business.notificationPhoneNumber}...`)
@@ -881,6 +882,8 @@ User's Question: ${message}`
             } else if (isEmergency) {
               console.log('No notification phone number configured for emergency calls')
             }
+            */ 
+            // Emergency voice calls temporarily disabled for debugging
           } else {
             console.log('No notification email configured for this business')
           }
