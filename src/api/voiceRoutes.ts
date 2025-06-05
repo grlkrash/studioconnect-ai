@@ -126,87 +126,107 @@ router.post('/handle-recording', async (req, res) => {
     
     // Download the audio file
     console.log('[VOICE DEBUG] Downloading audio from:', RecordingUrl)
-    const response = await axios.get(RecordingUrl, {
-      responseType: 'stream'
-    })
     
-    // Create temporary file path
-    const tempFilePath = path.join(os.tmpdir(), `twilio_audio_${Date.now()}.wav`)
-    console.log('[VOICE DEBUG] Saving audio to:', tempFilePath)
-    
-    // Save the audio file
-    const writeStream = fs.createWriteStream(tempFilePath)
-    response.data.pipe(writeStream)
-    
-    // Wait for file to be written
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on('finish', () => resolve())
-      writeStream.on('error', reject)
-    })
-    
-    console.log('[VOICE DEBUG] Audio file saved successfully')
-    
-    // Transcribe the audio
-    let transcribedText: string | null
     try {
-      console.log('[VOICE DEBUG] Starting transcription...')
-      transcribedText = await getTranscription(tempFilePath)
-      console.log('[VOICE DEBUG] Transcription result:', transcribedText)
-    } catch (transcriptionError) {
-      console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
+      const response = await axios({
+        method: 'get',
+        url: RecordingUrl,
+        responseType: 'stream',
+        auth: {
+          username: process.env.TWILIO_ACCOUNT_SID!,
+          password: process.env.TWILIO_AUTH_TOKEN!
+        }
+      })
+      
+      // Create temporary file path
+      const tempFilePath = path.join(os.tmpdir(), `twilio_audio_${Date.now()}.wav`)
+      console.log('[VOICE DEBUG] Saving audio to:', tempFilePath)
+      
+      // Save the audio file
+      const writeStream = fs.createWriteStream(tempFilePath)
+      response.data.pipe(writeStream)
+      
+      // Wait for file to be written
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', () => resolve())
+        writeStream.on('error', reject)
+      })
+      
+      console.log('[VOICE DEBUG] Audio file saved successfully')
+      
+      // Transcribe the audio
+      let transcribedText: string | null
+      try {
+        console.log('[VOICE DEBUG] Starting transcription...')
+        transcribedText = await getTranscription(tempFilePath)
+        console.log('[VOICE DEBUG] Transcription result:', transcribedText)
+      } catch (transcriptionError) {
+        console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
+        const twiml = new VoiceResponse()
+        twiml.say('I had trouble understanding. Could you please try again or call back later?')
+        twiml.hangup()
+        
+        res.setHeader('Content-Type', 'application/xml')
+        res.send(twiml.toString())
+        return
+      }
+      
+      // Check if transcription is empty
+      if (!transcribedText || transcribedText.trim() === '') {
+        console.log('[VOICE DEBUG] Empty transcription result')
+        const twiml = new VoiceResponse()
+        twiml.say('I had trouble understanding. Could you please try again or call back later?')
+        twiml.hangup()
+        
+        res.setHeader('Content-Type', 'application/xml')
+        res.send(twiml.toString())
+        return
+      }
+      
+      // Process with AI handler
+      console.log('[VOICE DEBUG] Processing message with AI handler...')
+      const aiResponse = await processMessage(
+        transcribedText,
+        [], // Empty conversation history for first interaction
+        business.id,
+        null // No current flow
+      )
+      
+      console.log('[VOICE DEBUG] AI response:', aiResponse.reply)
+      
+      // Create TwiML response
       const twiml = new VoiceResponse()
-      twiml.say('I had trouble understanding. Could you please try again or call back later?')
+      twiml.say(aiResponse.reply)
+      
+      // Continue conversation with another recording
+      twiml.record({
+        action: '/api/voice/handle-recording',
+        method: 'POST',
+        maxLength: 30,
+        playBeep: true,
+        transcribe: false,
+        timeout: 5
+      })
+      
+      // Fallback if no response
+      twiml.say('We did not receive any input. Goodbye.')
+      twiml.hangup()
+      
+      // Send TwiML response
+      res.setHeader('Content-Type', 'application/xml')
+      res.send(twiml.toString())
+      
+    } catch (downloadError: any) {
+      console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
+      
+      const twiml = new VoiceResponse()
+      twiml.say('Sorry, I had trouble accessing your message recording. Please try again.')
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
       res.send(twiml.toString())
       return
     }
-    
-    // Check if transcription is empty
-    if (!transcribedText || transcribedText.trim() === '') {
-      console.log('[VOICE DEBUG] Empty transcription result')
-      const twiml = new VoiceResponse()
-      twiml.say('I had trouble understanding. Could you please try again or call back later?')
-      twiml.hangup()
-      
-      res.setHeader('Content-Type', 'application/xml')
-      res.send(twiml.toString())
-      return
-    }
-    
-    // Process with AI handler
-    console.log('[VOICE DEBUG] Processing message with AI handler...')
-    const aiResponse = await processMessage(
-      transcribedText,
-      [], // Empty conversation history for first interaction
-      business.id,
-      null // No current flow
-    )
-    
-    console.log('[VOICE DEBUG] AI response:', aiResponse.reply)
-    
-    // Create TwiML response
-    const twiml = new VoiceResponse()
-    twiml.say(aiResponse.reply)
-    
-    // Continue conversation with another recording
-    twiml.record({
-      action: '/api/voice/handle-recording',
-      method: 'POST',
-      maxLength: 30,
-      playBeep: true,
-      transcribe: false,
-      timeout: 5
-    })
-    
-    // Fallback if no response
-    twiml.say('We did not receive any input. Goodbye.')
-    twiml.hangup()
-    
-    // Send TwiML response
-    res.setHeader('Content-Type', 'application/xml')
-    res.send(twiml.toString())
     
   } catch (error) {
     console.error('[VOICE DEBUG] Error in /handle-recording route:', error)
