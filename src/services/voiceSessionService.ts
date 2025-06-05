@@ -79,6 +79,10 @@ class VoiceSessionService {
   private readonly SESSION_PREFIX = 'voice_session:'
   private readonly DEFAULT_EXPIRATION = 7200 // 2 hours in seconds
   private readonly fallbackSessions = new Map<string, VoiceSession>() // In-memory fallback
+  
+  // Enhanced in-memory session bounds and cleanup configuration
+  private readonly MAX_FALLBACK_SESSIONS = 100 // Max number of fallback sessions to keep in memory
+  private readonly FALLBACK_SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes for inactive fallback sessions
 
   private constructor() {}
 
@@ -276,22 +280,48 @@ class VoiceSessionService {
 
   async cleanupExpiredSessions(): Promise<void> {
     const now = Date.now()
-    const maxAge = this.DEFAULT_EXPIRATION * 1000 // Convert to milliseconds
+    let cleanedCount = 0
     
-    // Clean up fallback sessions
+    // First pass: Remove sessions that exceed timeout
     for (const [callSid, session] of this.fallbackSessions.entries()) {
-      if (now - session.lastActivity > maxAge) {
+      if (now - session.lastActivity > this.FALLBACK_SESSION_TIMEOUT_MS) {
         this.fallbackSessions.delete(callSid)
-        console.log(`[Voice Session] Cleaned up expired fallback session: ${callSid}`)
+        cleanedCount++
+        console.log(`[Voice Session Service] Cleaned up expired fallback session: ${callSid}`)
       }
     }
+    
+    if (cleanedCount > 0) {
+      console.log(`[Voice Session Service] Cleaned up ${cleanedCount} expired fallback sessions.`)
+    }
+    
+    // Second pass: If map still exceeds max size after cleaning old ones, remove oldest to enforce hard limit
+    if (this.fallbackSessions.size > this.MAX_FALLBACK_SESSIONS) {
+      const sessionsArray = Array.from(this.fallbackSessions.entries())
+      sessionsArray.sort((a, b) => a[1].lastActivity - b[1].lastActivity) // Sort by oldest
+      let removedToFit = 0
+      
+      while (this.fallbackSessions.size > this.MAX_FALLBACK_SESSIONS && sessionsArray.length > 0) {
+        const oldestSession = sessionsArray.shift()
+        if (oldestSession) {
+          this.fallbackSessions.delete(oldestSession[0])
+          removedToFit++
+        }
+      }
+      
+      if (removedToFit > 0) {
+        console.log(`[Voice Session Service] Removed ${removedToFit} oldest fallback sessions to enforce MAX_FALLBACK_SESSIONS limit.`)
+      }
+    }
+    
+    console.log(`[Voice Session Service] Current fallback session count: ${this.fallbackSessions.size}`)
     
     // Redis handles expiration automatically, but we can log active sessions
     try {
       const activeSessions = await this.getAllActiveSessions()
-      console.log(`[Voice Session] Active sessions count: ${activeSessions.length}`)
+      console.log(`[Voice Session Service] Total active sessions count: ${activeSessions.length}`)
     } catch (error) {
-      console.error('[Voice Session] Error during cleanup:', error)
+      console.error('[Voice Session Service] Error during cleanup:', error)
     }
   }
 

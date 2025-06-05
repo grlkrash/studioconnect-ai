@@ -29,39 +29,89 @@ const maxRedisReconnectAttempts = 5;
 const voiceSessions = new Map<string, { history: any[], currentFlow: string | null, lastAccessed: number }>(); // Enhanced with lastAccessed
 
 // Memory monitoring and cleanup configuration
-const MEMORY_CHECK_INTERVAL = 60000; // 1 minute
+const MEMORY_CHECK_INTERVAL = parseInt(process.env.MEMORY_CHECK_INTERVAL || '300000') // Default 5 minutes (increased from 1 minute)
 const SESSION_CLEANUP_INTERVAL = 300000; // 5 minutes
 const MAX_SESSION_AGE_MS = 1800000; // 30 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // Alert threshold - increased for 2GB RAM instance (75% of 2GB)
 const MAX_CONVERSATION_HISTORY_LENGTH = 50; // Prevent unbounded growth
 
+// Enhanced in-memory session bounds and cleanup configuration
+const MAX_IN_MEMORY_SESSIONS = 100; // Max number of call sessions to keep in memory
+const IN_MEMORY_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes for inactive in-memory sessions
+
+// Health check configuration
+const REDIS_HEALTH_CHECK_INTERVAL = parseInt(process.env.REDIS_HEALTH_CHECK_INTERVAL || '60000') // Default 1 minute (increased from 30 seconds)
+const ENABLE_MEMORY_MONITORING = process.env.NODE_ENV === 'development' || process.env.ENABLE_MEMORY_MONITORING === 'true'
+const ENABLE_VERBOSE_LOGGING = process.env.NODE_ENV === 'development' || process.env.ENABLE_VERBOSE_LOGGING === 'true'
+
 // Memory monitoring
 function logMemoryUsage(context: string = ''): void {
+  // Only log in development or when explicitly enabled
+  if (!ENABLE_MEMORY_MONITORING) return
+  
   const usage = process.memoryUsage();
   const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
   
-  console.log(`[Memory ${context}] RSS: ${formatBytes(usage.rss)}MB, Heap Used: ${formatBytes(usage.heapUsed)}MB, Heap Total: ${formatBytes(usage.heapTotal)}MB, External: ${formatBytes(usage.external)}MB`);
+  const memoryInfo = {
+    context,
+    rss: formatBytes(usage.rss),
+    heapUsed: formatBytes(usage.heapUsed),
+    heapTotal: formatBytes(usage.heapTotal),
+    external: formatBytes(usage.external)
+  }
   
-  // Alert on high memory usage
-  if (formatBytes(usage.heapUsed) > MAX_MEMORY_USAGE_MB) {
-    console.warn(`[Memory Alert] High memory usage detected: ${formatBytes(usage.heapUsed)}MB > ${MAX_MEMORY_USAGE_MB}MB threshold`);
+  if (ENABLE_VERBOSE_LOGGING) {
+    console.log(`[Memory ${context}] RSS: ${memoryInfo.rss}MB, Heap Used: ${memoryInfo.heapUsed}MB, Heap Total: ${memoryInfo.heapTotal}MB, External: ${memoryInfo.external}MB`);
+  }
+  
+  // Always alert on high memory usage regardless of logging settings
+  if (memoryInfo.heapUsed > MAX_MEMORY_USAGE_MB) {
+    console.warn(`[Memory Alert] High memory usage detected: ${memoryInfo.heapUsed}MB > ${MAX_MEMORY_USAGE_MB}MB threshold`);
   }
 }
 
-// Cleanup old in-memory sessions
-function cleanupOldSessions(): void {
+// Enhanced cleanup function for in-memory sessions
+function cleanupOldInMemorySessions(): void {
   const now = Date.now();
   let cleanedCount = 0;
   
+  // First pass: Remove sessions that exceed timeout
   for (const [callSid, session] of voiceSessions.entries()) {
-    if (now - session.lastAccessed > MAX_SESSION_AGE_MS) {
+    if (now - session.lastAccessed > IN_MEMORY_SESSION_TIMEOUT_MS) {
       voiceSessions.delete(callSid);
       cleanedCount++;
     }
   }
   
   if (cleanedCount > 0) {
-    console.log(`[Session Cleanup] Removed ${cleanedCount} expired sessions. Active sessions: ${voiceSessions.size}`);
+    console.log(`[Voice Session] Cleaned up ${cleanedCount} old in-memory voice sessions.`);
+  }
+  
+  // Second pass: If map still exceeds max size after cleaning old ones, remove oldest to enforce hard limit
+  if (voiceSessions.size > MAX_IN_MEMORY_SESSIONS) {
+    const sessionsArray = Array.from(voiceSessions.entries());
+    sessionsArray.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed); // Sort by oldest
+    let removedToFit = 0;
+    
+    while (voiceSessions.size > MAX_IN_MEMORY_SESSIONS && sessionsArray.length > 0) {
+      const oldestSession = sessionsArray.shift();
+      if (oldestSession) {
+        voiceSessions.delete(oldestSession[0]);
+        removedToFit++;
+      }
+    }
+    
+    if (removedToFit > 0) {
+      console.log(`[Voice Session] Removed ${removedToFit} oldest in-memory sessions to enforce MAX_IN_MEMORY_SESSIONS limit.`);
+    }
+  }
+  
+  if (ENABLE_VERBOSE_LOGGING) {
+    console.log(`[Voice Session] Current in-memory session count: ${voiceSessions.size}`);
+  }
+  
+  // Only log memory after cleanup if there was significant activity or in verbose mode
+  if ((cleanedCount > 0 || voiceSessions.size > 10) && ENABLE_MEMORY_MONITORING) {
     logMemoryUsage('After Session Cleanup');
   }
 }
@@ -71,20 +121,29 @@ async function cleanupTempFile(filePath: string): Promise<void> {
   try {
     if (fs.existsSync(filePath)) {
       await fs.promises.unlink(filePath);
-      console.log(`[File Cleanup] Successfully deleted temp file: ${filePath}`);
+      if (ENABLE_VERBOSE_LOGGING) {
+        console.log(`[File Cleanup] Successfully deleted temp file: ${filePath}`);
+      }
     }
   } catch (error) {
     console.error(`[File Cleanup] Failed to delete temp file ${filePath}:`, error);
   }
 }
 
-// Start memory monitoring
-setInterval(() => {
-  logMemoryUsage('Periodic Check');
-}, MEMORY_CHECK_INTERVAL);
+// Start memory monitoring - only if enabled
+let memoryMonitoringInterval: NodeJS.Timeout | undefined;
+if (ENABLE_MEMORY_MONITORING) {
+  memoryMonitoringInterval = setInterval(() => {
+    logMemoryUsage('Periodic Check');
+  }, MEMORY_CHECK_INTERVAL);
+  
+  if (ENABLE_VERBOSE_LOGGING) {
+    console.log(`[Memory Monitor] Started memory monitoring with ${MEMORY_CHECK_INTERVAL}ms interval`);
+  }
+}
 
-// Start session cleanup
-setInterval(cleanupOldSessions, SESSION_CLEANUP_INTERVAL);
+// Start session cleanup - always enabled but with optimized logging
+const sessionCleanupInterval = setInterval(cleanupOldInMemorySessions, SESSION_CLEANUP_INTERVAL);
 
 // Helper function to safely check if Redis client is ready for operations
 function isRedisClientReady(): boolean {
@@ -187,8 +246,10 @@ initializeRedis().catch(err => {
   console.error('[Redis Init] Failed to initialize Redis on module load:', err);
 });
 
-// Improved periodic health check with backoff
+// Enhanced periodic health check with smart backoff and connection status awareness
 let healthCheckInterval: NodeJS.Timeout | undefined;
+let lastRedisCheckTime = 0;
+let consecutiveFailures = 0;
 
 function startRedisHealthCheck() {
   if (healthCheckInterval) {
@@ -196,13 +257,52 @@ function startRedisHealthCheck() {
   }
   
   healthCheckInterval = setInterval(() => {
-    if (!isRedisClientReady() && process.env.REDIS_URL && redisReconnectAttempts < maxRedisReconnectAttempts) {
-      console.log(`[Redis Health Check] Attempting to reconnect to Redis (attempt ${redisReconnectAttempts + 1}/${maxRedisReconnectAttempts})...`);
-      initializeRedis().catch(err => {
-        console.error('[Redis Health Check] Reconnection failed:', err);
-      });
+    const now = Date.now();
+    
+    // Skip check if Redis is connected and healthy
+    if (isRedisClientReady()) {
+      consecutiveFailures = 0;
+      lastRedisCheckTime = now;
+      return;
     }
-  }, 30000); // Check every 30 seconds
+    
+    // Skip check if no Redis URL configured
+    if (!process.env.REDIS_URL) {
+      return;
+    }
+    
+    // Skip check if max reconnection attempts reached
+    if (redisReconnectAttempts >= maxRedisReconnectAttempts) {
+      if (ENABLE_VERBOSE_LOGGING && now - lastRedisCheckTime > 300000) { // Log once every 5 minutes
+        console.log(`[Redis Health Check] Max reconnection attempts reached. Redis health checking suspended.`);
+        lastRedisCheckTime = now;
+      }
+      return;
+    }
+    
+    // Implement exponential backoff for consecutive failures
+    const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveFailures), 60000); // Max 1 minute backoff
+    if (consecutiveFailures > 0 && now - lastRedisCheckTime < backoffDelay) {
+      return; // Skip this check due to backoff
+    }
+    
+    lastRedisCheckTime = now;
+    
+    if (ENABLE_VERBOSE_LOGGING || consecutiveFailures === 0) {
+      console.log(`[Redis Health Check] Attempting to reconnect to Redis (attempt ${redisReconnectAttempts + 1}/${maxRedisReconnectAttempts})...`);
+    }
+    
+    initializeRedis().catch(err => {
+      consecutiveFailures++;
+      if (ENABLE_VERBOSE_LOGGING || consecutiveFailures <= 3) {
+        console.error('[Redis Health Check] Reconnection failed:', err);
+      }
+    });
+  }, REDIS_HEALTH_CHECK_INTERVAL);
+  
+  if (ENABLE_VERBOSE_LOGGING) {
+    console.log(`[Redis Health Check] Started Redis health monitoring with ${REDIS_HEALTH_CHECK_INTERVAL}ms interval`);
+  }
 }
 
 startRedisHealthCheck();
@@ -211,9 +311,20 @@ startRedisHealthCheck();
 async function gracefulShutdown(signal: string) {
   console.log(`[Shutdown] Received ${signal}, starting graceful shutdown...`);
   
-  // Clear intervals
+  // Clear all intervals
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
+    console.log('[Shutdown] Redis health check timer cleared.');
+  }
+  
+  if (sessionCleanupInterval) {
+    clearInterval(sessionCleanupInterval);
+    console.log('[Shutdown] Session cleanup timer cleared.');
+  }
+  
+  if (memoryMonitoringInterval) {
+    clearInterval(memoryMonitoringInterval);
+    console.log('[Shutdown] Memory monitoring timer cleared.');
   }
   
   // Close Redis connection
@@ -332,8 +443,10 @@ function createSSMLMessage(message: string, options: {
 
 // Enhanced helper functions for voice session management with Redis support and memory optimization
 async function getVoiceSession(callSid: string): Promise<{ history: any[], currentFlow: string | null, lastAccessed?: number }> {
-  // Log memory before session retrieval
-  logMemoryUsage(`Getting Session ${callSid}`);
+  // Log memory before session retrieval (only in verbose mode)
+  if (ENABLE_VERBOSE_LOGGING) {
+    logMemoryUsage(`Getting Session ${callSid}`);
+  }
   
   // Robust Redis client readiness check
   if (isRedisClientReady()) {
@@ -817,7 +930,9 @@ router.post('/handle-recording', async (req, res) => {
     
     // Download the audio file with proper cleanup
     console.log('[VOICE DEBUG] Downloading audio from:', RecordingUrl)
-    logMemoryUsage('Before Audio Download')
+    if (ENABLE_VERBOSE_LOGGING) {
+      logMemoryUsage('Before Audio Download')
+    }
     
     let tempFilePath: string | null = null;
     
@@ -878,7 +993,9 @@ router.post('/handle-recording', async (req, res) => {
       })
       
       console.log('[VOICE DEBUG] Audio file saved successfully')
-      logMemoryUsage('After Audio Download')
+      if (ENABLE_VERBOSE_LOGGING) {
+        logMemoryUsage('After Audio Download')
+      }
       
       // Transcribe the audio
       let transcribedText: string | null
@@ -886,7 +1003,9 @@ router.post('/handle-recording', async (req, res) => {
         console.log('[VOICE DEBUG] Starting transcription...')
         transcribedText = await getTranscription(tempFilePath)
         console.log('[VOICE DEBUG] Transcription result:', transcribedText)
-        logMemoryUsage('After Transcription')
+        if (ENABLE_VERBOSE_LOGGING) {
+          logMemoryUsage('After Transcription')
+        }
       } catch (transcriptionError) {
         console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
         
@@ -1163,8 +1282,10 @@ router.post('/handle-recording', async (req, res) => {
       res.setHeader('Content-Type', 'application/xml')
       res.send(twimlResponse.toString())
       
-      // Log final memory usage for this request
-      logMemoryUsage('End of Request Processing')
+      // Log final memory usage for this request (only in verbose mode)
+      if (ENABLE_VERBOSE_LOGGING) {
+        logMemoryUsage('End of Request Processing')
+      }
       
     } catch (downloadError: any) {
       console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
@@ -1174,7 +1295,9 @@ router.post('/handle-recording', async (req, res) => {
         await cleanupTempFile(tempFilePath)
       }
       
-      logMemoryUsage('After Download Error')
+      if (ENABLE_VERBOSE_LOGGING) {
+        logMemoryUsage('After Download Error')
+      }
       
       const twiml = new VoiceResponse()
       const downloadErrorMessage = createSSMLMessage(
@@ -1255,6 +1378,73 @@ router.post('/handle-voicemail-recording', async (req, res) => {
     
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
+  }
+})
+
+// GET /health - System health and monitoring endpoint
+router.get('/health', async (req, res) => {
+  try {
+    const memoryUsage = process.memoryUsage()
+    const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100
+    
+    // Get session statistics
+    const sessionStats = await voiceSessionService.getSessionStats()
+    
+    // Get active voice sessions count
+    const activeVoiceSessions = voiceSessions.size
+    
+    const healthData = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      memory: {
+        rss: formatBytes(memoryUsage.rss),
+        heapUsed: formatBytes(memoryUsage.heapUsed),
+        heapTotal: formatBytes(memoryUsage.heapTotal),
+        external: formatBytes(memoryUsage.external),
+        heapUsedPercent: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100)
+      },
+      redis: {
+        connected: isRedisClientReady(),
+        reconnectAttempts: redisReconnectAttempts,
+        maxReconnectAttempts: maxRedisReconnectAttempts,
+        consecutiveFailures
+      },
+      sessions: {
+        activeVoiceSessions,
+        ...sessionStats
+      },
+      timers: {
+        memoryMonitoringEnabled: ENABLE_MEMORY_MONITORING,
+        memoryCheckInterval: MEMORY_CHECK_INTERVAL,
+        sessionCleanupInterval: SESSION_CLEANUP_INTERVAL,
+        redisHealthCheckInterval: REDIS_HEALTH_CHECK_INTERVAL
+      },
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        verboseLogging: ENABLE_VERBOSE_LOGGING,
+        redisConfigured: !!process.env.REDIS_URL
+      }
+    }
+    
+    // Check if memory usage is high
+    if (formatBytes(memoryUsage.heapUsed) > MAX_MEMORY_USAGE_MB) {
+      healthData.status = 'warning'
+    }
+    
+    // Force memory logging if requested
+    if (req.query.logMemory === 'true') {
+      logMemoryUsage('Health Check Request')
+    }
+    
+    res.json(healthData)
+    
+  } catch (error) {
+    console.error('[Health Check] Error:', error)
+    res.status(500).json({
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    })
   }
 })
 

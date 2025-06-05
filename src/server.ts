@@ -10,15 +10,13 @@ dotenv.config()
 
 // Import Redis and session service
 import RedisManager from './config/redis'
-// TEMPORARY: Disabled to fix memory leak
-// import VoiceSessionService from './services/voiceSessionService'
+import VoiceSessionService from './services/voiceSessionService'
 
 // Import route handlers
 import chatRoutes from './api/chatRoutes'
 import adminRoutes from './api/admin'
 import viewRoutes from './api/viewRoutes'
-// TEMPORARY: Disabled voice routes import to fix memory leak
-// import voiceRoutes from './api/voiceRoutes'
+import voiceRoutes from './api/voiceRoutes'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -112,8 +110,7 @@ app.use('/admin', viewRoutes)
 // 2. Mount API routes
 app.use('/api/chat', chatRoutes)
 app.use('/api/admin', adminRoutes)
-// TEMPORARY: Disabled voice routes to fix memory leak
-// app.use('/api/voice', voiceRoutes)
+app.use('/api/voice', voiceRoutes)
 
 // 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
@@ -151,18 +148,13 @@ app.get('/widget.js', (req, res) => {
 app.get('/health', async (req, res) => {
   try {
     const redisManager = RedisManager.getInstance()
-    // TEMPORARY: Disabled VoiceSessionService to fix memory leak
-    // const sessionService = VoiceSessionService.getInstance()
+    const sessionService = VoiceSessionService.getInstance()
     
     // Check Redis connection status
     const redisStatus = redisManager.isClientConnected() ? 'connected' : 'disconnected'
     
-    // TEMPORARY: Simplified session stats without voice service
-    const sessionStats = {
-      activeRedisSessions: 0,
-      activeFallbackSessions: 0,
-      totalActiveSessions: 0
-    }
+    // Get session stats from voice service
+    const sessionStats = await sessionService.getSessionStats()
     
     res.status(200).json({
       status: 'healthy',
@@ -242,11 +234,10 @@ async function initializeRedis() {
     await redisManager.connect()
     console.log('✅ Redis connection established')
     
-    // TEMPORARY: Disabled session cleanup to fix memory leak
-    // const sessionService = VoiceSessionService.getInstance()
-    // setInterval(async () => {
-    //   await sessionService.cleanupExpiredSessions()
-    // }, 5 * 60 * 1000) // Run cleanup every 5 minutes
+    const sessionService = VoiceSessionService.getInstance()
+    setInterval(async () => {
+      await sessionService.cleanupExpiredSessions()
+    }, 5 * 60 * 1000) // Run cleanup every 5 minutes
     
   } catch (error) {
     console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error)
