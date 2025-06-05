@@ -1,5 +1,8 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 dotenv.config(); // Ensures OPENAI_API_KEY is loaded from .env
 
@@ -56,5 +59,48 @@ export const getChatCompletion = async (
   } catch (error) {
     console.error('Error getting chat completion from OpenAI:', error);
     throw error; // Re-throw the error
+  }
+};
+
+/**
+ * Transcribes audio using OpenAI's Whisper API.
+ * @param audioFilePath Path to the saved audio file to transcribe.
+ * @returns A promise that resolves to the transcribed text or null if transcription fails.
+ */
+export const getTranscription = async (
+  audioFilePath: string
+): Promise<string | null> => {
+  console.log(`[OpenAI Service] Transcribing audio file at: ${audioFilePath}`);
+  
+  if (!fs.existsSync(audioFilePath)) {
+    console.error(`[OpenAI Service] Audio file not found at path: ${audioFilePath}`);
+    return null;
+  }
+
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioFilePath),
+      model: 'whisper-1',
+      // language: 'en', // Optional: specify language if known
+      // response_format: 'text' // Optional: default is json, but text can be simpler
+    });
+
+    // For 'json' response_format (default):
+    const transcribedText = transcription.text;
+    console.log(`[OpenAI Service] Transcription successful. Text: "${transcribedText.substring(0, 100)}..."`);
+    return transcribedText;
+  } catch (error) {
+    console.error('[OpenAI Service] Error getting transcription from OpenAI:', error);
+    throw error; // Re-throw the error to be handled by the caller
+  } finally {
+    // Clean up the temporary audio file after transcription
+    try {
+      if (fs.existsSync(audioFilePath)) {
+        fs.unlinkSync(audioFilePath);
+        console.log(`[OpenAI Service] Deleted temporary audio file: ${audioFilePath}`);
+      }
+    } catch (cleanupError) {
+      console.error(`[OpenAI Service] Error deleting temporary audio file ${audioFilePath}:`, cleanupError);
+    }
   }
 }; 

@@ -12,6 +12,7 @@ dotenv.config()
 import chatRoutes from './api/chatRoutes'
 import adminRoutes from './api/admin'
 import viewRoutes from './api/viewRoutes'
+import voiceRoutes from './api/voiceRoutes'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -105,6 +106,7 @@ app.use('/admin', viewRoutes)
 // 2. Mount API routes
 app.use('/api/chat', chatRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/voice', voiceRoutes)
 
 // 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
