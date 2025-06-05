@@ -24,7 +24,67 @@ const voiceSessionService = VoiceSessionService.getInstance()
 
 // Redis client singleton and fallback storage
 let redisClient: RedisClientType | undefined;
-const voiceSessions = new Map<string, { history: any[], currentFlow: string | null }>(); // Keep as fallback
+let redisReconnectAttempts = 0;
+const maxRedisReconnectAttempts = 5;
+const voiceSessions = new Map<string, { history: any[], currentFlow: string | null, lastAccessed: number }>(); // Enhanced with lastAccessed
+
+// Memory monitoring and cleanup configuration
+const MEMORY_CHECK_INTERVAL = 60000; // 1 minute
+const SESSION_CLEANUP_INTERVAL = 300000; // 5 minutes
+const MAX_SESSION_AGE_MS = 1800000; // 30 minutes
+const MAX_MEMORY_USAGE_MB = 512; // Alert threshold
+const MAX_CONVERSATION_HISTORY_LENGTH = 50; // Prevent unbounded growth
+
+// Memory monitoring
+function logMemoryUsage(context: string = ''): void {
+  const usage = process.memoryUsage();
+  const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
+  
+  console.log(`[Memory ${context}] RSS: ${formatBytes(usage.rss)}MB, Heap Used: ${formatBytes(usage.heapUsed)}MB, Heap Total: ${formatBytes(usage.heapTotal)}MB, External: ${formatBytes(usage.external)}MB`);
+  
+  // Alert on high memory usage
+  if (formatBytes(usage.heapUsed) > MAX_MEMORY_USAGE_MB) {
+    console.warn(`[Memory Alert] High memory usage detected: ${formatBytes(usage.heapUsed)}MB > ${MAX_MEMORY_USAGE_MB}MB threshold`);
+  }
+}
+
+// Cleanup old in-memory sessions
+function cleanupOldSessions(): void {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  for (const [callSid, session] of voiceSessions.entries()) {
+    if (now - session.lastAccessed > MAX_SESSION_AGE_MS) {
+      voiceSessions.delete(callSid);
+      cleanedCount++;
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`[Session Cleanup] Removed ${cleanedCount} expired sessions. Active sessions: ${voiceSessions.size}`);
+    logMemoryUsage('After Session Cleanup');
+  }
+}
+
+// Enhanced temp file cleanup with error handling
+async function cleanupTempFile(filePath: string): Promise<void> {
+  try {
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+      console.log(`[File Cleanup] Successfully deleted temp file: ${filePath}`);
+    }
+  } catch (error) {
+    console.error(`[File Cleanup] Failed to delete temp file ${filePath}:`, error);
+  }
+}
+
+// Start memory monitoring
+setInterval(() => {
+  logMemoryUsage('Periodic Check');
+}, MEMORY_CHECK_INTERVAL);
+
+// Start session cleanup
+setInterval(cleanupOldSessions, SESSION_CLEANUP_INTERVAL);
 
 // Helper function to safely check if Redis client is ready for operations
 function isRedisClientReady(): boolean {
@@ -37,45 +97,74 @@ async function initializeRedis() {
     return;
   }
 
-  // Prevent multiple initialization attempts
-  if (redisClient) {
-    console.log('[Redis Init] Redis client already exists, skipping initialization.');
+  // Prevent multiple initialization attempts and limit reconnect attempts
+  if (redisClient && redisClient.isOpen) {
+    console.log('[Redis Init] Redis client already connected, skipping initialization.');
+    return;
+  }
+  
+  if (redisReconnectAttempts >= maxRedisReconnectAttempts) {
+    console.warn(`[Redis Init] Max reconnection attempts (${maxRedisReconnectAttempts}) reached. Stopping reconnection attempts.`);
     return;
   }
 
-  console.log('[Redis Init] Attempting to connect to Redis using URL from ENV:', process.env.REDIS_URL);
+  console.log(`[Redis Init] Attempting to connect to Redis (attempt ${redisReconnectAttempts + 1}/${maxRedisReconnectAttempts})`);
   
   try {
-    const client = createClient({ url: process.env.REDIS_URL });
-
-    // Set up event handlers before connecting
-    client.on('error', (err) => {
-      console.error('[Redis Client Error] General error:', err);
-      // Mark client as unusable on any error
+    // Properly close existing client if it exists but isn't connected
+    if (redisClient && !redisClient.isOpen) {
+      try {
+        await redisClient.quit();
+      } catch (err) {
+        console.warn('[Redis Init] Error closing previous client:', err);
+      }
       redisClient = undefined;
+    }
+
+    const client = createClient({ 
+      url: process.env.REDIS_URL,
+      socket: {
+        connectTimeout: 5000,
+        reconnectStrategy: (retries) => {
+          if (retries > 3) {
+            console.log('[Redis] Max reconnection retries reached, giving up');
+            return false; // Stop reconnecting
+          }
+          return Math.min(retries * 50, 500); // Exponential backoff, max 500ms
+        }
+      }
+    });
+
+    // Set up event handlers before connecting - avoid duplicate handlers
+    client.removeAllListeners(); // Clear any existing listeners
+    
+    client.on('error', (err) => {
+      console.error('[Redis Client Error]:', err);
+      redisClient = undefined;
+      redisReconnectAttempts++;
     });
 
     client.on('connect', () => {
       console.log('[Redis Client Connect] Connecting to Redis server...');
+      redisReconnectAttempts = 0; // Reset on successful connection
     });
 
     client.on('reconnecting', () => {
       console.log('[Redis Client Reconnecting] Reconnecting to Redis server...');
-      // During reconnection, mark client as not ready to prevent usage
-      redisClient = undefined;
+      redisClient = undefined; // Mark as not ready during reconnection
     });
 
     client.on('ready', () => {
       console.log('[Redis Client Ready] Redis client is ready.');
-      redisClient = client as RedisClientType; // Assign only when truly ready
+      redisClient = client as RedisClientType;
+      redisReconnectAttempts = 0; // Reset counter on success
     });
 
     client.on('end', () => {
       console.log('[Redis Client End] Connection to Redis has ended.');
-      redisClient = undefined; // Mark as not usable
+      redisClient = undefined;
     });
 
-    // Additional event handlers for better connection management
     client.on('disconnect', () => {
       console.log('[Redis Client Disconnect] Disconnected from Redis server.');
       redisClient = undefined;
@@ -87,8 +176,9 @@ async function initializeRedis() {
 
   } catch (err) {
     console.error('[Redis Init] Failed to connect during explicit initialization:', err);
-    redisClient = undefined; // Ensure it's marked as not usable
-    console.warn('[Voice Session] Defaulting to in-memory session due to Redis initial connection failure.');
+    redisClient = undefined;
+    redisReconnectAttempts++;
+    console.warn('[Voice Session] Defaulting to in-memory session due to Redis connection failure.');
   }
 }
 
@@ -97,42 +187,57 @@ initializeRedis().catch(err => {
   console.error('[Redis Init] Failed to initialize Redis on module load:', err);
 });
 
-// Optional: Add periodic health check for Redis connection
-setInterval(() => {
-  if (!isRedisClientReady() && process.env.REDIS_URL) {
-    console.log('[Redis Health Check] Attempting to reconnect to Redis...');
-    initializeRedis().catch(err => {
-      console.error('[Redis Health Check] Reconnection failed:', err);
-    });
-  }
-}, 30000); // Check every 30 seconds
+// Improved periodic health check with backoff
+let healthCheckInterval: NodeJS.Timeout | undefined;
 
-// Graceful shutdown handler for Redis connection
-process.on('SIGINT', async () => {
-  console.log('[Redis Shutdown] Received SIGINT, closing Redis connection...');
+function startRedisHealthCheck() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+  
+  healthCheckInterval = setInterval(() => {
+    if (!isRedisClientReady() && process.env.REDIS_URL && redisReconnectAttempts < maxRedisReconnectAttempts) {
+      console.log(`[Redis Health Check] Attempting to reconnect to Redis (attempt ${redisReconnectAttempts + 1}/${maxRedisReconnectAttempts})...`);
+      initializeRedis().catch(err => {
+        console.error('[Redis Health Check] Reconnection failed:', err);
+      });
+    }
+  }, 30000); // Check every 30 seconds
+}
+
+startRedisHealthCheck();
+
+// Graceful shutdown handler for all resources
+async function gracefulShutdown(signal: string) {
+  console.log(`[Shutdown] Received ${signal}, starting graceful shutdown...`);
+  
+  // Clear intervals
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+  
+  // Close Redis connection
   if (redisClient && redisClient.isOpen) {
     try {
       await redisClient.quit();
-      console.log('[Redis Shutdown] Redis connection closed gracefully.');
+      console.log('[Shutdown] Redis connection closed gracefully.');
     } catch (err) {
-      console.error('[Redis Shutdown] Error closing Redis connection:', err);
+      console.error('[Shutdown] Error closing Redis connection:', err);
     }
   }
+  
+  // Clear in-memory sessions
+  voiceSessions.clear();
+  console.log('[Shutdown] In-memory sessions cleared.');
+  
+  // Final memory log
+  logMemoryUsage('Final Shutdown');
+  
   process.exit(0);
-});
+}
 
-process.on('SIGTERM', async () => {
-  console.log('[Redis Shutdown] Received SIGTERM, closing Redis connection...');
-  if (redisClient && redisClient.isOpen) {
-    try {
-      await redisClient.quit();
-      console.log('[Redis Shutdown] Redis connection closed gracefully.');
-    } catch (err) {
-      console.error('[Redis Shutdown] Error closing Redis connection:', err);
-    }
-  }
-  process.exit(0);
-});
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Helper function for XML escaping text content only (preserves apostrophes as literals)
 function escapeTextForSSML(unsafe: string): string {
@@ -225,37 +330,73 @@ function createSSMLMessage(message: string, options: {
   return ssmlMessage
 }
 
-// Enhanced helper functions for voice session management with Redis support
-async function getVoiceSession(callSid: string): Promise<{ history: any[], currentFlow: string | null }> {
+// Enhanced helper functions for voice session management with Redis support and memory optimization
+async function getVoiceSession(callSid: string): Promise<{ history: any[], currentFlow: string | null, lastAccessed?: number }> {
+  // Log memory before session retrieval
+  logMemoryUsage(`Getting Session ${callSid}`);
+  
   // Robust Redis client readiness check
   if (isRedisClientReady()) {
     try {
       const sessionData = await redisClient!.get(`voiceSession:${callSid}`);
       if (sessionData) {
         console.log(`[Voice Session] Retrieved session from Redis for CallSid: ${callSid}`);
-        return JSON.parse(sessionData);
+        const parsedData = JSON.parse(sessionData);
+        
+        // Ensure conversation history doesn't grow unbounded
+        if (parsedData.history && parsedData.history.length > MAX_CONVERSATION_HISTORY_LENGTH) {
+          console.log(`[Voice Session] Trimming conversation history from ${parsedData.history.length} to ${MAX_CONVERSATION_HISTORY_LENGTH} messages`);
+          parsedData.history = parsedData.history.slice(-MAX_CONVERSATION_HISTORY_LENGTH);
+        }
+        
+        return parsedData;
       }
-      console.log(`[Voice Session] No existing Redis session found for CallSid: ${callSid}, creating new in-memory session`);
+      console.log(`[Voice Session] No existing Redis session found for CallSid: ${callSid}, creating new session`);
       // If not found in Redis, it will fall through to in-memory below
     } catch (err) {
       console.error(`[Redis] Error getting session for ${callSid} (falling back to in-memory):`, err);
-      // Mark client as potentially unusable on Redis operation errors
-      redisClient = undefined;
+      // Don't immediately mark as undefined - let health check handle reconnection
     }
   } else {
     console.log(`[Voice Session] Redis client not ready, using in-memory session for ${callSid}`);
   }
 
-  // Fallback to in-memory storage
+  // Fallback to in-memory storage with timestamp tracking
   if (!voiceSessions.has(callSid)) {
     console.log(`[Voice Session] Creating new in-memory session for CallSid: ${callSid}`);
-    voiceSessions.set(callSid, { history: [], currentFlow: null });
+    voiceSessions.set(callSid, { 
+      history: [], 
+      currentFlow: null, 
+      lastAccessed: Date.now() 
+    });
+  } else {
+    // Update last accessed time
+    const session = voiceSessions.get(callSid)!;
+    session.lastAccessed = Date.now();
   }
-  return voiceSessions.get(callSid)!;
+  
+  const session = voiceSessions.get(callSid)!;
+  
+  // Ensure in-memory history doesn't grow unbounded
+  if (session.history.length > MAX_CONVERSATION_HISTORY_LENGTH) {
+    console.log(`[Voice Session] Trimming in-memory conversation history from ${session.history.length} to ${MAX_CONVERSATION_HISTORY_LENGTH} messages`);
+    session.history = session.history.slice(-MAX_CONVERSATION_HISTORY_LENGTH);
+  }
+  
+  return { 
+    history: session.history, 
+    currentFlow: session.currentFlow,
+    lastAccessed: session.lastAccessed 
+  };
 }
 
 async function updateVoiceSession(callSid: string, history: any[], currentFlow: string | null): Promise<void> {
-  const sessionData = JSON.stringify({ history, currentFlow });
+  // Trim history to prevent unbounded growth
+  const trimmedHistory = history.length > MAX_CONVERSATION_HISTORY_LENGTH 
+    ? history.slice(-MAX_CONVERSATION_HISTORY_LENGTH) 
+    : history;
+    
+  const sessionData = JSON.stringify({ history: trimmedHistory, currentFlow });
   
   // Robust Redis client readiness check
   if (isRedisClientReady()) {
@@ -263,20 +404,27 @@ async function updateVoiceSession(callSid: string, history: any[], currentFlow: 
       await redisClient!.set(`voiceSession:${callSid}`, sessionData, { EX: 3600 * 2 }); // Expire in 2 hours
       console.log(`[Voice Session] Updated session in Redis for CallSid: ${callSid}`);
       
-      // Also update in-memory as backup/cache
-      voiceSessions.set(callSid, { history, currentFlow });
+      // Also update in-memory as backup/cache with timestamp
+      voiceSessions.set(callSid, { 
+        history: trimmedHistory, 
+        currentFlow, 
+        lastAccessed: Date.now() 
+      });
       return; // Success with Redis
     } catch (err) {
       console.error(`[Redis] Error setting session for ${callSid} (falling back to in-memory):`, err);
-      // Mark client as potentially unusable on Redis operation errors
-      redisClient = undefined;
+      // Don't immediately mark as undefined - let health check handle reconnection
     }
   } else {
     console.log(`[Voice Session] Redis client not ready, using in-memory session for ${callSid}`);
   }
   
-  // Fallback to in-memory storage
-  voiceSessions.set(callSid, { history, currentFlow });
+  // Fallback to in-memory storage with timestamp
+  voiceSessions.set(callSid, { 
+    history: trimmedHistory, 
+    currentFlow, 
+    lastAccessed: Date.now() 
+  });
   console.log(`[Voice Session] Updated in-memory session for CallSid: ${callSid}`);
 }
 
@@ -667,35 +815,70 @@ router.post('/handle-recording', async (req, res) => {
       return
     }
     
-    // Download the audio file
+    // Download the audio file with proper cleanup
     console.log('[VOICE DEBUG] Downloading audio from:', RecordingUrl)
+    logMemoryUsage('Before Audio Download')
+    
+    let tempFilePath: string | null = null;
     
     try {
       const response = await axios({
         method: 'get',
         url: RecordingUrl,
         responseType: 'stream',
+        timeout: 30000, // 30 second timeout
         auth: {
           username: process.env.TWILIO_ACCOUNT_SID!,
           password: process.env.TWILIO_AUTH_TOKEN!
         }
       })
       
-      // Create temporary file path
-      const tempFilePath = path.join(os.tmpdir(), `twilio_audio_${Date.now()}.wav`)
+      // Create temporary file path with unique identifier
+      tempFilePath = path.join(os.tmpdir(), `twilio_audio_${callSid}_${Date.now()}.wav`)
       console.log('[VOICE DEBUG] Saving audio to:', tempFilePath)
       
-      // Save the audio file
+      // Save the audio file with proper error handling and cleanup
       const writeStream = fs.createWriteStream(tempFilePath)
+      let streamError: Error | null = null
+      
+      // Set up proper stream error handling
+      writeStream.on('error', (error) => {
+        streamError = error
+        console.error('[VOICE DEBUG] Write stream error:', error)
+      })
+      
+      response.data.on('error', (error: Error) => {
+        streamError = error
+        console.error('[VOICE DEBUG] Response stream error:', error)
+      })
+      
+      // Pipe the data
       response.data.pipe(writeStream)
       
-      // Wait for file to be written
+      // Wait for file to be written with timeout
       await new Promise<void>((resolve, reject) => {
-        writeStream.on('finish', () => resolve())
-        writeStream.on('error', reject)
+        const timeout = setTimeout(() => {
+          writeStream.destroy()
+          reject(new Error('File write timeout'))
+        }, 30000) // 30 second timeout
+        
+        writeStream.on('finish', () => {
+          clearTimeout(timeout)
+          if (streamError) {
+            reject(streamError)
+          } else {
+            resolve()
+          }
+        })
+        
+        writeStream.on('error', (error) => {
+          clearTimeout(timeout)
+          reject(error)
+        })
       })
       
       console.log('[VOICE DEBUG] Audio file saved successfully')
+      logMemoryUsage('After Audio Download')
       
       // Transcribe the audio
       let transcribedText: string | null
@@ -703,8 +886,13 @@ router.post('/handle-recording', async (req, res) => {
         console.log('[VOICE DEBUG] Starting transcription...')
         transcribedText = await getTranscription(tempFilePath)
         console.log('[VOICE DEBUG] Transcription result:', transcribedText)
+        logMemoryUsage('After Transcription')
       } catch (transcriptionError) {
         console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
+        
+        // Clean up temp file before returning
+        await cleanupTempFile(tempFilePath)
+        
         const twiml = new VoiceResponse()
         const transcriptionErrorMessage = createSSMLMessage(
           'I had trouble understanding. <break time="300ms"/> Could you please try again or call back later?',
@@ -717,6 +905,9 @@ router.post('/handle-recording', async (req, res) => {
         res.send(twiml.toString())
         return
       }
+      
+      // Clean up temp file after successful transcription
+      await cleanupTempFile(tempFilePath)
       
       // Check if transcription is empty
       if (!transcribedText || transcribedText.trim() === '') {
@@ -972,8 +1163,18 @@ router.post('/handle-recording', async (req, res) => {
       res.setHeader('Content-Type', 'application/xml')
       res.send(twimlResponse.toString())
       
+      // Log final memory usage for this request
+      logMemoryUsage('End of Request Processing')
+      
     } catch (downloadError: any) {
       console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
+      
+      // Clean up temp file if it was created
+      if (tempFilePath) {
+        await cleanupTempFile(tempFilePath)
+      }
+      
+      logMemoryUsage('After Download Error')
       
       const twiml = new VoiceResponse()
       const downloadErrorMessage = createSSMLMessage(
