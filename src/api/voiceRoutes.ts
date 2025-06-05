@@ -22,45 +22,117 @@ const { VoiceResponse } = twilio.twiml
 // Initialize voice session service
 const voiceSessionService = VoiceSessionService.getInstance()
 
-// Redis client and fallback storage
+// Redis client singleton and fallback storage
 let redisClient: RedisClientType | undefined;
 const voiceSessions = new Map<string, { history: any[], currentFlow: string | null }>(); // Keep as fallback
 
+// Helper function to safely check if Redis client is ready for operations
+function isRedisClientReady(): boolean {
+  return !!(redisClient && redisClient.isOpen && redisClient.isReady);
+}
+
 async function initializeRedis() {
-  if (process.env.REDIS_URL) {
-    console.log('[Redis Init] Attempting to connect to Redis using URL from ENV:', process.env.REDIS_URL);
+  if (!process.env.REDIS_URL) {
+    console.warn('[Redis Init] REDIS_URL not found in ENV. Voice sessions will be in-memory.');
+    return;
+  }
+
+  // Prevent multiple initialization attempts
+  if (redisClient) {
+    console.log('[Redis Init] Redis client already exists, skipping initialization.');
+    return;
+  }
+
+  console.log('[Redis Init] Attempting to connect to Redis using URL from ENV:', process.env.REDIS_URL);
+  
+  try {
     const client = createClient({ url: process.env.REDIS_URL });
 
+    // Set up event handlers before connecting
     client.on('error', (err) => {
       console.error('[Redis Client Error] General error:', err);
-      // If it errors, make sure redisClient isn't considered usable
-      redisClient = undefined; 
+      // Mark client as unusable on any error
+      redisClient = undefined;
     });
-    client.on('connect', () => console.log('[Redis Client Connect] Connecting to Redis server...'));
-    client.on('reconnecting', () => console.log('[Redis Client Reconnecting] Reconnecting to Redis server...'));
+
+    client.on('connect', () => {
+      console.log('[Redis Client Connect] Connecting to Redis server...');
+    });
+
+    client.on('reconnecting', () => {
+      console.log('[Redis Client Reconnecting] Reconnecting to Redis server...');
+      // During reconnection, mark client as not ready to prevent usage
+      redisClient = undefined;
+    });
+
     client.on('ready', () => {
       console.log('[Redis Client Ready] Redis client is ready.');
       redisClient = client as RedisClientType; // Assign only when truly ready
     });
+
     client.on('end', () => {
       console.log('[Redis Client End] Connection to Redis has ended.');
       redisClient = undefined; // Mark as not usable
     });
 
-    try {
-      await client.connect();
-      // redisClient is set by the 'ready' event listener
-    } catch (err) {
-      console.error('[Redis Init] Failed to connect during explicit initialization:', err);
-      redisClient = undefined; // Ensure it's marked as not usable
-      console.warn('[Voice Session] Defaulting to in-memory session due to Redis initial connection failure.');
-    }
-  } else {
-    console.warn('[Redis Init] REDIS_URL not found in ENV. Voice sessions will be in-memory.');
+    // Additional event handlers for better connection management
+    client.on('disconnect', () => {
+      console.log('[Redis Client Disconnect] Disconnected from Redis server.');
+      redisClient = undefined;
+    });
+
+    // Attempt to connect
+    await client.connect();
+    console.log('[Redis Init] Connection attempt completed.');
+
+  } catch (err) {
+    console.error('[Redis Init] Failed to connect during explicit initialization:', err);
+    redisClient = undefined; // Ensure it's marked as not usable
+    console.warn('[Voice Session] Defaulting to in-memory session due to Redis initial connection failure.');
   }
 }
 
-initializeRedis(); // Call on module load
+// Initialize Redis on module load
+initializeRedis().catch(err => {
+  console.error('[Redis Init] Failed to initialize Redis on module load:', err);
+});
+
+// Optional: Add periodic health check for Redis connection
+setInterval(() => {
+  if (!isRedisClientReady() && process.env.REDIS_URL) {
+    console.log('[Redis Health Check] Attempting to reconnect to Redis...');
+    initializeRedis().catch(err => {
+      console.error('[Redis Health Check] Reconnection failed:', err);
+    });
+  }
+}, 30000); // Check every 30 seconds
+
+// Graceful shutdown handler for Redis connection
+process.on('SIGINT', async () => {
+  console.log('[Redis Shutdown] Received SIGINT, closing Redis connection...');
+  if (redisClient && redisClient.isOpen) {
+    try {
+      await redisClient.quit();
+      console.log('[Redis Shutdown] Redis connection closed gracefully.');
+    } catch (err) {
+      console.error('[Redis Shutdown] Error closing Redis connection:', err);
+    }
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('[Redis Shutdown] Received SIGTERM, closing Redis connection...');
+  if (redisClient && redisClient.isOpen) {
+    try {
+      await redisClient.quit();
+      console.log('[Redis Shutdown] Redis connection closed gracefully.');
+    } catch (err) {
+      console.error('[Redis Shutdown] Error closing Redis connection:', err);
+    }
+  }
+  process.exit(0);
+});
 
 // Helper function for XML escaping text content only (preserves apostrophes as literals)
 function escapeTextForSSML(unsafe: string): string {
@@ -155,23 +227,26 @@ function createSSMLMessage(message: string, options: {
 
 // Enhanced helper functions for voice session management with Redis support
 async function getVoiceSession(callSid: string): Promise<{ history: any[], currentFlow: string | null }> {
-  if (redisClient && redisClient.isOpen && redisClient.isReady) { // Check isOpen as well
+  // Robust Redis client readiness check
+  if (isRedisClientReady()) {
     try {
-      const sessionData = await redisClient.get(`voiceSession:${callSid}`);
+      const sessionData = await redisClient!.get(`voiceSession:${callSid}`);
       if (sessionData) {
         console.log(`[Voice Session] Retrieved session from Redis for CallSid: ${callSid}`);
         return JSON.parse(sessionData);
       }
+      console.log(`[Voice Session] No existing Redis session found for CallSid: ${callSid}, creating new in-memory session`);
       // If not found in Redis, it will fall through to in-memory below
     } catch (err) {
-      console.error(`[Redis] Error getting session for ${callSid} (will use in-memory):`, err);
-      // Do not re-throw, let it fall back to in-memory
+      console.error(`[Redis] Error getting session for ${callSid} (falling back to in-memory):`, err);
+      // Mark client as potentially unusable on Redis operation errors
+      redisClient = undefined;
     }
   } else {
-    console.warn(`[Redis] Client not ready or not connected. Using in-memory session for getVoiceSession for ${callSid}.`);
+    console.log(`[Voice Session] Redis client not ready, using in-memory session for ${callSid}`);
   }
 
-  // Fallback to in-memory
+  // Fallback to in-memory storage
   if (!voiceSessions.has(callSid)) {
     console.log(`[Voice Session] Creating new in-memory session for CallSid: ${callSid}`);
     voiceSessions.set(callSid, { history: [], currentFlow: null });
@@ -181,37 +256,46 @@ async function getVoiceSession(callSid: string): Promise<{ history: any[], curre
 
 async function updateVoiceSession(callSid: string, history: any[], currentFlow: string | null): Promise<void> {
   const sessionData = JSON.stringify({ history, currentFlow });
-  if (redisClient && redisClient.isOpen && redisClient.isReady) {
+  
+  // Robust Redis client readiness check
+  if (isRedisClientReady()) {
     try {
-      await redisClient.set(`voiceSession:${callSid}`, sessionData, { EX: 3600 * 2 }); // Expire in 2 hours
+      await redisClient!.set(`voiceSession:${callSid}`, sessionData, { EX: 3600 * 2 }); // Expire in 2 hours
       console.log(`[Voice Session] Updated session in Redis for CallSid: ${callSid}`);
+      
+      // Also update in-memory as backup/cache
+      voiceSessions.set(callSid, { history, currentFlow });
       return; // Success with Redis
     } catch (err) {
-      console.error(`[Redis] Error setting session for ${callSid} (will update in-memory):`, err);
+      console.error(`[Redis] Error setting session for ${callSid} (falling back to in-memory):`, err);
+      // Mark client as potentially unusable on Redis operation errors
+      redisClient = undefined;
     }
   } else {
-     console.warn(`[Redis] Client not ready or not connected. Using in-memory session for updateVoiceSession for ${callSid}.`);
+    console.log(`[Voice Session] Redis client not ready, using in-memory session for ${callSid}`);
   }
-  // Fallback
+  
+  // Fallback to in-memory storage
   voiceSessions.set(callSid, { history, currentFlow });
   console.log(`[Voice Session] Updated in-memory session for CallSid: ${callSid}`);
 }
 
 async function clearVoiceSession(callSid: string): Promise<void> {
-  if (redisClient && redisClient.isOpen && redisClient.isReady) {
+  // Robust Redis client readiness check
+  if (isRedisClientReady()) {
     try {
-      await redisClient.del(`voiceSession:${callSid}`);
+      await redisClient!.del(`voiceSession:${callSid}`);
       console.log(`[Voice Session] Cleared session from Redis for CallSid: ${callSid}`);
-      // Also clear from in-memory map in case it was used as a fallback
-      voiceSessions.delete(callSid);
-      return;
     } catch (err) {
-      console.error(`[Redis] Error deleting session for ${callSid} (will clear in-memory):`, err);
+      console.error(`[Redis] Error deleting session for ${callSid}:`, err);
+      // Mark client as potentially unusable on Redis operation errors
+      redisClient = undefined;
     }
   } else {
-    console.warn(`[Redis] Client not ready or not connected. Using in-memory session for clearVoiceSession for ${callSid}.`);
+    console.log(`[Voice Session] Redis client not ready, clearing in-memory session for ${callSid}`);
   }
-  // Fallback
+  
+  // Always clear from in-memory map (works as fallback and cleanup)
   voiceSessions.delete(callSid);
   console.log(`[Voice Session] Cleared in-memory session for CallSid: ${callSid}`);
 }

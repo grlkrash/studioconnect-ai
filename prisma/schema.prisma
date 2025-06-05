@@ -53,12 +53,12 @@ model AgentConfig {
   createdAt                    DateTime              @default(now())
   updatedAt                    DateTime              @updatedAt
   leadCaptureCompletionMessage String?
-  voiceGreetingMessage         String?
   voiceCompletionMessage       String?
   voiceEmergencyMessage        String?
   voiceEndCallMessage          String?
-  twilioVoice                  String                @default("alice")
+  voiceGreetingMessage         String?
   twilioLanguage               String                @default("en-US")
+  twilioVoice                  String                @default("alice")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 
