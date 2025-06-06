@@ -103,4 +103,41 @@ export const getTranscription = async (
       console.error(`[OpenAI Service] Error deleting temporary audio file ${audioFilePath}:`, cleanupError);
     }
   }
+};
+
+/**
+ * Generates speech from text using OpenAI's Text-to-Speech API.
+ * @param textToSpeak The text to convert to speech.
+ * @param voice The voice to use for speech generation.
+ * @returns A promise that resolves to the path of the generated audio file or null if generation fails.
+ */
+export const generateSpeechFromText = async (
+  textToSpeak: string,
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+): Promise<string | null> => {
+  if (!textToSpeak || textToSpeak.trim().length === 0) {
+    console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
+    return null;
+  }
+  console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..."`);
+  
+  try {
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: voice,
+      input: textToSpeak,
+    });
+
+    const tempFileName = `openai_speech_${Date.now()}.mp3`;
+    const tempFilePath = path.join(os.tmpdir(), tempFileName);
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    await fs.promises.writeFile(tempFilePath, buffer);
+
+    console.log(`[OpenAI TTS] Speech audio file saved to: ${tempFilePath}`);
+    return tempFilePath;
+  } catch (error) {
+    console.error('[OpenAI TTS] Error generating speech:', error);
+    return null;
+  }
 }; 

@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { createClient, RedisClientType } from 'redis'
-import { getTranscription } from '../services/openai'
+import { getTranscription, generateSpeechFromText } from '../services/openai'
 import { processMessage } from '../core/aiHandler'
 import VoiceSessionService, { 
   ExtractedEntities, 
@@ -634,6 +634,44 @@ async function extractEntitiesFromText(text: string): Promise<ExtractedEntities>
   return entities
 }
 
+// Helper function to generate OpenAI TTS audio and create TwiML Play verb
+async function generateAndPlayTTS(
+  text: string, 
+  twimlResponse: typeof VoiceResponse.prototype, 
+  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
+  fallbackTwilioVoice: any = 'alice',
+  fallbackLanguage: any = 'en-US'
+): Promise<void> {
+  if (!text || text.trim() === '') {
+    console.warn('[OpenAI TTS] Empty text provided, skipping TTS generation');
+    return;
+  }
+
+  try {
+    // Generate OpenAI TTS audio
+    const tempAudioPath = await generateSpeechFromText(text, openaiVoice);
+    
+    if (tempAudioPath) {
+      // Extract filename and construct public URL
+      const audioFileName = path.basename(tempAudioPath);
+      const audioUrl = `${process.env.APP_PRIMARY_URL}/api/voice/play-audio/${audioFileName}`;
+      
+      console.log(`[OpenAI TTS] Playing AI-generated audio from URL: ${audioUrl}`);
+      twimlResponse.play(audioUrl);
+    } else {
+      // Fallback to Twilio TTS if OpenAI TTS fails
+      console.warn('[OpenAI TTS] Failed to generate audio, falling back to Twilio TTS');
+      const fallbackMessage = createSSMLMessage(text, { isConversational: true });
+      twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
+    }
+  } catch (error) {
+    console.error('[OpenAI TTS] Error generating speech:', error);
+    // Fallback to Twilio TTS
+    const fallbackMessage = createSSMLMessage(text, { isConversational: true });
+    twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
+  }
+}
+
 // Enhanced AI response processing
 interface EnhancedAIResponse {
   reply: string
@@ -916,11 +954,13 @@ router.post('/handle-recording', async (req, res) => {
     if (!RecordingUrl || RecordingUrl.trim() === '') {
       console.log('[VOICE DEBUG] No recording URL found')
       const twiml = new VoiceResponse()
-      const noRecordingMessage = createSSMLMessage(
+      await generateAndPlayTTS(
         'I didn\'t catch anything in that recording. Please call back if you need assistance. Thanks for calling!',
-        { isConversational: true, addEmphasis: true }
-      )
-      twiml.say({ voice: voiceToUse, language: languageToUse }, noRecordingMessage)
+        twiml,
+        'nova', // Default voice for error messages
+        voiceToUse,
+        languageToUse
+      );
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -1013,11 +1053,13 @@ router.post('/handle-recording', async (req, res) => {
         await cleanupTempFile(tempFilePath)
         
         const twiml = new VoiceResponse()
-        const transcriptionErrorMessage = createSSMLMessage(
-          'I had trouble understanding. <break time="300ms"/> Could you please try again or call back later?',
-          { addEmphasis: true }
-        )
-        twiml.say({ voice: voiceToUse, language: languageToUse }, transcriptionErrorMessage)
+        await generateAndPlayTTS(
+          'I had trouble understanding. Could you please try again or call back later?',
+          twiml,
+          'nova', // Default voice for error messages
+          voiceToUse,
+          languageToUse
+        );
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -1032,11 +1074,13 @@ router.post('/handle-recording', async (req, res) => {
       if (!transcribedText || transcribedText.trim() === '') {
         console.log('[VOICE DEBUG] Empty transcription result')
         const twiml = new VoiceResponse()
-        const emptyTranscriptionMessage = createSSMLMessage(
-          'I had trouble understanding. <break time="300ms"/> Could you please try again or call back later?',
-          { addEmphasis: true }
-        )
-        twiml.say({ voice: voiceToUse, language: languageToUse }, emptyTranscriptionMessage)
+        await generateAndPlayTTS(
+          'I had trouble understanding. Could you please try again or call back later?',
+          twiml,
+          'nova', // Default voice for error messages
+          voiceToUse,
+          languageToUse
+        );
         twiml.hangup()
         
         res.setHeader('Content-Type', 'application/xml')
@@ -1118,53 +1162,43 @@ router.post('/handle-recording', async (req, res) => {
       // Create TwiML response using nextVoiceAction for dynamic generation
       const twimlResponse = new VoiceResponse()
       
-      if (aiResponse && aiResponse.reply) {
-        // Analyze the AI response to determine appropriate SSML enhancements
-        const isQuestion = aiResponse.reply.includes('?')
-        const isGreeting = /^(hey|hello|hi|welcome)/i.test(aiResponse.reply)
-        const isConfirmation = /^(got it|okay|alright|perfect|great|thanks)/i.test(aiResponse.reply)
-        const isInformational = !isQuestion && !isGreeting && !isConfirmation
-        
-        // Create enhanced SSML based on response type
-        let enhancedReply: string
-        
-        if (isQuestion) {
-          // This is likely a lead capture question - make it conversational and clear
-          enhancedReply = createSSMLMessage(aiResponse.reply, { 
-            isQuestion: true, 
-            isConversational: true, 
-            addEmphasis: true 
-          })
-        } else if (isGreeting) {
-          // Handle greeting responses
-          enhancedReply = createSSMLMessage(aiResponse.reply, { 
-            isGreeting: true, 
-            isConversational: true 
-          })
-        } else if (isConfirmation) {
-          // Handle confirmations and acknowledgments
-          enhancedReply = createSSMLMessage(aiResponse.reply, { 
-            isConversational: true, 
-            addPause: true, 
-            pauseDuration: '200ms' 
-          })
-        } else {
-          // Handle informational responses (FAQ answers, final confirmations)
-          enhancedReply = createSSMLMessage(aiResponse.reply, { 
-            isConversational: true, 
-            addEmphasis: true,
-            addPause: true,
-            pauseDuration: '300ms'
-          })
+      // Determine OpenAI voice based on agentConfig or use default
+      // For now, we'll map some common Twilio voices to OpenAI voices
+      let openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+      
+      if (agentConfig?.twilioVoice) {
+        const twilioVoice = agentConfig.twilioVoice.toLowerCase()
+        if (twilioVoice.includes('female') || twilioVoice.includes('woman') || twilioVoice.includes('alice')) {
+          openaiVoice = 'nova' // Natural, conversational female voice
+        } else if (twilioVoice.includes('male') || twilioVoice.includes('man')) {
+          openaiVoice = 'onyx' // Natural male voice
+        } else if (twilioVoice.includes('young') || twilioVoice.includes('energetic')) {
+          openaiVoice = 'shimmer' // Energetic, youthful voice
+        } else if (twilioVoice.includes('professional') || twilioVoice.includes('business')) {
+          openaiVoice = 'alloy' // Professional, balanced voice
         }
-        
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, enhancedReply)
+      }
+      
+      console.log(`[OpenAI TTS] Using voice: ${openaiVoice} (based on Twilio config: ${agentConfig?.twilioVoice || 'default'})`)
+      
+      if (aiResponse && aiResponse.reply) {
+        // Generate OpenAI TTS for the main AI response
+        await generateAndPlayTTS(
+          aiResponse.reply, 
+          twimlResponse, 
+          openaiVoice, 
+          voiceToUse, 
+          languageToUse
+        );
       } else {
-        const fallbackMessage = createSSMLMessage(
+        // Fallback message if no AI response
+        await generateAndPlayTTS(
           "I'm sorry, I encountered an issue. Let me try to help you differently.",
-          { addPause: true, pauseDuration: '300ms', isConversational: true }
-        )
-        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, fallbackMessage)
+          twimlResponse,
+          openaiVoice,
+          voiceToUse,
+          languageToUse
+        );
       }
       
       // Use switch statement on nextVoiceAction for dynamic TwiML generation
@@ -1174,11 +1208,14 @@ router.post('/handle-recording', async (req, res) => {
       switch (nextAction) {
         case 'CONTINUE':
           // Continue conversation - prompt for more input with natural conversational flow
-          const continuePrompt = createSSMLMessage(
+          await generateAndPlayTTS(
             "What else can I help you with? Or, say 'goodbye' to end the call.",
-            { isQuestion: true, isConversational: true, addPause: true, pauseDuration: '500ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, continuePrompt)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
+          
           twimlResponse.record({
             action: '/api/voice/handle-recording',
             method: 'POST',
@@ -1189,21 +1226,25 @@ router.post('/handle-recording', async (req, res) => {
           })
           
           // Fallback if no response with conversational flow
-          const noResponseMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "We did not receive any input. Thank you for calling. Goodbye.",
-            { isConversational: true, addPause: true, pauseDuration: '300ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, noResponseMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           twimlResponse.hangup()
           break
 
         case 'HANGUP':
           // End the call gracefully and clear session
-          const endCallMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "Thank you for calling. We'll be in touch soon. Goodbye.",
-            { isConversational: true, addPause: true, pauseDuration: '300ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, endCallMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           twimlResponse.hangup()
           
           // Clear session for ended call
@@ -1213,19 +1254,23 @@ router.post('/handle-recording', async (req, res) => {
 
         case 'TRANSFER':
           // Future: Transfer call to human agent or business number
-          const transferMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "Let me transfer you to someone who can help you directly. Please hold on.",
-            { isConversational: true, addPause: true, pauseDuration: '300ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, transferMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           
           // TODO: Implement actual transfer logic when business phone numbers are configured
           // For now, fall back to hangup with a message
-          const transferFallbackMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "I apologize, but our transfer system isn't configured yet. Please call our main number directly for immediate assistance. Thank you for calling.",
-            { isConversational: true, addEmphasis: true }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, transferFallbackMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           twimlResponse.hangup()
           
           // Clear session after transfer attempt
@@ -1235,11 +1280,13 @@ router.post('/handle-recording', async (req, res) => {
 
         case 'VOICEMAIL':
           // Future: Take a voicemail message
-          const voicemailMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "I'd like to take a detailed message for our team. Please speak after the beep, and take your time.",
-            { isConversational: true, addPause: true, pauseDuration: '500ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, voicemailMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           
           // Record a longer voicemail message
           twimlResponse.record({
@@ -1252,11 +1299,13 @@ router.post('/handle-recording', async (req, res) => {
           })
           
           // Fallback after voicemail recording
-          const voicemailCompleteMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "Thank you for your message. Our team will review it and get back to you as soon as possible. Goodbye.",
-            { isConversational: true, addPause: true, pauseDuration: '300ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, voicemailCompleteMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           twimlResponse.hangup()
           
           // Note: Session will be cleared after voicemail processing
@@ -1266,11 +1315,13 @@ router.post('/handle-recording', async (req, res) => {
         default:
           // Fallback to HANGUP for any unexpected action
           console.warn('[VOICE DEBUG] Unexpected nextVoiceAction:', nextAction, 'falling back to HANGUP')
-          const defaultEndMessage = createSSMLMessage(
+          await generateAndPlayTTS(
             "Thank you for calling. Have a great day.",
-            { isConversational: true, addPause: true, pauseDuration: '300ms' }
-          )
-          twimlResponse.say({ voice: voiceToUse, language: languageToUse }, defaultEndMessage)
+            twimlResponse,
+            openaiVoice,
+            voiceToUse,
+            languageToUse
+          );
           twimlResponse.hangup()
           
           await clearVoiceSession(callSid)
@@ -1300,11 +1351,13 @@ router.post('/handle-recording', async (req, res) => {
       }
       
       const twiml = new VoiceResponse()
-      const downloadErrorMessage = createSSMLMessage(
-        'Sorry, I had trouble accessing your message recording. <break time="300ms"/> Please try again.',
-        { addEmphasis: true }
-      )
-      twiml.say({ voice: voiceToUse, language: languageToUse }, downloadErrorMessage)
+      await generateAndPlayTTS(
+        'Sorry, I had trouble accessing your message recording. Please try again.',
+        twiml,
+        'nova', // Default voice for error messages
+        voiceToUse,
+        languageToUse
+      );
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -1317,11 +1370,13 @@ router.post('/handle-recording', async (req, res) => {
     
     // Create fallback TwiML response
     const twiml = new VoiceResponse()
-    const generalErrorMessage = createSSMLMessage(
+    await generateAndPlayTTS(
       'Sorry, we\'re experiencing some technical difficulties right now. Please try calling back in a few minutes.',
-      { isConversational: true, addEmphasis: true, addPause: true }
-    )
-    twiml.say(generalErrorMessage)
+      twiml,
+      'nova', // Default voice for error messages
+      'alice', // Fallback Twilio voice
+      'en-US' // Fallback language
+    );
     twiml.hangup()
     
     res.setHeader('Content-Type', 'application/xml')
@@ -1351,11 +1406,13 @@ router.post('/handle-voicemail-recording', async (req, res) => {
     
     // For now, just acknowledge and hang up
     const twiml = new VoiceResponse()
-    const acknowledgmentMessage = createSSMLMessage(
+    await generateAndPlayTTS(
       "Thank you for your detailed message. Our team will review it and contact you soon. Goodbye.",
-      { isConversational: true, addPause: true, pauseDuration: '300ms' }
-    )
-    twiml.say(acknowledgmentMessage)
+      twiml,
+      'nova', // Default voice
+      'alice', // Fallback Twilio voice
+      'en-US' // Fallback language
+    );
     twiml.hangup()
     
     // Clear the session after voicemail
@@ -1369,17 +1426,52 @@ router.post('/handle-voicemail-recording', async (req, res) => {
     console.error('[VOICEMAIL DEBUG] Error in /handle-voicemail-recording route:', error)
     
     const twiml = new VoiceResponse()
-    const errorMessage = createSSMLMessage(
+    await generateAndPlayTTS(
       'Sorry, we had trouble processing your voicemail. Please try calling back later.',
-      { addEmphasis: true }
-    )
-    twiml.say(errorMessage)
+      twiml,
+      'nova', // Default voice
+      'alice', // Fallback Twilio voice
+      'en-US' // Fallback language
+    );
     twiml.hangup()
     
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
   }
 })
+
+// GET /play-audio/:fileName - Serve temporary audio files for Twilio Play verb
+router.get('/play-audio/:fileName', (req, res) => {
+  const { fileName } = req.params;
+
+  // Basic security check to prevent path traversal attacks
+  if (fileName.includes('..') || fileName.includes('/')) {
+    console.warn(`[Play Audio] Security violation attempt with fileName: ${fileName}`);
+    return res.status(400).send('Invalid filename.');
+  }
+
+  const filePath = path.join(os.tmpdir(), fileName);
+  console.log(`[Play Audio] Attempting to serve audio file: ${filePath}`);
+
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error(`[Play Audio] Error sending file ${filePath}:`, err);
+        res.status(500).end();
+      } else {
+        console.log(`[Play Audio] Successfully sent file: ${filePath}`);
+        // Clean up the file after sending it
+        fs.unlink(filePath, (unlinkErr) => {
+          if (unlinkErr) console.error(`[Play Audio] Error deleting temp audio file ${filePath}:`, unlinkErr);
+          else console.log(`[Play Audio] Cleaned up temp audio file: ${filePath}`);
+        });
+      }
+    });
+  } else {
+    console.error(`[Play Audio] File not found: ${filePath}`);
+    res.status(404).send('Audio not found.');
+  }
+});
 
 // GET /health - System health and monitoring endpoint
 router.get('/health', async (req, res) => {

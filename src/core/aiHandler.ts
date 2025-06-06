@@ -157,7 +157,7 @@ Examples of good clarifying questions with natural interjections:
 Generate only the clarifying question text:`
     
     const rawResponse = await getChatCompletion(clarifyingUserPrompt, voiceSystemPrompt)
-    const cleanedResponse = cleanVoiceResponse(rawResponse)
+    const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null
 
     return cleanedResponse || "I didn't quite catch that. Could you please repeat what you said?"
   } catch (error) {
@@ -484,7 +484,7 @@ ${contextSnippets}
 User's Question: ${message}`
         
         const rawResponse = await getChatCompletion(faqUserPrompt, voiceSystemPrompt)
-        const cleanedResponse = cleanVoiceResponse(rawResponse)
+        const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null
         
         return { 
           reply: cleanedResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
@@ -974,7 +974,7 @@ Respond with only YES or NO.`
 User's message: ${message}`
       
       const rawResponse = await getChatCompletion(generalChatUserPrompt, systemPrompt)
-      const cleanedResponse = cleanVoiceResponse(rawResponse)
+      const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null
       
       return { 
         reply: cleanedResponse || "How can I help you today?",
