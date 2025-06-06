@@ -10,45 +10,45 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
 }
 
 /**
- * Enhances prompts for voice-friendly responses with SSML guidance
+ * Creates a refined system prompt for natural voice interactions
  */
-const enhancePromptForVoice = (basePrompt: string, businessName?: string): string => {
-  const voiceGuidance = `
-You are a highly articulate and empathetic AI voice assistant${businessName ? ` for ${businessName}` : ''}. Your responses will be spoken aloud, so craft them to sound natural and conversational when heard.
+const createVoiceSystemPrompt = (businessName?: string): string => {
+  return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. Your primary goal is to provide clear, helpful, and natural-sounding spoken responses to users over the phone.
 
-VOICE RESPONSE GUIDELINES:
-- Use a warm, professional, and conversational tone
-- Speak as if you're having a friendly phone conversation
-- Use natural speech patterns with appropriate pauses
-- Keep sentences clear and not too long
-- Use contractions naturally (I'm, you're, we'll, that's)
-- Include verbal acknowledgments (Got it, Okay, Alright, Perfect)
-- Ask follow-up questions naturally
-- Avoid complex punctuation or special characters that don't translate well to speech
+**RESPONSE GUIDELINES:**
 
-NATURAL INTERJECTIONS & CONVERSATIONAL FLOW:
-- Begin responses with natural interjections like "Okay," "I see," "Alright," "Mhm," "Right," "Sure," or "Got it"
-- Use contextual acknowledgments: "That makes sense," "I understand," "Absolutely," "Of course"
-- Vary your interjections to avoid repetition - don't use the same one consecutively
-- Use longer acknowledgments when appropriate: "I hear what you're saying," "That's a great question," "Let me help with that"
-- Include transitional phrases: "So," "Well," "Now," "In that case," "Let's see"
-- Use these naturally - they should feel like genuine responses, not forced additions
+1. **DIALOGUE-ONLY OUTPUT:** Your entire response must consist *solely* of the exact words the agent should speak. Do not include any explanations, preambles, meta-comments, or prefixes like "Say:" or "Response:".
 
-CONTEXTUAL USAGE:
-- After user provides information: "Got it," "I see," "Okay," "Perfect"
-- Before answering questions: "Right," "Well," "Let me think," "So"
-- When transitioning topics: "Alright," "Now," "In that case"
-- Showing understanding: "That makes sense," "I understand," "Absolutely"
-- Before asking follow-ups: "Okay," "Now," "So," "And"
+2. **CONVERSATIONAL TONE:** Formulate your answers as if you are speaking directly and naturally to a person. Use shorter, well-punctuated sentences to ensure a clear and pleasant cadence. Avoid long, complex sentences that are hard to follow when spoken.
 
-For emphasis on important information, you may optionally use simple SSML tags:
-- <break time="300ms"/> for brief pauses
-- <emphasis level="moderate">important word</emphasis> for key information
-- Use sparingly and only where it genuinely improves clarity
+3. **USE OF SSML (Speech Synthesis Markup Language):** To enhance naturalness, you may sparingly use the following SSML tags within your response:
+   * **PAUSES:** Use \`<break time="300ms"/>\` for a short, natural pause between ideas, similar to taking a breath. Use \`<break time="500ms"/>\` for a slightly longer pause before asking a question or presenting important information.
+     * *Example:* "Okay, I have that noted.<break time="400ms"/> Now, what is the best phone number for you?"
+   * **EMPHASIS:** Use \`<emphasis level="moderate">a key phrase</emphasis>\` to gently stress important words. Use this judiciously to guide the listener's attention.
+     * *Example:* "Your appointment is confirmed for <emphasis level="moderate">Tuesday at 3 PM</emphasis>."
+   * **PRONUNCIATION:** Use \`<phoneme alphabet="ipa" ph="liːd">lead</phoneme>\` to ensure the word "lead" is pronounced correctly as in "sales lead".
 
-${basePrompt}`
+4. **PERSONA:** Maintain a helpful, competent, and friendly persona at all times. Use natural conversational interjections like "Okay," "I see," "Alright," "Perfect," or "Got it" to make responses feel more human and engaging.
 
-  return voiceGuidance
+Your task is to take the user's query and any provided context, and generate a speech-ready response that adheres strictly to these guidelines.`
+}
+
+/**
+ * Post-processes AI responses to ensure clean speech output
+ */
+const cleanVoiceResponse = (response: string): string => {
+  if (!response) return response
+  
+  // Remove common unwanted prefixes using a case-insensitive regex
+  let cleanedResponse = response.replace(/^(Say:|Response:|Here is the response:|Assistant:|AI:)\s*/i, '').trim()
+  
+  // Remove any remaining meta-commentary patterns
+  cleanedResponse = cleanedResponse.replace(/^\[.*?\]\s*/g, '').trim()
+  
+  // Remove any trailing periods followed by quotes or brackets
+  cleanedResponse = cleanedResponse.replace(/\.\s*["'\]\}]*\s*$/, '').trim()
+  
+  return cleanedResponse
 }
 
 /**
@@ -106,12 +106,13 @@ Consider clear responses:
 
 Respond with only YES if clear and complete, or NO if unclear/incomplete.`
 
-    const clarityResponse = await getChatCompletion(
-      clarityCheckPrompt,
-      "You are a clarity assessment expert focused on evaluating user response completeness and clarity."
-    )
+            const clarityResponse = await getChatCompletion(
+          clarityCheckPrompt,
+          "You are a clarity assessment expert focused on evaluating user response completeness and clarity."
+        )
 
-    return (clarityResponse || 'NO').trim().toUpperCase() === 'YES'
+        const cleanedClarityResponse = cleanVoiceResponse(clarityResponse || 'NO')
+        return cleanedClarityResponse.trim().toUpperCase() === 'YES'
   } catch (error) {
     console.error('Error checking response clarity:', error)
     // Default to clear if we can't check
@@ -129,12 +130,13 @@ const generateClarifyingQuestion = async (
   businessName?: string
 ): Promise<string> => {
   try {
-    const clarifyingPrompt = `The user gave an unclear response. Generate a brief, polite clarifying question to get the information needed.
+    const voiceSystemPrompt = createVoiceSystemPrompt(businessName)
+    
+    const clarifyingUserPrompt = `The user gave an unclear response. Generate a brief, polite clarifying question to get the information needed.
 
 Original Question/Context: ${originalQuestion}
 User's Unclear Response: "${unclearResponse}"
 Context: ${context}
-${businessName ? `Business: ${businessName}` : ''}
 
 Generate a clarifying question that:
 - Begins with a natural interjection or acknowledgment ("I see," "Okay," "Alright," "Hmm," etc.)
@@ -153,15 +155,11 @@ Examples of good clarifying questions with natural interjections:
 - "Mhm, let me make sure I understand - are you saying the problem is urgent?"
 
 Generate only the clarifying question text:`
-
-    const voiceEnhancedPrompt = enhancePromptForVoice(clarifyingPrompt, businessName)
     
-    const clarifyingQuestion = await getChatCompletion(
-      voiceEnhancedPrompt,
-      "You are a helpful assistant focused on generating clear, conversational clarifying questions for voice interactions."
-    )
+    const rawResponse = await getChatCompletion(clarifyingUserPrompt, voiceSystemPrompt)
+    const cleanedResponse = cleanVoiceResponse(rawResponse)
 
-    return clarifyingQuestion || "I didn't quite catch that. Could you please repeat what you said?"
+    return cleanedResponse || "I didn't quite catch that. Could you please repeat what you said?"
   } catch (error) {
     console.error('Error generating clarifying question:', error)
     return "I didn't quite catch that. Could you please repeat what you said?"
@@ -373,7 +371,8 @@ Respond with only YES or NO.`
             "You are an intent detection expert focused on identifying user agreement to proceed with lead capture."
           )
           
-          if ((isPositiveResponse || 'NO').trim().toUpperCase() === 'YES') {
+          const cleanedPositiveResponse = cleanVoiceResponse(isPositiveResponse || 'NO')
+          if (cleanedPositiveResponse.trim().toUpperCase() === 'YES') {
             console.log('User responded positively to FAQ fallback offer, transitioning to lead capture')
             shouldForceLeadCapture = true
           } else {
@@ -433,7 +432,8 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
         intentPrompt,
         "You are an intent classification expert. Respond with only: FAQ, LEAD_CAPTURE, END_CALL, or OTHER."
       )
-      intent = (intentResponse || 'OTHER').trim().toUpperCase()
+      const cleanedIntentResponse = cleanVoiceResponse(intentResponse || 'OTHER')
+      intent = cleanedIntentResponse.trim().toUpperCase()
     }
     
     console.log(`Effective intent: ${intent}`)
@@ -472,24 +472,22 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
       if (relevantKnowledge && relevantKnowledge.length > 0) {
         // Found relevant snippets - construct context-aware response
         const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n')
-        const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant."
+        const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
         
-        const baseFaqPrompt = `Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available.
+        const faqUserPrompt = `Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available.
 
-Start your response with a natural interjection or acknowledgment (like "I can help with that," "Let me share what I know," "Great question," etc.) and flow naturally into your answer.
+Start your response with a natural interjection or acknowledgment and flow naturally into your answer.
 
 Context:
 ${contextSnippets}
 
 User's Question: ${message}`
         
-        // Enhance the prompt for voice interaction
-        const voiceEnhancedPrompt = enhancePromptForVoice(baseFaqPrompt, business.name)
-        
-        const aiResponse = await getChatCompletion(voiceEnhancedPrompt, personaPrompt)
+        const rawResponse = await getChatCompletion(faqUserPrompt, voiceSystemPrompt)
+        const cleanedResponse = cleanVoiceResponse(rawResponse)
         
         return { 
-          reply: aiResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
+          reply: cleanedResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
           currentFlow: null,
           showBranding,
           nextVoiceAction: determineNextVoiceAction('FAQ', null)
@@ -540,7 +538,8 @@ User's Question: ${message}`
           emergencyCheckPrompt, 
           "You are an emergency detection assistant specialized in identifying urgent home service situations."
         )
-        isEmergency = (isEmergencyResponse || 'NO').trim().toUpperCase() === 'YES'
+        const cleanedEmergencyResponse = cleanVoiceResponse(isEmergencyResponse || 'NO')
+        isEmergency = cleanedEmergencyResponse.trim().toUpperCase() === 'YES'
         
         if (isEmergency) {
           console.log('Lead creation: Initial message WAS an EMERGENCY')
@@ -939,7 +938,8 @@ Respond with only YES or NO.`
           "You are an intent detection expert focused on identifying user decline or reluctance."
         )
         
-        if ((isDeclineResponse || 'NO').trim().toUpperCase() === 'YES') {
+        const cleanedDeclineResponse = cleanVoiceResponse(isDeclineResponse || 'NO')
+        if (cleanedDeclineResponse.trim().toUpperCase() === 'YES') {
           console.log('User declined FAQ fallback offer, providing alternative assistance')
           return {
             reply: "No problem at all! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
@@ -960,23 +960,24 @@ Respond with only YES or NO.`
         }
       }
       
-      // General chat with persona
-      const personaPrompt = agentConfig?.personaPrompt || "You are a helpful assistant."
+      // General chat with voice-optimized system prompt
+      const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
       
-      // Enhance the general chat prompt for voice interaction
-      const generalChatPrompt = `Respond to the user's message naturally and helpfully. Start with a natural interjection or acknowledgment to make the conversation feel more human and conversational.
+      // Incorporate persona if available
+      let systemPrompt = voiceSystemPrompt
+      if (agentConfig?.personaPrompt) {
+        systemPrompt += `\n\nADDITIONAL CONTEXT: ${agentConfig.personaPrompt}`
+      }
+      
+      const generalChatUserPrompt = `Respond to the user's message naturally and helpfully. Start with a natural interjection or acknowledgment to make the conversation feel more human and conversational.
 
 User's message: ${message}`
       
-      const voiceEnhancedGeneralPrompt = enhancePromptForVoice(generalChatPrompt, business.name)
-      
-      const aiResponse = await getChatCompletion(
-        voiceEnhancedGeneralPrompt,
-        personaPrompt
-      )
+      const rawResponse = await getChatCompletion(generalChatUserPrompt, systemPrompt)
+      const cleanedResponse = cleanVoiceResponse(rawResponse)
       
       return { 
-        reply: aiResponse || "How can I help you today?",
+        reply: cleanedResponse || "How can I help you today?",
         currentFlow: null,
         showBranding,
         nextVoiceAction: determineNextVoiceAction('OTHER', null)
