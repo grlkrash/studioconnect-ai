@@ -379,6 +379,37 @@ startRedisHealthCheck();
 async function gracefulShutdown(signal: string) {
   console.log(`[Shutdown] Received ${signal}, starting graceful shutdown...`);
   
+  // Check for active voice sessions and delay shutdown if needed
+  const activeCallsCount = voiceSessions.size + backgroundProcessingResults.size;
+  if (activeCallsCount > 0) {
+    console.warn(`[Shutdown] ${activeCallsCount} active voice sessions detected. Delaying shutdown for 30 seconds to allow calls to complete.`);
+    
+    // Set a maximum wait time of 30 seconds
+    const shutdownTimeout = setTimeout(() => {
+      console.warn('[Shutdown] Shutdown timeout reached. Forcing shutdown despite active calls.');
+      performShutdown();
+    }, 30000);
+    
+    // Check every 2 seconds if all calls are complete
+    const checkInterval = setInterval(() => {
+      const remaining = voiceSessions.size + backgroundProcessingResults.size;
+      if (remaining === 0) {
+        console.log('[Shutdown] All voice sessions completed. Proceeding with shutdown.');
+        clearTimeout(shutdownTimeout);
+        clearInterval(checkInterval);
+        performShutdown();
+      } else {
+        console.log(`[Shutdown] Waiting for ${remaining} active voice sessions to complete...`);
+      }
+    }, 2000);
+    
+    return;
+  }
+  
+  performShutdown();
+}
+
+async function performShutdown() {
   // Clear all intervals
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
@@ -933,8 +964,8 @@ router.post('/start-conversation', customValidateTwilioRequest, async (req, res)
     const toPhoneNumber = req.body.To
     const caller = req.body.From
     
-    // Start background greeting generation
-    const generateGreeting = async () => {
+    // Define the background greeting generation function
+    const generateGreetingAndStart = async () => {
       try {
         console.log('[GREETING GENERATION] Starting background greeting generation for CallSid:', callSid)
         
@@ -984,58 +1015,56 @@ router.post('/start-conversation', customValidateTwilioRequest, async (req, res)
         
         console.log(`[GREETING GENERATION] Voice config - OpenAI TTS: ${useOpenaiTts}, Voice: ${openaiVoice}`)
         
-        let greetingAudioUrl: string | null = null
-        if (useOpenaiTts) {
-          greetingAudioUrl = await generateAudioUrl(welcomeMessage, openaiVoice, true, openaiModel)
+        // Generate the audio URL for the high-quality OpenAI-generated welcome message
+        const generatedAudioUrl = await generateAudioUrl(welcomeMessage, openaiVoice, useOpenaiTts, openaiModel)
+        
+        console.log('[GREETING GENERATION] Audio URL generated:', generatedAudioUrl)
+        
+                 // Use Twilio REST API client to update the live call
+         try {
+           const playAndGatherUrl = new URL(`${process.env.APP_PRIMARY_URL}/api/voice/play-and-gather`)
+           if (generatedAudioUrl) {
+             playAndGatherUrl.searchParams.append('audioUrl', generatedAudioUrl)
+           }
+           
+           await twilioClient.calls(callSid).update({
+             url: playAndGatherUrl.toString(),
+             method: 'POST'
+           })
+           
+           console.log('[GREETING GENERATION] Successfully updated live call to play greeting')
+          
+        } catch (updateError) {
+          console.error('[GREETING GENERATION] Failed to update call, redirecting to error handler:', updateError)
+          
+          // Redirect the call to the error handler route
+          await twilioClient.calls(callSid).update({
+            url: `${process.env.APP_PRIMARY_URL}/api/voice/handle-error`,
+            method: 'POST'
+          })
         }
         
-        // Store greeting result for delivery
-        backgroundProcessingResults.set(callSid, {
-          audioUrl: greetingAudioUrl,
-          nextAction: 'GATHER_FIRST_INPUT',
-          voiceToUse: agentConfig?.twilioVoice || 'alice',
-          languageToUse: agentConfig?.twilioLanguage || 'en-US',
-          useOpenaiTts,
-          openaiVoice,
-          openaiModel,
-          fallbackText: welcomeMessage,
-          timestamp: Date.now()
-        })
-        
-        console.log('[GREETING GENERATION] Greeting prepared, updating call to deliver greeting')
-        
-        // Update the live call to deliver the greeting
-        await twilioClient.calls(callSid).update({
-          url: `${process.env.APP_PRIMARY_URL}/api/voice/deliver-greeting`,
-          method: 'POST'
-        })
-        
       } catch (error) {
-        console.error('[GREETING GENERATION] Error generating greeting:', error)
+        console.error('[GREETING GENERATION] Error in generateGreetingAndStart:', error)
         
-        // Store fallback greeting
-        backgroundProcessingResults.set(callSid, {
-          nextAction: 'GATHER_FIRST_INPUT',
-          voiceToUse: 'alice',
-          languageToUse: 'en-US',
-          fallbackText: 'Thank you for calling. How can I help you?',
-          timestamp: Date.now()
-        })
-        
-        // Update call with fallback
-        await twilioClient.calls(callSid).update({
-          url: `${process.env.APP_PRIMARY_URL}/api/voice/deliver-greeting`,
-          method: 'POST'
-        })
+        try {
+          // Redirect the call to the error handler route
+          await twilioClient.calls(callSid).update({
+            url: `${process.env.APP_PRIMARY_URL}/api/voice/handle-error`,
+            method: 'POST'
+          })
+        } catch (fallbackError) {
+          console.error('[GREETING GENERATION] Failed to redirect to error handler:', fallbackError)
+        }
       }
     }
     
-    // Start background processing
-    generateGreeting().catch(error => {
+    // Call generateGreetingAndStart() without await to let it run in the background
+    generateGreetingAndStart().catch(error => {
       console.error('[START CONVERSATION] Unhandled error in greeting generation:', error)
     })
     
-    // Respond immediately with a pleasant hold sound
+    // Immediately respond to Twilio with TwiML that plays a "hold" sound to keep the line open
     const twiml = new VoiceResponse()
     
     // Play a brief, pleasant "connecting" sound
@@ -1048,7 +1077,7 @@ router.post('/start-conversation', customValidateTwilioRequest, async (req, res)
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
     
-    console.log('[START CONVERSATION] Sent hold response, greeting generation started')
+    console.log('[START CONVERSATION] Sent hold response, greeting generation started in background')
     
   } catch (error) {
     console.error('[START CONVERSATION] Critical error:', error)
@@ -1178,13 +1207,13 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
     const twilioNumberCalled = req.body.To
     const callSid = req.body.CallSid
     
-    // Handle empty speech result
-    if (!speechResult || speechResult.trim() === '') {
-      console.log('[HANDLE SPEECH] No speech detected, giving second chance')
+    // Handle empty or unclear speech result
+    if (!speechResult || speechResult.trim() === '' || speechResult.trim().length < 3) {
+      console.log('[HANDLE SPEECH] No speech detected or speech too short, giving second chance')
       
       const twiml = new VoiceResponse()
       const retryMessage = createSSMLMessage(
-        "I didn't hear a response. Is there anything else I can help with?",
+        "I'm sorry, I didn't catch that. Could you please speak a bit louder and tell me how I can help you today?",
         { isQuestion: true, isConversational: true }
       )
       twiml.say({ voice: 'alice', language: 'en-US' }, retryMessage)
@@ -1194,7 +1223,51 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         action: '/api/voice/handle-speech',
         method: 'POST',
         speechTimeout: 'auto',
-        timeout: 10
+        timeout: 12,
+        hints: 'plumbing, water heater, emergency, repair, appointment, quote, estimate'
+      })
+      
+      twiml.say({ voice: 'alice', language: 'en-US' }, 
+        createSSMLMessage("Thank you for calling. Have a great day. Goodbye.", { isConversational: true })
+      )
+      twiml.hangup()
+      
+      res.setHeader('Content-Type', 'application/xml')
+      res.send(twiml.toString())
+      return
+    }
+
+    // Validate speech input quality 
+    const potentialTranscriptionIssues = [
+      'you are here',
+      'your ear',
+      'you air', 
+      'hear here',
+      'year here'
+    ]
+    
+    const lowerSpeech = speechResult.toLowerCase().trim()
+    const hasTranscriptionIssue = potentialTranscriptionIssues.some(issue => 
+      lowerSpeech.includes(issue) && lowerSpeech.length < 20
+    )
+    
+    if (hasTranscriptionIssue) {
+      console.log('[HANDLE SPEECH] Potential transcription issue detected:', speechResult)
+      
+      const twiml = new VoiceResponse()
+      const clarifyMessage = createSSMLMessage(
+        "I want to make sure I understand you correctly. Could you please tell me specifically what you need help with today?",
+        { isQuestion: true, isConversational: true }
+      )
+      twiml.say({ voice: 'alice', language: 'en-US' }, clarifyMessage)
+      
+      const gather = twiml.gather({
+        input: ['speech'],
+        action: '/api/voice/handle-speech',
+        method: 'POST',
+        speechTimeout: 'auto',
+        timeout: 12,
+        hints: 'plumbing, water heater, emergency, repair, appointment, quote, estimate, drain, toilet, sink, pipe'
       })
       
       twiml.say({ voice: 'alice', language: 'en-US' }, 
@@ -1252,87 +1325,58 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         // Add AI response to history
         conversationHistory.push({ role: 'assistant', content: aiResponse.reply })
         
-        // Update session with new history
-        await updateVoiceSession(callSid, conversationHistory, aiResponse.currentFlow ?? null)
+        // Save updated session state
+        await updateVoiceSession(callSid, conversationHistory, aiResponse.currentFlow ?? null);
+        console.log('[AI PROCESSING] Session state updated.');
+
+        // Determine voice configuration from agentConfig
+        const useOpenaiTts = agentConfig?.useOpenaiTts !== false;
+        const openaiVoice = (agentConfig?.openaiVoice as any) || 'nova';
+        const openaiModel = (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1';
         
-        // Add enhanced session tracking
-        await addEnhancedMessage(callSid, 'user', speechResult, {
-          entities: aiResponse.entities
-        })
-        
-        await addEnhancedMessage(callSid, 'assistant', aiResponse.reply || "I'm sorry, I didn't understand. Can you please repeat that?", {
-          intent: aiResponse.intent,
-          confidence: aiResponse.confidence
-        })
-        
-        // Voice configuration
-        const useOpenaiTts = agentConfig?.useOpenaiTts !== false
-        const openaiVoice = (agentConfig?.openaiVoice as any) || 'nova'
-        const openaiModel = (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
-        const voiceToUse = agentConfig?.twilioVoice || 'alice'
-        const languageToUse = agentConfig?.twilioLanguage || 'en-US'
-        
-        console.log(`[AI PROCESSING] Voice Config - OpenAI TTS: ${useOpenaiTts}, Voice: ${openaiVoice}`)
-        
-                 // Generate audio for AI response
-         let audioUrl: string | null = null
-         if (useOpenaiTts && aiResponse.reply) {
-           audioUrl = await generateAudioUrl(aiResponse.reply, openaiVoice, true, openaiModel)
-         }
-        
-        // Determine next action
-        const nextAction = aiResponse.nextVoiceAction || 'CONTINUE'
-        console.log('[AI PROCESSING] Next action:', nextAction)
-        
-        // Prepare response data
-        const responseData = {
-          audioUrl,
-          nextAction,
-          voiceToUse,
-          languageToUse,
-          useOpenaiTts,
-          openaiVoice,
-          openaiModel,
-          fallbackText: aiResponse.reply || "I'm sorry, I didn't understand. Can you please repeat that?",
-          shouldClearSession: ['HANGUP', 'TRANSFER', 'VOICEMAIL'].includes(nextAction),
-          timestamp: Date.now()
+        // Generate the audio URL for the AI's reply
+        console.log('[AI PROCESSING] Generating audio for AI reply...');
+        const audioUrl = await generateAudioUrl(
+            aiResponse.reply, 
+            openaiVoice,
+            useOpenaiTts,
+            openaiModel
+        );
+
+        if (!audioUrl) {
+            throw new Error('Failed to generate audio URL for AI response.');
         }
-        
-        // Store for continue-conversation endpoint
-        backgroundProcessingResults.set(callSid, responseData)
-        
-        // Update the live call
-        await twilioClient.calls(callSid).update({
-          url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
-          method: 'POST'
-        })
-        
-        console.log('[AI PROCESSING] Successfully processed and updated call')
-        
-      } catch (error) {
-        console.error('[AI PROCESSING] Error in AI processing:', error)
-        
-        // Store error fallback
-        backgroundProcessingResults.set(callSid, {
-          nextAction: 'HANGUP',
-          fallbackText: "I'm sorry, I'm having trouble processing your request. Please call back in a moment.",
-          shouldClearSession: true,
-          voiceToUse: 'alice',
-          languageToUse: 'en-US',
-          timestamp: Date.now()
-        })
-        
-        // Update call with error response
+        console.log('[AI PROCESSING] Audio URL generated:', audioUrl);
+
+        // Prepare the URL for the TwiML to execute next
+        const nextTwiMLUrl = new URL(`${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`);
+        nextTwiMLUrl.searchParams.append('audioUrl', audioUrl);
+        nextTwiMLUrl.searchParams.append('nextAction', aiResponse.nextVoiceAction || 'CONTINUE');
+
+        // Use the Twilio REST API to redirect the live call to the new TwiML URL
+        console.log(`[AI PROCESSING] Updating live call ${callSid} to redirect to: ${nextTwiMLUrl.toString()}`);
         try {
-          await twilioClient.calls(callSid).update({
-            url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
-            method: 'POST'
-          })
+            await twilioClient.calls(callSid).update({
+                url: nextTwiMLUrl.toString(),
+                method: 'POST'
+            });
+            console.log(`[AI PROCESSING] Successfully updated live call ${callSid}.`);
         } catch (updateError) {
-          console.error('[AI PROCESSING] Failed to update call with error response:', updateError)
+            console.error(`[AI PROCESSING] CRITICAL FAILURE: Could not update live call ${callSid}. Error:`, updateError);
+            // If we can't update the call, we can't continue. The call will hang up.
         }
-      }
+        
+    } catch (error) {
+       console.error('[AI PROCESSING] Error in background AI processing:', error);
+       // Attempt a graceful recovery by redirecting the call to an error handler TwiML
+       try {
+         const errorTwiMLUrl = new URL(`${process.env.APP_PRIMARY_URL}/api/voice/handle-error`);
+         await twilioClient.calls(callSid).update({ url: errorTwiMLUrl.toString(), method: 'POST' });
+       } catch (recoveryError) {
+         console.error(`[AI PROCESSING] Failed to redirect call to error handler:`, recoveryError);
+       }
     }
+}
     
     // Start background processing (non-blocking)
     processAiResponse().catch(error => {
@@ -1399,6 +1443,94 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
           <Hangup/>
         </Response>`)
     }
+  }
+})
+
+// POST /play-and-gather - Play audio and gather user response
+router.post('/play-and-gather', customValidateTwilioRequest, async (req, res) => {
+  try {
+    console.log('[PLAY AND GATHER] Processing request for CallSid:', req.body.CallSid)
+    
+    // Get audioUrl from query parameters (since twilioClient.calls().update() can't pass body)
+    const audioUrl = req.query.audioUrl as string
+    
+    if (!audioUrl) {
+      console.error('[PLAY AND GATHER] No audioUrl provided in query parameters')
+      return res.status(400).json({ error: 'audioUrl is required' })
+    }
+    
+    console.log('[PLAY AND GATHER] Playing audio URL:', audioUrl)
+    
+    const twiml = new VoiceResponse()
+    
+    // Play the provided audio
+    twiml.play(audioUrl)
+    
+    // Gather the user's response
+    const gather = twiml.gather({
+      input: ['speech'],
+      action: '/api/voice/handle-speech',
+      method: 'POST',
+      speechTimeout: 'auto',
+      timeout: 10
+    })
+    
+    // Fallback if no response
+    twiml.say({ voice: 'alice', language: 'en-US' }, 
+      createSSMLMessage("Thank you for calling. Have a great day. Goodbye.", { isConversational: true })
+    )
+    twiml.hangup()
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+    
+    console.log('[PLAY AND GATHER] Successfully created TwiML response')
+    
+  } catch (error) {
+    console.error('[PLAY AND GATHER] Error in /play-and-gather route:', error)
+    
+    // Fallback to error handler
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: 'alice', language: 'en-US' }, 
+      "I'm sorry, an application error occurred. Please try your call again later."
+    )
+    twiml.hangup()
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+  }
+})
+
+// POST /handle-error - Handle errors gracefully by providing user-friendly response
+router.post('/handle-error', customValidateTwilioRequest, async (req, res) => {
+  try {
+    console.log('[HANDLE ERROR] Processing error handler for CallSid:', req.body.CallSid)
+    
+    const twiml = new VoiceResponse()
+    const errorMessage = createSSMLMessage(
+      "I'm sorry, an application error occurred. Please try your call again later.",
+      { isConversational: true, addEmphasis: true }
+    )
+    
+    twiml.say({ voice: 'alice', language: 'en-US' }, errorMessage)
+    twiml.hangup()
+    
+    // Clear any existing session
+    await clearVoiceSession(req.body.CallSid)
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+    
+  } catch (error) {
+    console.error('[HANDLE ERROR] Error in error handler:', error)
+    
+    // Last resort simple response
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Say voice="alice">I'm sorry, an application error occurred. Please try your call again later.</Say>
+        <Hangup/>
+      </Response>`)
   }
 })
 
@@ -1477,11 +1609,30 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
     
     console.log('[CONTINUE CONVERSATION] Processing for CallSid:', callSid)
     
-    // Retrieve background processing results
-    const processingResult = backgroundProcessingResults.get(callSid)
+    // Extract parameters from URL (new approach)
+    const audioUrl = req.query.audioUrl as string
+    const urlNextAction = (req.query.nextAction as string) || 'CONTINUE'
     
-    if (!processingResult) {
-      console.error('[CONTINUE CONVERSATION] No processing result found for CallSid:', callSid)
+    console.log('[CONTINUE CONVERSATION] URL Parameters:', {
+      hasAudioUrl: !!audioUrl,
+      nextAction: urlNextAction,
+      audioUrl: audioUrl ? audioUrl.substring(0, 50) + '...' : 'none'
+    })
+    
+    // Fallback to background processing results if URL parameters not found
+    let processingResult = null
+    if (!audioUrl) {
+      console.log('[CONTINUE CONVERSATION] No URL parameters, checking background processing results')
+      processingResult = backgroundProcessingResults.get(callSid)
+      
+      if (processingResult) {
+        console.log('[CONTINUE CONVERSATION] Found background processing result')
+        backgroundProcessingResults.delete(callSid)
+      }
+    }
+    
+    if (!audioUrl && !processingResult) {
+      console.error('[CONTINUE CONVERSATION] No audio URL or processing result found for CallSid:', callSid)
       // Send fallback response
       const twiml = new VoiceResponse()
       twiml.say({ voice: 'alice', language: 'en-US' }, 
@@ -1503,30 +1654,31 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
       return
     }
     
-    // Clean up the stored result after retrieval
-    backgroundProcessingResults.delete(callSid)
-    
-    console.log('[CONTINUE CONVERSATION] Processing result found:', {
-      hasAudioUrl: !!processingResult.audioUrl,
-      nextAction: processingResult.nextAction,
-      hasFallbackText: !!processingResult.fallbackText
-    })
-    
     // Create TwiML response
     const twiml = new VoiceResponse()
     
-    // Voice settings from processing result or defaults
-    const voiceToUse = processingResult.voiceToUse || 'alice'
-    const languageToUse = processingResult.languageToUse || 'en-US'
-    const useOpenaiTts = processingResult.useOpenaiTts !== false
-    const openaiVoice = processingResult.openaiVoice || 'nova'
-    const openaiModel = (processingResult.openaiModel || 'tts-1') as 'tts-1' | 'tts-1-hd'
+    // Determine which data source to use (URL parameters take precedence)
+    const finalAudioUrl = audioUrl || (processingResult?.audioUrl)
+    const finalNextAction = urlNextAction !== 'CONTINUE' ? urlNextAction : (processingResult?.nextAction || 'CONTINUE')
+    
+    console.log('[CONTINUE CONVERSATION] Final parameters:', {
+      hasAudioUrl: !!finalAudioUrl,
+      nextAction: finalNextAction,
+      dataSource: audioUrl ? 'URL parameters' : 'background processing'
+    })
+    
+    // Voice settings from processing result or defaults (only if using background processing)
+    const voiceToUse = processingResult?.voiceToUse || 'alice'
+    const languageToUse = processingResult?.languageToUse || 'en-US'
+    const useOpenaiTts = processingResult?.useOpenaiTts !== false
+    const openaiVoice = processingResult?.openaiVoice || 'nova'
+    const openaiModel = (processingResult?.openaiModel || 'tts-1') as 'tts-1' | 'tts-1-hd'
     
     // Play the AI response
-    if (processingResult.audioUrl) {
-      console.log('[CONTINUE CONVERSATION] Playing AI-generated audio:', processingResult.audioUrl)
-      twiml.play(processingResult.audioUrl)
-    } else if (processingResult.fallbackText) {
+    if (finalAudioUrl) {
+      console.log('[CONTINUE CONVERSATION] Playing AI-generated audio:', finalAudioUrl)
+      twiml.play(finalAudioUrl)
+    } else if (processingResult?.fallbackText) {
       console.log('[CONTINUE CONVERSATION] Using fallback text for TTS')
       await generateAndPlayTTS(
         processingResult.fallbackText,
@@ -1542,19 +1694,18 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
       await generateAndPlayTTS(
         "I'm sorry, I encountered an issue. Let me try to help you differently.",
         twiml,
-        openaiVoice as any,
-        voiceToUse,
-        languageToUse,
-        useOpenaiTts,
-        openaiModel
+        'nova' as any,
+        'alice',
+        'en-US',
+        true,
+        'tts-1'
       );
     }
     
-    // Handle next action based on processing result
-    const nextAction = processingResult.nextAction || 'CONTINUE'
-    console.log('[CONTINUE CONVERSATION] Next action:', nextAction)
+    // Handle next action
+    console.log('[CONTINUE CONVERSATION] Next action:', finalNextAction)
     
-    switch (nextAction) {
+    switch (finalNextAction) {
       case 'CONTINUE':
         // Continue conversation with another gather
         const continueGather = twiml.gather({
@@ -1577,7 +1728,7 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
       case 'HANGUP':
         // End the call gracefully
         twiml.hangup()
-        if (processingResult.shouldClearSession) {
+        if (processingResult?.shouldClearSession) {
           await clearVoiceSession(callSid)
           console.log('[CONTINUE CONVERSATION] Call ended with HANGUP action, session cleared for CallSid:', callSid)
         }
@@ -1595,7 +1746,7 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
           openaiModel
         );
         twiml.hangup()
-        if (processingResult.shouldClearSession) {
+        if (processingResult?.shouldClearSession) {
           await clearVoiceSession(callSid)
         }
         break
@@ -1612,7 +1763,7 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
           openaiModel
         );
         twiml.hangup()
-        if (processingResult.shouldClearSession) {
+        if (processingResult?.shouldClearSession) {
           await clearVoiceSession(callSid)
         }
         break
@@ -1620,7 +1771,7 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
       default:
         // Fallback to HANGUP
         twiml.hangup()
-        if (processingResult.shouldClearSession) {
+        if (processingResult?.shouldClearSession) {
           await clearVoiceSession(callSid)
         }
         break
@@ -1630,7 +1781,7 @@ router.post('/continue-conversation', customValidateTwilioRequest, async (req, r
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
     
-    console.log('[CONTINUE CONVERSATION] Successfully sent TwiML response for action:', nextAction)
+    console.log('[CONTINUE CONVERSATION] Successfully sent TwiML response for action:', finalNextAction)
     
   } catch (error) {
     console.error('[CONTINUE CONVERSATION] Error in /continue-conversation route:', error)

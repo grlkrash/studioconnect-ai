@@ -107,6 +107,43 @@ app.post('/test-voice', (req, res) => {
   res.send(twiml.toString());
 });
 
+// Test route for OpenAI Realtime API connection
+app.get('/test-realtime', async (req, res) => {
+  try {
+    console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
+    
+    // Import the RealtimeAgentService
+    const RealtimeAgentServiceModule = await import('./services/realtimeAgentService');
+    // Handle both default and named exports
+    const RealtimeAgentService = (RealtimeAgentServiceModule as any).default || (RealtimeAgentServiceModule as any).RealtimeAgentService;
+    
+    if (!RealtimeAgentService) {
+      throw new Error('RealtimeAgentService not found in module exports');
+    }
+    
+    // Instantiate the service with a hardcoded test ID
+    const agent = new RealtimeAgentService('test-call-123');
+    
+    // Start the WebSocket connection
+    await agent.connect();
+    
+    // Return success response
+    res.json({
+      message: "Realtime agent connection test initiated. Check server logs for details.",
+      timestamp: new Date().toISOString(),
+      testCallId: 'test-call-123'
+    });
+    
+  } catch (error) {
+    console.error('[REALTIME TEST] Error:', error);
+    res.status(500).json({
+      error: "Failed to initiate realtime agent connection",
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, '../views'))
