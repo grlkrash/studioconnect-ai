@@ -893,90 +893,170 @@ async function processEnhancedMessage(
 
 
 
-// POST /incoming - Handle incoming Twilio voice calls
+// POST /incoming - Handle incoming Twilio voice calls (Ultra-Fast Response)
 router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
   try {
-    console.log('[VOICE DEBUG] Incoming Twilio request body:', req.body)
+    console.log('[VOICE DEBUG] Incoming call received:', req.body.CallSid)
     
+    // INSTANT response - no database queries, no AI processing
     const twiml = new VoiceResponse()
     
-    // Extract the Twilio phone number that was called
+    // Immediately redirect to start-conversation to begin async processing
+    twiml.redirect({
+      method: 'POST'
+    }, '/api/voice/start-conversation')
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+    
+    console.log('[VOICE DEBUG] Sent immediate redirect for CallSid:', req.body.CallSid)
+    
+  } catch (error) {
+    console.error('[VOICE DEBUG] Critical error in /incoming:', error)
+    
+    // Ultra-simple fallback
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: 'alice' }, 'Thank you for calling. Please hold while we connect you.')
+    twiml.redirect({ method: 'POST' }, '/api/voice/start-conversation')
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+  }
+})
+
+// POST /start-conversation - Handle initial greeting with high-quality OpenAI voice (Async)
+router.post('/start-conversation', customValidateTwilioRequest, async (req, res) => {
+  try {
+    console.log('[START CONVERSATION] Processing initial greeting for CallSid:', req.body.CallSid)
+    
+    const callSid = req.body.CallSid
     const toPhoneNumber = req.body.To
+    const caller = req.body.From
     
-    // Fetch business information based on the called phone number
-    let businessName = 'our business'
-    let business = null
-    
-    if (toPhoneNumber) {
+    // Start background greeting generation
+    const generateGreeting = async () => {
       try {
-        business = await prisma.business.findFirst({
-          where: {
-            twilioPhoneNumber: toPhoneNumber  // Fixed: should match twilioPhoneNumber field
+        console.log('[GREETING GENERATION] Starting background greeting generation for CallSid:', callSid)
+        
+        // Find business and agent config
+        let business = null
+        let agentConfig = null
+        let welcomeMessage = 'Thank you for calling. How can I help you?'
+        
+        if (toPhoneNumber) {
+          business = await prisma.business.findFirst({
+            where: { twilioPhoneNumber: toPhoneNumber }
+          })
+          
+          if (business) {
+            console.log('[GREETING GENERATION] Found business:', business.name)
+            
+            agentConfig = await prisma.agentConfig.findUnique({
+              where: { businessId: business.id }
+            })
+            
+            // Determine welcome message
+            if (agentConfig?.voiceGreetingMessage?.trim()) {
+              welcomeMessage = agentConfig.voiceGreetingMessage
+              console.log('[GREETING GENERATION] Using custom voice greeting')
+            } else if (agentConfig?.welcomeMessage?.trim()) {
+              welcomeMessage = agentConfig.welcomeMessage
+              console.log('[GREETING GENERATION] Using general welcome message')
+            }
+          }
+        }
+        
+        // Initialize session with business info
+        await updateSessionMetadata(callSid, {
+          callerNumber: caller,
+          twilioCallSid: callSid,
+          businessId: business?.id,
+          voiceSettings: {
+            voice: agentConfig?.twilioVoice || 'alice',
+            language: agentConfig?.twilioLanguage || 'en-US'
           }
         })
         
-        if (business) {
-          businessName = business.name || 'our business'
-          console.log('[VOICE DEBUG] Found business:', business.name, 'for phone:', toPhoneNumber)
-        } else {
-          console.log('[VOICE DEBUG] No business found for phone:', toPhoneNumber)
+        // Generate high-quality greeting audio
+        const useOpenaiTts = agentConfig?.useOpenaiTts !== false
+        const openaiVoice = (agentConfig?.openaiVoice as any) || 'nova'
+        const openaiModel = (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
+        
+        console.log(`[GREETING GENERATION] Voice config - OpenAI TTS: ${useOpenaiTts}, Voice: ${openaiVoice}`)
+        
+        let greetingAudioUrl: string | null = null
+        if (useOpenaiTts) {
+          greetingAudioUrl = await generateAudioUrl(welcomeMessage, openaiVoice, true, openaiModel)
         }
-      } catch (dbError) {
-        console.error('[VOICE DEBUG] Error fetching business by phone number:', dbError)
-      }
-    } else {
-      console.log('[VOICE DEBUG] No toPhoneNumber provided in request')
-    }
-    
-    // Add debugging for business name before processing
-    console.log('[VOICE DEBUG] Original business name:', businessName)
-    
-    // Fetch agentConfig for the business to get custom welcome message
-    let agentConfig = null
-    if (business) {
-      try {
-        agentConfig = await prisma.agentConfig.findUnique({
-          where: { businessId: business.id }
+        
+        // Store greeting result for delivery
+        backgroundProcessingResults.set(callSid, {
+          audioUrl: greetingAudioUrl,
+          nextAction: 'GATHER_FIRST_INPUT',
+          voiceToUse: agentConfig?.twilioVoice || 'alice',
+          languageToUse: agentConfig?.twilioLanguage || 'en-US',
+          useOpenaiTts,
+          openaiVoice,
+          openaiModel,
+          fallbackText: welcomeMessage,
+          timestamp: Date.now()
         })
-        console.log('[VOICE DEBUG] Found agentConfig for business:', agentConfig ? 'Yes' : 'No')
-      } catch (configError) {
-        console.error('[VOICE DEBUG] Error fetching agentConfig:', configError)
+        
+        console.log('[GREETING GENERATION] Greeting prepared, updating call to deliver greeting')
+        
+        // Update the live call to deliver the greeting
+        await twilioClient.calls(callSid).update({
+          url: `${process.env.APP_PRIMARY_URL}/api/voice/deliver-greeting`,
+          method: 'POST'
+        })
+        
+      } catch (error) {
+        console.error('[GREETING GENERATION] Error generating greeting:', error)
+        
+        // Store fallback greeting
+        backgroundProcessingResults.set(callSid, {
+          nextAction: 'GATHER_FIRST_INPUT',
+          voiceToUse: 'alice',
+          languageToUse: 'en-US',
+          fallbackText: 'Thank you for calling. How can I help you?',
+          timestamp: Date.now()
+        })
+        
+        // Update call with fallback
+        await twilioClient.calls(callSid).update({
+          url: `${process.env.APP_PRIMARY_URL}/api/voice/deliver-greeting`,
+          method: 'POST'
+        })
       }
     }
     
-    // Create welcome message variable with conditional logic prioritizing voice-specific message
-    let welcomeMessage: string
-    if (agentConfig && agentConfig.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim() !== '') {
-      // PRO Plan: Use voice-specific greeting message
-      welcomeMessage = agentConfig.voiceGreetingMessage
-      console.log('[VOICE DEBUG] Using custom voice greeting message from agentConfig (PRO feature)')
-    } else if (agentConfig && agentConfig.welcomeMessage && agentConfig.welcomeMessage.trim() !== '') {
-      // Fallback: Use general welcome message for voice calls
-      welcomeMessage = agentConfig.welcomeMessage
-      console.log('[VOICE DEBUG] Using general welcome message from agentConfig as fallback')
-    } else {
-      // Default: Use standard voice greeting
-      welcomeMessage = 'Thank you for calling. How can I help you?'
-      console.log('[VOICE DEBUG] Using default voice greeting message')
-    }
-    
-    console.log('[VOICE DEBUG] Welcome message text:', welcomeMessage)
-    
-    // Configure voice settings from agentConfig with fallbacks for reliable greeting
-    const twilioVoice = (agentConfig?.twilioVoice || 'alice') as any
-    const twilioLanguage = (agentConfig?.twilioLanguage || 'en-US') as any
-    
-    console.log(`[Voice Config] Using reliable Twilio TTS for greeting - Voice: ${twilioVoice}, Language: ${twilioLanguage}`)
-    
-    // Use fast, reliable Twilio TTS for instant greeting (no file dependencies)
-    const greetingMessage = createSSMLMessage(welcomeMessage, { 
-      isGreeting: true, 
-      isConversational: true,
-      addPause: true
+    // Start background processing
+    generateGreeting().catch(error => {
+      console.error('[START CONVERSATION] Unhandled error in greeting generation:', error)
     })
-    twiml.say({ voice: twilioVoice, language: twilioLanguage }, greetingMessage)
     
-    // Use gather() for real-time speech input instead of record()
+    // Respond immediately with a pleasant hold sound
+    const twiml = new VoiceResponse()
+    
+    // Play a brief, pleasant "connecting" sound
+    const connectingSoundUrl = `${process.env.APP_PRIMARY_URL}/sounds/thinking-sound-fx.mp3`
+    twiml.play(connectingSoundUrl)
+    
+    // Add a brief pause for processing
+    twiml.pause({ length: 3 })
+    
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+    
+    console.log('[START CONVERSATION] Sent hold response, greeting generation started')
+    
+  } catch (error) {
+    console.error('[START CONVERSATION] Critical error:', error)
+    
+    // Simple fallback
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: 'alice' }, 'Thank you for calling. How can I help you?')
+    
     const gather = twiml.gather({
       input: ['speech'],
       action: '/api/voice/handle-speech',
@@ -985,30 +1065,102 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
       timeout: 10
     })
     
-    // If no input is received after gather timeout, provide fallback message
-    const fallbackMessageSSML = 
-      `<speak>I didn't hear anything. <break time="300ms"/> If you still need help, please call back. <break time="200ms"/> Goodbye.</speak>`
-    
-    twiml.say({ 
-      voice: 'alice', 
-      language: 'en-US' 
-    }, fallbackMessageSSML)
+    twiml.say({ voice: 'alice' }, 'Thank you for calling. Goodbye.')
     twiml.hangup()
     
-    // Set response content type and send TwiML
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twiml.toString())
+  }
+})
+
+// POST /deliver-greeting - Deliver the generated high-quality greeting
+router.post('/deliver-greeting', customValidateTwilioRequest, async (req, res) => {
+  try {
+    const callSid = req.body.CallSid
+    console.log('[DELIVER GREETING] Delivering greeting for CallSid:', callSid)
+    
+    // Retrieve greeting data
+    const greetingData = backgroundProcessingResults.get(callSid)
+    
+    if (!greetingData) {
+      console.error('[DELIVER GREETING] No greeting data found, using fallback')
+      
+      const twiml = new VoiceResponse()
+      twiml.say({ voice: 'alice' }, 'Thank you for calling. How can I help you?')
+      
+      const gather = twiml.gather({
+        input: ['speech'],
+        action: '/api/voice/handle-speech',
+        method: 'POST',
+        speechTimeout: 'auto',
+        timeout: 10
+      })
+      
+      twiml.say({ voice: 'alice' }, 'Thank you for calling. Goodbye.')
+      twiml.hangup()
+      
+      res.setHeader('Content-Type', 'application/xml')
+      res.send(twiml.toString())
+      return
+    }
+    
+    // Clean up after retrieval
+    backgroundProcessingResults.delete(callSid)
+    
+    const twiml = new VoiceResponse()
+    
+    // Play the high-quality greeting
+    if (greetingData.audioUrl) {
+      console.log('[DELIVER GREETING] Playing OpenAI TTS greeting:', greetingData.audioUrl)
+      twiml.play(greetingData.audioUrl)
+    } else {
+      console.log('[DELIVER GREETING] Using fallback TTS greeting')
+      const greetingSSML = createSSMLMessage(greetingData.fallbackText || 'Thank you for calling. How can I help you?', {
+        isGreeting: true,
+        isConversational: true
+      })
+      twiml.say({ 
+        voice: greetingData.voiceToUse as any || 'alice',
+        language: greetingData.languageToUse as any || 'en-US'
+      }, greetingSSML)
+    }
+    
+    // Gather the user's first input
+    const gather = twiml.gather({
+      input: ['speech'],
+      action: '/api/voice/handle-speech',
+      method: 'POST',
+      speechTimeout: 'auto',
+      timeout: 10
+    })
+    
+    // Fallback if no response
+    twiml.say({ 
+      voice: greetingData.voiceToUse as any || 'alice',
+      language: greetingData.languageToUse as any || 'en-US'
+    }, 'I didn\'t hear a response. Thank you for calling. Goodbye.')
+    twiml.hangup()
+    
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
     
-  } catch (error) {
-    console.error('[VOICE DEBUG] Error in /incoming route:', error)
+    console.log('[DELIVER GREETING] Successfully delivered greeting')
     
-    // Create fallback TwiML response with SSML
+  } catch (error) {
+    console.error('[DELIVER GREETING] Error delivering greeting:', error)
+    
     const twiml = new VoiceResponse()
-    const errorMessage = createSSMLMessage(
-      'Sorry, we\'re experiencing some technical difficulties right now. Please try calling back in a few minutes, or contact us directly.',
-      { isConversational: true, addEmphasis: true, addPause: true }
-    )
-    twiml.say(errorMessage)
+    twiml.say({ voice: 'alice' }, 'Thank you for calling. How can I help you?')
+    
+    const gather = twiml.gather({
+      input: ['speech'],
+      action: '/api/voice/handle-speech',
+      method: 'POST',
+      speechTimeout: 'auto',
+      timeout: 10
+    })
+    
+    twiml.say({ voice: 'alice' }, 'Thank you for calling. Goodbye.')
     twiml.hangup()
     
     res.setHeader('Content-Type', 'application/xml')
@@ -1019,27 +1171,24 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
 // POST /handle-speech - Handle real-time speech input from Twilio Gather (Async Version)
 router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
   try {
-    console.log('[VOICE DEBUG] Handle speech request body:', req.body)
+    console.log('[HANDLE SPEECH] Processing speech input for CallSid:', req.body.CallSid)
     
-    // Extract data from Twilio request
-    const SpeechResult = req.body.SpeechResult
-    const Caller = req.body.From
-    const TwilioNumberCalled = req.body.To
+    const speechResult = req.body.SpeechResult
+    const caller = req.body.From
+    const twilioNumberCalled = req.body.To
     const callSid = req.body.CallSid
     
-    // Check if we have speech result from gather
-    if (!SpeechResult || SpeechResult.trim() === '') {
-      console.log('[VOICE DEBUG] No speech result found - gather timed out')
-      const twiml = new VoiceResponse()
+    // Handle empty speech result
+    if (!speechResult || speechResult.trim() === '') {
+      console.log('[HANDLE SPEECH] No speech detected, giving second chance')
       
-      // Give them another chance with a more encouraging message (using reliable Twilio TTS)
+      const twiml = new VoiceResponse()
       const retryMessage = createSSMLMessage(
         "I didn't hear a response. Is there anything else I can help with?",
         { isQuestion: true, isConversational: true }
       )
       twiml.say({ voice: 'alice', language: 'en-US' }, retryMessage)
       
-      // Continue the conversation loop with another gather
       const gather = twiml.gather({
         input: ['speech'],
         action: '/api/voice/handle-speech',
@@ -1048,12 +1197,9 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         timeout: 10
       })
       
-      // Final fallback if still no response
-      const fallbackMessage = createSSMLMessage(
-        "Thank you for calling. Have a great day. Goodbye.",
-        { isConversational: true }
+      twiml.say({ voice: 'alice', language: 'en-US' }, 
+        createSSMLMessage("Thank you for calling. Have a great day. Goodbye.", { isConversational: true })
       )
-      twiml.say({ voice: 'alice', language: 'en-US' }, fallbackMessage)
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -1061,269 +1207,173 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
       return
     }
 
-    // Define the background AI processing function
+    // Background AI processing function
     const processAiResponse = async () => {
       try {
-        console.log('[AI PROCESSING] Starting background AI processing for CallSid:', callSid)
-        
-        // Assign user's speech directly from Gather result
-        const transcribedText = SpeechResult
-        console.log('[AI PROCESSING] Transcribed text from Gather:', transcribedText)
-        
-        // Update session metadata with call information
-        await updateSessionMetadata(callSid, {
-          callerNumber: Caller,
-          twilioCallSid: callSid
-        })
+        console.log('[AI PROCESSING] Starting AI processing for CallSid:', callSid)
+        console.log('[AI PROCESSING] User said:', speechResult)
         
         // Find business by Twilio phone number
         const business = await prisma.business.findFirst({
-          where: {
-            twilioPhoneNumber: TwilioNumberCalled
-          }
+          where: { twilioPhoneNumber: twilioNumberCalled }
         })
         
         if (!business) {
-          console.error('[AI PROCESSING] No business found for Twilio number:', TwilioNumberCalled)
-          // Update call with error message
-          await twilioClient.calls(callSid).update({
-            url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
-            method: 'POST'
-          });
-          return
+          console.error('[AI PROCESSING] No business found for phone:', twilioNumberCalled)
+          throw new Error('Business not found')
         }
         
         console.log('[AI PROCESSING] Found business:', business.name)
         
-        // Update session metadata with business information
-        await updateSessionMetadata(callSid, {
-          businessId: business.id
-        })
+        // Get agent configuration
+        const agentConfig = await prisma.agentConfig.findUnique({
+          where: { businessId: business.id }
+        }).catch(() => null)
         
-        // Fetch AgentConfig for voice settings
-        let agentConfig = null
-        try {
-          agentConfig = await prisma.agentConfig.findUnique({
-            where: { businessId: business.id }
-          })
-        } catch (configError) {
-          console.error('[AI PROCESSING] Error fetching AgentConfig:', configError)
-        }
-        
-        // Configure voice settings with fallbacks
-        const voiceToUse = (agentConfig?.twilioVoice || 'alice') as any
-        const languageToUse = (agentConfig?.twilioLanguage || 'en-US') as any
-        
-        // Update session metadata with voice settings
-        await updateSessionMetadata(callSid, {
-          voiceSettings: {
-            voice: voiceToUse,
-            language: languageToUse
-          }
-        })
-        
-        // DIAGNOSTIC TEST: Bypass complex AI processing to isolate timeout issue
-        console.log('[AI PROCESSING] Bypassing AI Handler for diagnostic test.')
-        
-        // Retrieve session state for diagnostic test
+        // Get conversation history
         const session = await getVoiceSession(callSid)
-        let currentConversationHistory = session.history
-        let currentActiveFlow = session.currentFlow
+        const conversationHistory = [...session.history]
         
-        // Update conversation history with user's message
-        currentConversationHistory.push({ role: 'user', content: transcribedText })
+        // Add user message to history
+        conversationHistory.push({ role: 'user', content: speechResult })
         
-        const aiResponse = {
-          reply: 'This is a test. The background process is working correctly.',
-          nextVoiceAction: 'CONTINUE'
-        }
-        console.log('[AI PROCESSING] Using hardcoded test response:', aiResponse.reply)
-        
-        // Update conversation history with AI's response
-        currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
-        
-        // COMMENTED OUT FOR DIAGNOSTIC TEST - Complex AI processing logic
-        /*
-        if (ENABLE_VERBOSE_LOGGING) {
-          logMemoryUsage('Processing Speech Input')
-        }
-        
-        // Process with AI handler using full context
-        console.log('[AI PROCESSING] Calling AI Handler...')
+        // Process with AI handler
+        console.log('[AI PROCESSING] Calling AI Handler for business:', business.id)
         const aiResponse = await processEnhancedMessage(
-          transcribedText,
-          currentConversationHistory,
+          speechResult,
+          conversationHistory,
           business.id,
-          currentActiveFlow,
+          session.currentFlow,
           callSid
         )
-        console.log('[AI PROCESSING] AI Handler returned reply:', aiResponse.reply)
         
-        // Add enhanced session data
-        await addEnhancedMessage(callSid, 'user', transcribedText, {
+        console.log('[AI PROCESSING] AI response received:', aiResponse.reply)
+        
+        // Add AI response to history
+        conversationHistory.push({ role: 'assistant', content: aiResponse.reply })
+        
+        // Update session with new history
+        await updateVoiceSession(callSid, conversationHistory, aiResponse.currentFlow)
+        
+        // Add enhanced session tracking
+        await addEnhancedMessage(callSid, 'user', speechResult, {
           entities: aiResponse.entities
         })
         
-        await addEnhancedMessage(callSid, 'assistant', aiResponse.reply, {
+        await addEnhancedMessage(callSid, 'assistant', aiResponse.reply || "I'm sorry, I didn't understand. Can you please repeat that?", {
           intent: aiResponse.intent,
           confidence: aiResponse.confidence
         })
         
-        if (aiResponse.flowState) {
-          await updateSessionFlow(callSid, aiResponse.flowState)
-        }
+        // Voice configuration
+        const useOpenaiTts = agentConfig?.useOpenaiTts !== false
+        const openaiVoice = (agentConfig?.openaiVoice as any) || 'nova'
+        const openaiModel = (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
+        const voiceToUse = agentConfig?.twilioVoice || 'alice'
+        const languageToUse = agentConfig?.twilioLanguage || 'en-US'
         
-        if (aiResponse.entities && Object.keys(aiResponse.entities).length > 0) {
-          await voiceSessionService.updateEntities(callSid, aiResponse.entities)
-        }
+        console.log(`[AI PROCESSING] Voice Config - OpenAI TTS: ${useOpenaiTts}, Voice: ${openaiVoice}`)
         
-        if (aiResponse.intent && aiResponse.confidence) {
-          await voiceSessionService.addIntent(callSid, aiResponse.intent, aiResponse.confidence, transcribedText)
-        }
-        */
+                 // Generate audio for AI response
+         let audioUrl: string | null = null
+         if (useOpenaiTts && aiResponse.reply) {
+           audioUrl = await generateAudioUrl(aiResponse.reply, openaiVoice, true, openaiModel)
+         }
         
-        // Determine voice configuration from agentConfig
-        const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
-        const openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 
-          (agentConfig?.openaiVoice as any) || 'nova'
-        const openaiModel: 'tts-1' | 'tts-1-hd' = 
-          (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
-        
-        console.log(`[AI PROCESSING] Voice Config - OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
-        
-        // Generate audio URL for the AI response
-        let audioUrl: string | null = null
-        if (aiResponse && aiResponse.reply) {
-          audioUrl = await generateAudioUrl(
-            aiResponse.reply, 
-            openaiVoice,
-            useOpenaiTts,
-            openaiModel
-          );
-        }
-        
-        // Handle next action based on AI response
+        // Determine next action
         const nextAction = aiResponse.nextVoiceAction || 'CONTINUE'
-        console.log('[AI PROCESSING] Next voice action determined:', nextAction)
+        console.log('[AI PROCESSING] Next action:', nextAction)
         
-        // Prepare data for continue-conversation endpoint
-        const continueData: any = { 
+        // Prepare response data
+        const responseData = {
           audioUrl,
           nextAction,
           voiceToUse,
           languageToUse,
           useOpenaiTts,
           openaiVoice,
-          openaiModel
+          openaiModel,
+          fallbackText: aiResponse.reply || "I'm sorry, I didn't understand. Can you please repeat that?",
+          shouldClearSession: ['HANGUP', 'TRANSFER', 'VOICEMAIL'].includes(nextAction),
+          timestamp: Date.now()
         }
         
-        if (!audioUrl) {
-          // Fallback message if audio generation failed
-          continueData.fallbackText = aiResponse?.reply || "I'm sorry, I encountered an issue. Let me try to help you differently."
+        // Store for continue-conversation endpoint
+        backgroundProcessingResults.set(callSid, responseData)
+        
+        // Update the live call
+        await twilioClient.calls(callSid).update({
+          url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
+          method: 'POST'
+        })
+        
+        console.log('[AI PROCESSING] Successfully processed and updated call')
+        
+      } catch (error) {
+        console.error('[AI PROCESSING] Error in AI processing:', error)
+        
+        // Store error fallback
+        backgroundProcessingResults.set(callSid, {
+          nextAction: 'HANGUP',
+          fallbackText: "I'm sorry, I'm having trouble processing your request. Please call back in a moment.",
+          shouldClearSession: true,
+          voiceToUse: 'alice',
+          languageToUse: 'en-US',
+          timestamp: Date.now()
+        })
+        
+        // Update call with error response
+        try {
+          await twilioClient.calls(callSid).update({
+            url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
+            method: 'POST'
+          })
+        } catch (updateError) {
+          console.error('[AI PROCESSING] Failed to update call with error response:', updateError)
         }
-        
-        // Handle cleanup for terminal actions
-        if (nextAction === 'HANGUP' || nextAction === 'TRANSFER' || nextAction === 'VOICEMAIL') {
-          continueData.shouldClearSession = true
-        }
-        
-                 console.log('[AI PROCESSING] Updating call with continue-conversation URL and data')
-         
-         // Store the processing results for the continue-conversation endpoint
-         backgroundProcessingResults.set(callSid, {
-           ...continueData,
-           timestamp: Date.now()
-         });
-         
-         // Use Twilio REST API to update the call with the continue-conversation endpoint
-         await twilioClient.calls(callSid).update({
-           url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
-           method: 'POST'
-         });
-         
-         // Update the session with the latest state
-         await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
-        
-        console.log('[AI PROCESSING] Background AI processing completed successfully')
-        
-        if (ENABLE_VERBOSE_LOGGING) {
-          logMemoryUsage('End of Background AI Processing')
-        }
-        
-             } catch (error) {
-         console.error('[AI PROCESSING] Error in background AI processing:', error)
-         
-         try {
-           // Store fallback data for error handling
-           backgroundProcessingResults.set(callSid, {
-             nextAction: 'HANGUP',
-             fallbackText: "I'm sorry, there seems to be an issue on our end. Please call back in a moment.",
-             shouldClearSession: true,
-             voiceToUse: 'alice',
-             languageToUse: 'en-US',
-             timestamp: Date.now()
-           });
-           
-           // Send a fallback response via Twilio API
-           await twilioClient.calls(callSid).update({
-             url: `${process.env.APP_PRIMARY_URL}/api/voice/continue-conversation`,
-             method: 'POST'
-           });
-         } catch (updateError) {
-           console.error('[AI PROCESSING] Failed to update call with fallback:', updateError)
-         }
-       }
+      }
     }
     
-    // Start background processing (fire and forget)
+    // Start background processing (non-blocking)
     processAiResponse().catch(error => {
-      console.error('[VOICE DEBUG] Unhandled error in background processing:', error)
+      console.error('[HANDLE SPEECH] Unhandled error in background processing:', error)
     })
     
-    // Helper function to get a random thinking sound
-    const getRandomThinkingSound = (): string => {
-      const thinkingSounds = [
-        'thinking-sound-fx.mp3',
-        'thinking-sound-fx-2.mp3', 
-        'thinking-sound-fx-3.mp3',
-        'thinking-sound-fx-4.mp3'
-      ]
-      const randomIndex = Math.floor(Math.random() * thinkingSounds.length)
-      return `${process.env.APP_PRIMARY_URL}/sounds/${thinkingSounds[randomIndex]}`
-    }
-
-    // Respond immediately with a random "thinking" sound to keep the call alive
+    // Respond immediately with thinking sound
     const twiml = new VoiceResponse()
     
-    // Play a random thinking sound while processing
-    const thinkingSoundUrl = getRandomThinkingSound()
-    console.log('[VOICE DEBUG] Playing thinking sound:', thinkingSoundUrl)
+    // Play a random thinking sound
+    const thinkingSounds = [
+      'thinking-sound-fx.mp3',
+      'thinking-sound-fx-2.mp3', 
+      'thinking-sound-fx-3.mp3',
+      'thinking-sound-fx-4.mp3'
+    ]
+    const randomSound = thinkingSounds[Math.floor(Math.random() * thinkingSounds.length)]
+    const thinkingSoundUrl = `${process.env.APP_PRIMARY_URL}/sounds/${randomSound}`
+    
+    console.log('[HANDLE SPEECH] Playing thinking sound:', thinkingSoundUrl)
     twiml.play(thinkingSoundUrl)
     
-    // Add a pause after the thinking sound for processing time
-    twiml.pause({ length: 10 }) // Reduced since we have the thinking sound
+    // Add processing pause
+    twiml.pause({ length: 8 })
     
     res.setHeader('Content-Type', 'application/xml')
     res.send(twiml.toString())
     
-    console.log('[VOICE DEBUG] Sent immediate pause response, background processing started')
+    console.log('[HANDLE SPEECH] Sent immediate response, AI processing started')
     
   } catch (error) {
-    console.error('[VOICE DEBUG] CRITICAL ERROR IN /handle-speech:', error);
-    console.error('[VOICE DEBUG] FULL ERROR STACK TRACE:', error instanceof Error ? error.stack : 'No stack trace available');
-    console.error('[VOICE DEBUG] REQUEST BODY AT ERROR:', JSON.stringify(req.body, null, 2));
+    console.error('[HANDLE SPEECH] Critical error:', error)
     
+    // Graceful error recovery
     try {
-      // Create fallback TwiML response with graceful recovery message (using reliable Twilio TTS)
       const twiml = new VoiceResponse()
       const recoveryMessage = generateRecoveryResponse()
-      const formattedRecoveryMessage = createSSMLMessage(
-        recoveryMessage,
-        { isConversational: true, addEmphasis: true }
+      twiml.say({ voice: 'alice', language: 'en-US' }, 
+        createSSMLMessage(recoveryMessage, { isConversational: true, addEmphasis: true })
       )
-      twiml.say({ voice: 'alice', language: 'en-US' }, formattedRecoveryMessage)
       
-      // Add a gather to see if they want to leave a message
       const gather = twiml.gather({
         input: ['speech'],
         action: '/api/voice/handle-speech',
@@ -1332,20 +1382,20 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         timeout: 8
       })
       
-      // If no response, end the call gracefully
       twiml.say({ voice: 'alice', language: 'en-US' }, 'Thank you for calling. Goodbye.')
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
       res.send(twiml.toString())
-      console.log('[VOICE DEBUG] Sent graceful recovery response via TwiML')
+      
     } catch (fallbackError) {
-      console.error('[VOICE DEBUG] FALLBACK ERROR HANDLING FAILED:', fallbackError);
-      // Last resort - simple text response
+      console.error('[HANDLE SPEECH] Fallback error handling failed:', fallbackError)
+      
+      // Last resort response
       res.setHeader('Content-Type', 'application/xml')
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-          <Say voice="alice">I'm sorry, there seems to be an issue on our end. Please call back in a moment.</Say>
+          <Say voice="alice">I'm sorry, there seems to be an issue. Please call back in a moment.</Say>
           <Hangup/>
         </Response>`)
     }
