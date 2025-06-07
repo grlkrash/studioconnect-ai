@@ -4,6 +4,7 @@ import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import path from 'path'
 import fs from 'fs'
+import http from 'http'
 
 // Load environment variables
 dotenv.config()
@@ -11,6 +12,7 @@ dotenv.config()
 // Import Redis and session service
 import RedisManager from './config/redis'
 import VoiceSessionService from './services/voiceSessionService'
+import { TwilioWebSocketServer } from './services/websocketServer'
 
 // Import route handlers
 import chatRoutes from './api/chatRoutes'
@@ -107,37 +109,31 @@ app.post('/test-voice', (req, res) => {
   res.send(twiml.toString());
 });
 
-// Test route for OpenAI Realtime API connection
+// Test route for WebSocket server status
 app.get('/test-realtime', async (req, res) => {
   try {
     console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
     
-    // Import the RealtimeAgentService
-    const RealtimeAgentServiceModule = await import('./services/realtimeAgentService');
-    // Handle both default and named exports
-    const RealtimeAgentService = (RealtimeAgentServiceModule as any).default || (RealtimeAgentServiceModule as any).RealtimeAgentService;
-    
-    if (!RealtimeAgentService) {
-      throw new Error('RealtimeAgentService not found in module exports');
-    }
-    
-    // Instantiate the service with a hardcoded test ID
-    const agent = new RealtimeAgentService('test-call-123');
-    
-    // Start the WebSocket connection
-    await agent.connect();
+    const connectionCount = twilioWsServer ? twilioWsServer.getActiveConnectionCount() : 0;
     
     // Return success response
     res.json({
-      message: "Realtime agent connection test initiated. Check server logs for details.",
+      message: "Twilio WebSocket server status check",
       timestamp: new Date().toISOString(),
-      testCallId: 'test-call-123'
+      websocketServer: {
+        initialized: !!twilioWsServer,
+        activeConnections: connectionCount
+      },
+      environment: {
+        hostname: process.env.HOSTNAME || 'Not configured',
+        openaiApiKey: !!process.env.OPENAI_API_KEY
+      }
     });
     
   } catch (error) {
     console.error('[REALTIME TEST] Error:', error);
     res.status(500).json({
-      error: "Failed to initiate realtime agent connection",
+      error: "Failed to check WebSocket server status",
       message: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
     });
@@ -293,12 +289,25 @@ async function initializeRedis() {
 }
 
 // Start server
-const server = app.listen(PORT, async () => {
+const httpServer = http.createServer(app)
+
+// Create Twilio WebSocket server for real-time audio streaming
+let twilioWsServer: TwilioWebSocketServer | null = null
+
+const server = httpServer.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📊 Health check: http://localhost:${PORT}/health`)
   console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`)
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`)
+  
+  // Initialize Twilio WebSocket server for real-time audio streaming
+  try {
+    twilioWsServer = new TwilioWebSocketServer(httpServer)
+    console.log(`🔌 Twilio WebSocket server ready for real-time audio streaming`)
+  } catch (error) {
+    console.error('❌ Failed to initialize Twilio WebSocket server:', error)
+  }
   
   // Initialize Redis after server starts
   await initializeRedis()
@@ -309,11 +318,17 @@ process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully')
   
   try {
+    // Close Twilio WebSocket server
+    if (twilioWsServer) {
+      await twilioWsServer.close()
+      console.log('✅ Twilio WebSocket server closed')
+    }
+    
     const redisManager = RedisManager.getInstance()
     await redisManager.disconnect()
     console.log('✅ Redis disconnected')
   } catch (error) {
-    console.error('Error disconnecting Redis:', error)
+    console.error('Error during graceful shutdown:', error)
   }
   
   server.close(() => {
@@ -325,11 +340,17 @@ process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully')
   
   try {
+    // Close Twilio WebSocket server
+    if (twilioWsServer) {
+      await twilioWsServer.close()
+      console.log('✅ Twilio WebSocket server closed')
+    }
+    
     const redisManager = RedisManager.getInstance()
     await redisManager.disconnect()
     console.log('✅ Redis disconnected')
   } catch (error) {
-    console.error('Error disconnecting Redis:', error)
+    console.error('Error during graceful shutdown:', error)
   }
   
   server.close(() => {
@@ -337,4 +358,4 @@ process.on('SIGINT', async () => {
   })
 })
 
-export default app 
+export default app

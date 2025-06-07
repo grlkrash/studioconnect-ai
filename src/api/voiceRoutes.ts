@@ -924,34 +924,44 @@ async function processEnhancedMessage(
 
 
 
-// POST /incoming - Handle incoming Twilio voice calls (Ultra-Fast Response)
+// POST /incoming - Handle incoming Twilio voice calls (Real-time Media Stream)
 router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
   try {
-    console.log('[VOICE DEBUG] Incoming call received:', req.body.CallSid)
+    console.log('[VOICE STREAM] Incoming call received for real-time streaming:', req.body.CallSid)
     
-    // INSTANT response - no database queries, no AI processing
-    const twiml = new VoiceResponse()
+    // Create VoiceResponse for bidirectional media streaming
+    const response = new VoiceResponse()
+    const connect = response.connect()
     
-    // Immediately redirect to start-conversation to begin async processing
-    twiml.redirect({
-      method: 'POST'
-    }, '/api/voice/start-conversation')
+    // Configure WebSocket stream URL using environment variable
+    const hostname = process.env.HOSTNAME
+    if (!hostname) {
+      throw new Error('HOSTNAME environment variable is required for WebSocket streaming')
+    }
     
-    res.setHeader('Content-Type', 'application/xml')
-    res.send(twiml.toString())
+    const streamUrl = `wss://${hostname}/`
+    console.log('[VOICE STREAM] Connecting to WebSocket URL:', streamUrl)
     
-    console.log('[VOICE DEBUG] Sent immediate redirect for CallSid:', req.body.CallSid)
+    // Create stream connection to WebSocket server
+    connect.stream({
+      url: streamUrl
+    })
+    
+    res.type('text/xml')
+    res.send(response.toString())
+    
+    console.log('[VOICE STREAM] Successfully initiated media stream for CallSid:', req.body.CallSid)
     
   } catch (error) {
-    console.error('[VOICE DEBUG] Critical error in /incoming:', error)
+    console.error('[VOICE STREAM] Critical error in /incoming:', error)
     
-    // Ultra-simple fallback
-    const twiml = new VoiceResponse()
-    twiml.say({ voice: 'alice' }, 'Thank you for calling. Please hold while we connect you.')
-    twiml.redirect({ method: 'POST' }, '/api/voice/start-conversation')
+    // Fallback to basic response if streaming fails
+    const response = new VoiceResponse()
+    response.say({ voice: 'alice' }, 'Thank you for calling. We are experiencing technical difficulties. Please try calling back in a moment.')
+    response.hangup()
     
-    res.setHeader('Content-Type', 'application/xml')
-    res.send(twiml.toString())
+    res.type('text/xml')
+    res.send(response.toString())
   }
 })
 
