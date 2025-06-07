@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import twilio from 'twilio'
 import { PrismaClient } from '@prisma/client'
 import axios from 'axios'
@@ -25,6 +25,34 @@ const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 )
+
+// Custom Twilio request validation middleware
+const customValidateTwilioRequest = (req: Request, res: Response, next: NextFunction) => {
+  // Only validate in production
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioSignature = req.header('X-Twilio-Signature');
+  // Construct the full URL, which is more reliable on platforms like Render
+  const url = new URL(req.originalUrl, `https://${req.header('host')}`).toString();
+  const params = req.body;
+
+  try {
+    const isValid = twilio.validateRequest(authToken!, twilioSignature!, url, params);
+    if (isValid) {
+      console.log('[Twilio Validation] Signature is valid.');
+      return next();
+    }
+  } catch (e) {
+     console.error('[Twilio Validation] Error during validation:', e);
+     return res.status(403).send('Forbidden');
+  }
+  
+  console.warn('[Twilio Validation] Invalid signature.');
+  return res.status(403).send('Forbidden');
+};
 
 // Initialize voice session service
 const voiceSessionService = VoiceSessionService.getInstance()
@@ -863,17 +891,10 @@ async function processEnhancedMessage(
   }
 }
 
-// Twilio request validation middleware for enhanced security
-// Using Twilio's built-in webhook middleware with proper validation configuration
-const shouldValidateWebhook = process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'development'
-const validateTwilioRequest = twilio.webhook({ 
-  validate: shouldValidateWebhook,
-  // Custom logging for better security monitoring
-  authToken: process.env.TWILIO_AUTH_TOKEN
-})
+
 
 // POST /incoming - Handle incoming Twilio voice calls
-router.post('/incoming', validateTwilioRequest, async (req, res) => {
+router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
   try {
     console.log('[VOICE DEBUG] Incoming Twilio request body:', req.body)
     
@@ -1004,7 +1025,7 @@ router.post('/incoming', validateTwilioRequest, async (req, res) => {
 })
 
 // POST /handle-speech - Handle real-time speech input from Twilio Gather (Async Version)
-router.post('/handle-speech', validateTwilioRequest, async (req, res) => {
+router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
   try {
     console.log('[VOICE DEBUG] Handle speech request body:', req.body)
     
@@ -1343,7 +1364,7 @@ router.post('/handle-speech', validateTwilioRequest, async (req, res) => {
 })
 
 // POST /handle-voicemail-recording - Future endpoint for processing voicemail messages
-router.post('/handle-voicemail-recording', validateTwilioRequest, async (req, res) => {
+router.post('/handle-voicemail-recording', customValidateTwilioRequest, async (req, res) => {
   try {
     console.log('[VOICEMAIL DEBUG] Handle voicemail recording request body:', req.body)
     
@@ -1403,7 +1424,7 @@ router.post('/handle-voicemail-recording', validateTwilioRequest, async (req, re
 })
 
 // POST /continue-conversation - Play AI response and continue conversation loop (Enhanced)
-router.post('/continue-conversation', validateTwilioRequest, async (req, res) => {
+router.post('/continue-conversation', customValidateTwilioRequest, async (req, res) => {
   try {
     console.log('[CONTINUE CONVERSATION] Request received')
     
