@@ -1253,7 +1253,7 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         conversationHistory.push({ role: 'assistant', content: aiResponse.reply })
         
         // Update session with new history
-        await updateVoiceSession(callSid, conversationHistory, aiResponse.currentFlow)
+        await updateVoiceSession(callSid, conversationHistory, aiResponse.currentFlow ?? null)
         
         // Add enhanced session tracking
         await addEnhancedMessage(callSid, 'user', speechResult, {
