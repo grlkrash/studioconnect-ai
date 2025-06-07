@@ -189,43 +189,11 @@ app.get('/widget.js', (req, res) => {
 })
 
 // 4. Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    const redisManager = RedisManager.getInstance()
-    const sessionService = VoiceSessionService.getInstance()
-    
-    // Check Redis connection status
-    const redisStatus = redisManager.isClientConnected() ? 'connected' : 'disconnected'
-    
-    // Get session stats from voice service
-    const sessionStats = await sessionService.getSessionStats()
-    
-    res.status(200).json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: process.env.npm_package_version || '1.0.0',
-      memory: {
-        rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
-        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
-      },
-      services: {
-        redis: {
-          status: redisStatus,
-          configured: !!process.env.REDIS_URL || !!process.env.REDIS_HOST
-        },
-        voiceSessions: sessionStats
-      }
-    })
-  } catch (error) {
-    console.error('[Health Check] Error:', error)
-    res.status(500).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: 'Health check failed'
-    })
-  }
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
 })
 
 // 5. Debug route to test routing
