@@ -1134,17 +1134,31 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
           }
         })
         
-        // Retrieve session state
+        // DIAGNOSTIC TEST: Bypass complex AI processing to isolate timeout issue
+        console.log('[AI PROCESSING] Bypassing AI Handler for diagnostic test.')
+        
+        // Retrieve session state for diagnostic test
         const session = await getVoiceSession(callSid)
         let currentConversationHistory = session.history
         let currentActiveFlow = session.currentFlow
         
+        // Update conversation history with user's message
+        currentConversationHistory.push({ role: 'user', content: transcribedText })
+        
+        const aiResponse = {
+          reply: 'This is a test. The background process is working correctly.',
+          nextVoiceAction: 'CONTINUE'
+        }
+        console.log('[AI PROCESSING] Using hardcoded test response:', aiResponse.reply)
+        
+        // Update conversation history with AI's response
+        currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
+        
+        // COMMENTED OUT FOR DIAGNOSTIC TEST - Complex AI processing logic
+        /*
         if (ENABLE_VERBOSE_LOGGING) {
           logMemoryUsage('Processing Speech Input')
         }
-        
-        // Update conversation history with user's message
-        currentConversationHistory.push({ role: 'user', content: transcribedText })
         
         // Process with AI handler using full context
         console.log('[AI PROCESSING] Calling AI Handler...')
@@ -1156,15 +1170,6 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
           callSid
         )
         console.log('[AI PROCESSING] AI Handler returned reply:', aiResponse.reply)
-        
-        // Update conversation history with AI's response
-        currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
-        
-        // Update current active flow based on AI response
-        currentActiveFlow = aiResponse.currentFlow || null
-        
-        // Save updated session state
-        await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
         
         // Add enhanced session data
         await addEnhancedMessage(callSid, 'user', transcribedText, {
@@ -1187,6 +1192,7 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
         if (aiResponse.intent && aiResponse.confidence) {
           await voiceSessionService.addIntent(callSid, aiResponse.intent, aiResponse.confidence, transcribedText)
         }
+        */
         
         // Determine voice configuration from agentConfig
         const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
