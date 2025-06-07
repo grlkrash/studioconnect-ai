@@ -172,6 +172,9 @@ router.post('/config', authMiddleware, async (req, res) => {
       voiceCompletionMessage,
       voiceEmergencyMessage,
       voiceEndCallMessage,
+      useOpenaiTts,
+      openaiVoice,
+      openaiModel,
       twilioVoice,
       twilioLanguage
     } = req.body
@@ -200,6 +203,9 @@ router.post('/config', authMiddleware, async (req, res) => {
           voiceCompletionMessage: voiceCompletionMessage || null,
           voiceEmergencyMessage: voiceEmergencyMessage || null,
           voiceEndCallMessage: voiceEndCallMessage || null,
+          useOpenaiTts: useOpenaiTts !== undefined ? Boolean(useOpenaiTts) : true,
+          openaiVoice: openaiVoice || 'nova',
+          openaiModel: openaiModel || 'tts-1',
           twilioVoice: twilioVoice || 'alice',
           twilioLanguage: twilioLanguage || 'en-US'
         }

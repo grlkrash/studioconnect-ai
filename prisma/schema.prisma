@@ -59,6 +59,9 @@ model AgentConfig {
   voiceGreetingMessage         String?
   twilioLanguage               String                @default("en-US")
   twilioVoice                  String                @default("alice")
+  openaiVoice                  String                @default("nova")
+  useOpenaiTts                 Boolean               @default(true)
+  openaiModel                  String                @default("tts-1")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 

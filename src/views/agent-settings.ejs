@@ -268,6 +268,68 @@
                     </small>
                 </div>
                 
+                <!-- Voice Technology Selection -->
+                <div style="border-top: 1px solid #e5e7eb; margin-top: 20px; padding-top: 20px;">
+                    <h3 style="color: #333; font-size: 18px; margin-bottom: 15px;">🎵 Voice Technology</h3>
+                    
+                    <div class="form-group">
+                        <label for="useOpenaiTts">
+                            <input 
+                                type="checkbox" 
+                                id="useOpenaiTts" 
+                                name="useOpenaiTts" 
+                                <%= (agentConfig && agentConfig.useOpenaiTts !== false) ? 'checked' : '' %>
+                                style="margin-right: 8px;"
+                            />
+                            Use OpenAI Text-to-Speech (Recommended)
+                        </label>
+                        <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                            OpenAI TTS provides more natural, human-like voices. Unchecking will use Twilio's text-to-speech as fallback.
+                        </small>
+                    </div>
+                    
+                    <div id="openaiVoiceSection" class="form-group">
+                        <label for="openaiVoice">OpenAI Voice:</label>
+                        <select 
+                            id="openaiVoice" 
+                            name="openaiVoice"
+                            style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                        >
+                            <option value="alloy" <%= (agentConfig && agentConfig.openaiVoice === 'alloy') ? 'selected' : '' %>>Alloy (Neutral, Professional)</option>
+                            <option value="echo" <%= (agentConfig && agentConfig.openaiVoice === 'echo') ? 'selected' : '' %>>Echo (Clear, Articulate)</option>
+                            <option value="fable" <%= (agentConfig && agentConfig.openaiVoice === 'fable') ? 'selected' : '' %>>Fable (Warm, Expressive)</option>
+                            <option value="onyx" <%= (agentConfig && agentConfig.openaiVoice === 'onyx') ? 'selected' : '' %>>Onyx (Deep, Authoritative)</option>
+                            <option value="nova" <%= (agentConfig && agentConfig.openaiVoice === 'nova') ? 'selected' : ((!agentConfig || !agentConfig.openaiVoice) ? 'selected' : '') %>>Nova (Friendly, Natural) - Default</option>
+                            <option value="shimmer" <%= (agentConfig && agentConfig.openaiVoice === 'shimmer') ? 'selected' : '' %>>Shimmer (Energetic, Upbeat)</option>
+                        </select>
+                        <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                            Choose the OpenAI voice for natural, human-like speech. Nova is recommended for most business use cases.
+                        </small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="openaiModel">OpenAI TTS Model:</label>
+                        <select 
+                            id="openaiModel" 
+                            name="openaiModel"
+                            style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                        >
+                            <option value="tts-1" <%= (agentConfig && agentConfig.openaiModel === 'tts-1') ? 'selected' : ((!agentConfig || !agentConfig.openaiModel) ? 'selected' : '') %>>TTS-1 (Standard, Fast)</option>
+                            <option value="tts-1-hd" <%= (agentConfig && agentConfig.openaiModel === 'tts-1-hd') ? 'selected' : '' %>>TTS-1-HD (High Quality, Slower)</option>
+                        </select>
+                        <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                            TTS-1 is faster and suitable for real-time applications. TTS-1-HD provides higher quality audio.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Fallback Twilio Configuration -->
+                <div id="twilioVoiceSection" style="border-top: 1px solid #e5e7eb; margin-top: 20px; padding-top: 20px;">
+                    <h3 style="color: #333; font-size: 18px; margin-bottom: 15px;">📞 Twilio Fallback Configuration</h3>
+                    <small style="color: #6b7280; font-size: 13px; margin-bottom: 15px; display: block;">
+                        These settings are used when OpenAI TTS is unavailable or disabled.
+                    </small>
+                
                 <div class="form-group">
                     <label for="twilioVoice">Twilio Voice:</label>
                     <select 
@@ -329,7 +391,7 @@
                         </optgroup>
                     </select>
                     <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        Select the voice to use for Twilio voice calls. Generative voices offer the most natural and human-like speech quality, while Premium voices (Polly) provide enhanced clarity over Standard voices.
+                        Select the voice to use for Twilio voice calls when OpenAI TTS is unavailable.
                     </small>
                 </div>
                 
@@ -355,7 +417,7 @@
                         Select the language and locale for Twilio voice calls.
                     </small>
                 </div>
-            </div>
+                </div>
             <% } %>
             
             <div class="color-input-group">
@@ -420,6 +482,11 @@
             const voiceEmergencyMessage = document.getElementById('voiceEmergencyMessage')?.value || '';
             const voiceEndCallMessage = document.getElementById('voiceEndCallMessage')?.value || '';
             
+            // Get OpenAI TTS configuration values (if PRO plan)
+            const useOpenaiTts = document.getElementById('useOpenaiTts')?.checked || false;
+            const openaiVoice = document.getElementById('openaiVoice')?.value || 'nova';
+            const openaiModel = document.getElementById('openaiModel')?.value || 'tts-1';
+            
             // Get Twilio configuration values (if PRO plan)
             const twilioVoice = document.getElementById('twilioVoice')?.value || 'alice';
             const twilioLanguage = document.getElementById('twilioLanguage')?.value || 'en-US';
@@ -441,6 +508,9 @@
                 voiceCompletionMessage,
                 voiceEmergencyMessage,
                 voiceEndCallMessage,
+                useOpenaiTts,
+                openaiVoice,
+                openaiModel,
                 twilioVoice,
                 twilioLanguage
             };
@@ -481,6 +551,39 @@
                 formFeedback.style.display = 'block';
             }
         });
+        
+        // Handle OpenAI TTS checkbox toggle (if PRO plan)
+        const useOpenaiTtsCheckbox = document.getElementById('useOpenaiTts');
+        const openaiVoiceSection = document.getElementById('openaiVoiceSection');
+        const twilioVoiceSection = document.getElementById('twilioVoiceSection');
+        
+        if (useOpenaiTtsCheckbox) {
+            function toggleVoiceSections() {
+                const isOpenaiEnabled = useOpenaiTtsCheckbox.checked;
+                
+                // Show/hide OpenAI voice section
+                if (openaiVoiceSection) {
+                    openaiVoiceSection.style.display = isOpenaiEnabled ? 'flex' : 'none';
+                }
+                
+                // Update Twilio section visibility and styling
+                if (twilioVoiceSection) {
+                    if (isOpenaiEnabled) {
+                        twilioVoiceSection.style.opacity = '0.6';
+                        twilioVoiceSection.style.pointerEvents = 'none';
+                    } else {
+                        twilioVoiceSection.style.opacity = '1';
+                        twilioVoiceSection.style.pointerEvents = 'auto';
+                    }
+                }
+            }
+            
+            // Initial state
+            toggleVoiceSections();
+            
+            // Handle checkbox changes
+            useOpenaiTtsCheckbox.addEventListener('change', toggleVoiceSections);
+        }
     </script>
 </body>
 </html> 

@@ -640,16 +640,26 @@ async function generateAndPlayTTS(
   twimlResponse: typeof VoiceResponse.prototype, 
   openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
   fallbackTwilioVoice: any = 'alice',
-  fallbackLanguage: any = 'en-US'
+  fallbackLanguage: any = 'en-US',
+  useOpenaiTts: boolean = true,
+  openaiModel: 'tts-1' | 'tts-1-hd' = 'tts-1'
 ): Promise<void> {
   if (!text || text.trim() === '') {
-    console.warn('[OpenAI TTS] Empty text provided, skipping TTS generation');
+    console.warn('[TTS] Empty text provided, skipping TTS generation');
+    return;
+  }
+
+  // If OpenAI TTS is disabled, use Twilio TTS directly
+  if (!useOpenaiTts) {
+    console.log('[TTS] OpenAI TTS disabled, using Twilio TTS directly');
+    const twilioMessage = createSSMLMessage(text, { isConversational: true });
+    twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, twilioMessage);
     return;
   }
 
   try {
-    // Generate OpenAI TTS audio
-    const tempAudioPath = await generateSpeechFromText(text, openaiVoice);
+    // Generate OpenAI TTS audio with specified model
+    const tempAudioPath = await generateSpeechFromText(text, openaiVoice, openaiModel);
     
     if (tempAudioPath) {
       // Extract filename and construct public URL
@@ -960,7 +970,9 @@ router.post('/handle-speech', async (req, res) => {
         twiml,
         'nova',
         voiceToUse,
-        languageToUse
+        languageToUse,
+        true, // useOpenaiTts
+        'tts-1' // openaiModel
       );
       
       // Continue the conversation loop with another gather
@@ -1047,23 +1059,14 @@ router.post('/handle-speech', async (req, res) => {
     // Create TwiML response
     const twimlResponse = new VoiceResponse()
     
-    // Determine OpenAI voice based on agentConfig
-    let openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+    // Determine voice configuration from agentConfig
+    const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
+    const openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 
+      (agentConfig?.openaiVoice as any) || 'nova'
+    const openaiModel: 'tts-1' | 'tts-1-hd' = 
+      (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
     
-    if (agentConfig?.twilioVoice) {
-      const twilioVoice = agentConfig.twilioVoice.toLowerCase()
-      if (twilioVoice.includes('female') || twilioVoice.includes('woman') || twilioVoice.includes('alice')) {
-        openaiVoice = 'nova'
-      } else if (twilioVoice.includes('male') || twilioVoice.includes('man')) {
-        openaiVoice = 'onyx'
-      } else if (twilioVoice.includes('young') || twilioVoice.includes('energetic')) {
-        openaiVoice = 'shimmer'
-      } else if (twilioVoice.includes('professional') || twilioVoice.includes('business')) {
-        openaiVoice = 'alloy'
-      }
-    }
-    
-    console.log(`[OpenAI TTS] Using voice: ${openaiVoice}`)
+    console.log(`[Voice Config] OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
     
     // Generate AI response
     if (aiResponse && aiResponse.reply) {
@@ -1072,7 +1075,9 @@ router.post('/handle-speech', async (req, res) => {
         twimlResponse, 
         openaiVoice, 
         voiceToUse, 
-        languageToUse
+        languageToUse,
+        useOpenaiTts,
+        openaiModel
       );
     } else {
       await generateAndPlayTTS(
@@ -1080,7 +1085,9 @@ router.post('/handle-speech', async (req, res) => {
         twimlResponse,
         openaiVoice,
         voiceToUse,
-        languageToUse
+        languageToUse,
+        useOpenaiTts,
+        openaiModel
       );
     }
     
@@ -1122,7 +1129,9 @@ router.post('/handle-speech', async (req, res) => {
           twimlResponse,
           openaiVoice,
           voiceToUse,
-          languageToUse
+          languageToUse,
+          useOpenaiTts,
+          openaiModel
         );
         twimlResponse.hangup()
         await clearVoiceSession(callSid)
@@ -1135,7 +1144,9 @@ router.post('/handle-speech', async (req, res) => {
           twimlResponse,
           openaiVoice,
           voiceToUse,
-          languageToUse
+          languageToUse,
+          useOpenaiTts,
+          openaiModel
         );
         twimlResponse.hangup()
         await clearVoiceSession(callSid)
@@ -1166,7 +1177,9 @@ router.post('/handle-speech', async (req, res) => {
       twiml,
       'nova',
       'alice',
-      'en-US'
+      'en-US',
+      true, // useOpenaiTts
+      'tts-1' // openaiModel
     );
     twiml.hangup()
     
@@ -1202,7 +1215,9 @@ router.post('/handle-voicemail-recording', async (req, res) => {
       twiml,
       'nova', // Default voice
       'alice', // Fallback Twilio voice
-      'en-US' // Fallback language
+      'en-US', // Fallback language
+      true, // useOpenaiTts
+      'tts-1' // openaiModel
     );
     twiml.hangup()
     
@@ -1222,7 +1237,9 @@ router.post('/handle-voicemail-recording', async (req, res) => {
       twiml,
       'nova', // Default voice
       'alice', // Fallback Twilio voice
-      'en-US' // Fallback language
+      'en-US', // Fallback language
+      true, // useOpenaiTts
+      'tts-1' // openaiModel
     );
     twiml.hangup()
     

@@ -109,21 +109,23 @@ export const getTranscription = async (
  * Generates speech from text using OpenAI's Text-to-Speech API.
  * @param textToSpeak The text to convert to speech.
  * @param voice The voice to use for speech generation.
+ * @param model The TTS model to use (tts-1 or tts-1-hd).
  * @returns A promise that resolves to the path of the generated audio file or null if generation fails.
  */
 export const generateSpeechFromText = async (
   textToSpeak: string,
-  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
+  model: 'tts-1' | 'tts-1-hd' = 'tts-1'
 ): Promise<string | null> => {
   if (!textToSpeak || textToSpeak.trim().length === 0) {
     console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
     return null;
   }
-  console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..."`);
+  console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..." using model: ${model}`);
   
   try {
     const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
+      model: model,
       voice: voice,
       input: textToSpeak,
     });
