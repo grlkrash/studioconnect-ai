@@ -96,6 +96,17 @@ app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
+// Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
+app.post('/test-voice', (req, res) => {
+  console.log('[VOICE TEST] The /test-voice endpoint was successfully reached.');
+  const VoiceResponse = require('twilio').twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+  twiml.say('Test successful. The server is responding correctly.');
+  twiml.hangup();
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, '../views'))
