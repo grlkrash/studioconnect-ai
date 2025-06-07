@@ -1,4 +1,14 @@
 import WebSocket from 'ws';
+import twilio from 'twilio';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+// Initialize Twilio REST client for fetching call details
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
 /**
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
@@ -69,6 +79,7 @@ export class RealtimeAgentService {
     // Handle Twilio connection errors
     this.twilioWs.on('error', (error: Error) => {
       console.error(`[RealtimeAgent] Twilio WebSocket error for call ${this.callSid}:`, error);
+      this.disconnect();
     });
 
     // Handle Twilio connection close
@@ -90,6 +101,13 @@ export class RealtimeAgentService {
       
       // Send initial session configuration
       this.configureOpenAiSession();
+      
+      // Trigger the greeting after session is configured
+      setTimeout(() => {
+        this.triggerGreeting().catch(error => {
+          console.error(`[RealtimeAgent] Failed to trigger greeting for call ${this.callSid}:`, error);
+        });
+      }, 500);
     });
 
     // Message received from OpenAI
@@ -100,6 +118,7 @@ export class RealtimeAgentService {
     // Connection error occurred
     this.openAiWs.on('error', (error: Error) => {
       console.error(`[RealtimeAgent] OpenAI WebSocket error for call ${this.callSid}:`, error);
+      this.disconnect();
     });
 
     // Connection closed
@@ -135,6 +154,18 @@ export class RealtimeAgentService {
               audio: msg.media.payload
             };
             this.openAiWs.send(JSON.stringify(audioAppend));
+          }
+          
+          // **CRITICAL**: Send mark message back to Twilio to keep audio stream alive
+          if (this.twilioWs && this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+            const markMessage = {
+              event: 'mark',
+              streamSid: this.streamSid,
+              mark: {
+                name: `audio_processed_${Date.now()}`
+              }
+            };
+            this.twilioWs.send(JSON.stringify(markMessage));
           }
           break;
           
@@ -181,6 +212,23 @@ export class RealtimeAgentService {
           console.log(`[RealtimeAgent] OpenAI audio response completed for call ${this.callSid}`);
           break;
           
+        case 'input_audio_buffer.speech_started':
+          console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
+          // Optionally interrupt any ongoing AI speech
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_stopped':
+          console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
+          // Commit the audio buffer and request a response
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+          break;
+          
         case 'error':
           console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}:`, response.error);
           break;
@@ -205,7 +253,7 @@ export class RealtimeAgentService {
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries.',
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
         voice: 'alloy',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
@@ -216,13 +264,116 @@ export class RealtimeAgentService {
           type: 'server_vad',
           threshold: 0.5,
           prefix_padding_ms: 300,
-          silence_duration_ms: 200
+          silence_duration_ms: 500
         }
       }
     };
 
     this.openAiWs.send(JSON.stringify(sessionConfig));
     console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid}`);
+  }
+
+  /**
+   * Proactively triggers the agent's welcome message by fetching business config
+   * and sending a text event to OpenAI to make the agent speak
+   */
+  private async triggerGreeting(): Promise<void> {
+    try {
+      console.log(`[RealtimeAgent] Triggering greeting for call ${this.callSid}`);
+      
+      // Fetch call details from Twilio to get the phone numbers
+      const callDetails = await twilioClient.calls(this.callSid).fetch();
+      const toPhoneNumber = callDetails.to;
+      
+      console.log(`[RealtimeAgent] Call made to phone number: ${toPhoneNumber}`);
+      
+      // Find business by Twilio phone number
+      let business = null;
+      let agentConfig = null;
+      let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
+      
+      if (toPhoneNumber) {
+        business = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: toPhoneNumber }
+        });
+        
+        if (business) {
+          console.log(`[RealtimeAgent] Found business: ${business.name}`);
+          
+          // Get agent configuration
+          agentConfig = await prisma.agentConfig.findUnique({
+            where: { businessId: business.id }
+          });
+          
+          // Determine welcome message
+          if (agentConfig?.voiceGreetingMessage?.trim()) {
+            welcomeMessage = agentConfig.voiceGreetingMessage;
+            console.log(`[RealtimeAgent] Using custom voice greeting`);
+          } else if (agentConfig?.welcomeMessage?.trim()) {
+            welcomeMessage = agentConfig.welcomeMessage;
+            console.log(`[RealtimeAgent] Using general welcome message`);
+          }
+        } else {
+          console.log(`[RealtimeAgent] No business found for phone: ${toPhoneNumber}, using default greeting`);
+        }
+      }
+      
+      // Send text event to OpenAI to make the agent speak the welcome message
+      if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+        const textEvent = {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+              }
+            ]
+          }
+        };
+        
+        this.openAiWs.send(JSON.stringify(textEvent));
+        
+        // Trigger response creation
+        setTimeout(() => {
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+        }, 100);
+        
+        console.log(`[RealtimeAgent] Greeting triggered for call ${this.callSid}: "${welcomeMessage}"`);
+      }
+      
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error triggering greeting for call ${this.callSid}:`, error);
+      
+      // Fallback to default greeting if there's an error
+      if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+        const fallbackEvent = {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Please say: "Hello! Thank you for calling. How can I help you today?"'
+              }
+            ]
+          }
+        };
+        
+        this.openAiWs.send(JSON.stringify(fallbackEvent));
+        
+        setTimeout(() => {
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+        }, 100);
+      }
+    }
   }
 
   /**
@@ -236,7 +387,7 @@ export class RealtimeAgentService {
 
     try {
       this.openAiWs.send(JSON.stringify(message));
-      console.log(`[RealtimeAgent] Message sent to OpenAI for call ${this.callSid}:`, message);
+      console.log(`[RealtimeAgent] Message sent to OpenAI for call ${this.callSid}:`, message.type);
     } catch (error) {
       console.error(`[RealtimeAgent] Failed to send message to OpenAI for call ${this.callSid}:`, error);
     }
