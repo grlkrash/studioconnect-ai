@@ -660,12 +660,12 @@ async function generateAndPlayTTS(
       twimlResponse.play(audioUrl);
     } else {
       // Fallback to Twilio TTS if OpenAI TTS fails
-      console.warn('[OpenAI TTS] Failed to generate audio, falling back to Twilio TTS');
+      console.warn(`[OpenAI TTS Fallback] generateSpeechFromText returned null. Falling back to Twilio TTS for text: "${text}"`);
       const fallbackMessage = createSSMLMessage(text, { isConversational: true });
       twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
     }
   } catch (error) {
-    console.error('[OpenAI TTS] Error generating speech:', error);
+    console.error(`[OpenAI TTS Fallback] An exception occurred in generateSpeechFromText. Falling back to Twilio TTS. Error:`, error);
     // Fallback to Twilio TTS
     const fallbackMessage = createSSMLMessage(text, { isConversational: true });
     twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
@@ -813,7 +813,7 @@ router.post('/incoming', async (req, res) => {
     
     // Create well-formed SSML welcome message wrapped in <speak> tags
     const finalWelcomeMessageSSML = 
-      `<speak><prosody rate="medium">Hey! <break time="300ms"/> Thank you for calling ${businessNameForSpeech}. <break time="300ms"/> Please tell me how I can help you after the beep. <break time="200ms"/> Recording will stop after 30 seconds of speech or a period of silence.</prosody></speak>`
+      `<speak><prosody rate="medium">Hey! <break time="300ms"/> Thank you for calling ${businessNameForSpeech}. <break time="300ms"/> How can I help you today?</prosody></speak>`
     
     console.log('[VOICE DEBUG] EXACT SSML STRING being passed to twiml.say():', finalWelcomeMessageSSML)
     console.log('[VOICE DEBUG] SSML string length:', finalWelcomeMessageSSML.length)
@@ -824,19 +824,18 @@ router.post('/incoming', async (req, res) => {
       language: 'en-US' 
     }, finalWelcomeMessageSSML)
     
-    // Start recording the caller's speech
-    twiml.record({
-      action: '/api/voice/handle-recording',
+    // Use gather() for real-time speech input instead of record()
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/api/voice/handle-speech',
       method: 'POST',
-      maxLength: 30,
-      playBeep: true,
-      transcribe: false,
-      timeout: 5
+      speechTimeout: 'auto',
+      timeout: 10
     })
     
-    // If no input is received after record timeout, provide fallback message
+    // If no input is received after gather timeout, provide fallback message
     const fallbackMessageSSML = 
-      `<speak>We didn't receive any input. <break time="300ms"/> If you still need help, please call back. <break time="200ms"/> Goodbye.</speak>`
+      `<speak>I didn't hear anything. <break time="300ms"/> If you still need help, please call back. <break time="200ms"/> Goodbye.</speak>`
     
     twiml.say({ 
       voice: 'alice', 
@@ -865,18 +864,18 @@ router.post('/incoming', async (req, res) => {
   }
 })
 
-// POST /handle-recording - Handle recorded audio from Twilio
-router.post('/handle-recording', async (req, res) => {
+// POST /handle-speech - Handle real-time speech input from Twilio Gather
+router.post('/handle-speech', async (req, res) => {
   try {
-    console.log('[VOICE DEBUG] Handle recording request body:', req.body)
+    console.log('[VOICE DEBUG] Handle speech request body:', req.body)
     
     // Extract data from Twilio request
-    const RecordingUrl = req.body.RecordingUrl
+    const SpeechResult = req.body.SpeechResult
     const Caller = req.body.From
     const TwilioNumberCalled = req.body.To
-    const callSid = req.body.CallSid // Extract CallSid for session management
+    const callSid = req.body.CallSid
     
-    console.log('[VOICE DEBUG] RecordingUrl:', RecordingUrl)
+    console.log('[VOICE DEBUG] SpeechResult:', SpeechResult)
     console.log('[VOICE DEBUG] Caller:', Caller)
     console.log('[VOICE DEBUG] TwilioNumberCalled:', TwilioNumberCalled)
     console.log('[VOICE DEBUG] CallSid:', callSid)
@@ -943,24 +942,42 @@ router.post('/handle-recording', async (req, res) => {
     // Retrieve session state
     const session = await getVoiceSession(callSid)
     let currentConversationHistory = session.history
-    let currentActiveFlow = session.currentFlow // Flow state before processing new message
+    let currentActiveFlow = session.currentFlow
     
     console.log('[VOICE DEBUG] Current session state:', { 
       historyLength: currentConversationHistory.length, 
       currentFlow: currentActiveFlow 
     })
     
-    // Check if recording URL is present
-    if (!RecordingUrl || RecordingUrl.trim() === '') {
-      console.log('[VOICE DEBUG] No recording URL found')
+    // Check if we have speech result from gather
+    if (!SpeechResult || SpeechResult.trim() === '') {
+      console.log('[VOICE DEBUG] No speech result found - gather timed out')
       const twiml = new VoiceResponse()
+      
+      // Give them another chance with a more encouraging message
       await generateAndPlayTTS(
-        'I didn\'t catch anything in that recording. Please call back if you need assistance. Thanks for calling!',
+        "I didn't hear a response. Is there anything else I can help with?",
         twiml,
-        'nova', // Default voice for error messages
+        'nova',
         voiceToUse,
         languageToUse
       );
+      
+      // Continue the conversation loop with another gather
+      const gather = twiml.gather({
+        input: 'speech',
+        action: '/api/voice/handle-speech',
+        method: 'POST',
+        speechTimeout: 'auto',
+        timeout: 10
+      })
+      
+      // Final fallback if still no response
+      const fallbackMessage = createSSMLMessage(
+        "Thank you for calling. Have a great day. Goodbye.",
+        { isConversational: true }
+      )
+      twiml.say({ voice: voiceToUse, language: languageToUse }, fallbackMessage)
       twiml.hangup()
       
       res.setHeader('Content-Type', 'application/xml')
@@ -968,414 +985,188 @@ router.post('/handle-recording', async (req, res) => {
       return
     }
     
-    // Download the audio file with proper cleanup
-    console.log('[VOICE DEBUG] Downloading audio from:', RecordingUrl)
+    // We have speech input - use it directly (no file download/transcription needed)
+    const transcribedText = SpeechResult
+    console.log('[VOICE DEBUG] Using speech result directly:', transcribedText)
+    
     if (ENABLE_VERBOSE_LOGGING) {
-      logMemoryUsage('Before Audio Download')
+      logMemoryUsage('Processing Speech Input')
     }
     
-    let tempFilePath: string | null = null;
+    // Update conversation history with user's message
+    currentConversationHistory.push({ role: 'user', content: transcribedText })
+    console.log('[VOICE DEBUG] Updated conversation history with user message')
     
-    try {
-      const response = await axios({
-        method: 'get',
-        url: RecordingUrl,
-        responseType: 'stream',
-        timeout: 30000, // 30 second timeout
-        auth: {
-          username: process.env.TWILIO_ACCOUNT_SID!,
-          password: process.env.TWILIO_AUTH_TOKEN!
-        }
-      })
-      
-      // Create temporary file path with unique identifier
-      tempFilePath = path.join(os.tmpdir(), `twilio_audio_${callSid}_${Date.now()}.wav`)
-      console.log('[VOICE DEBUG] Saving audio to:', tempFilePath)
-      
-      // Save the audio file with proper error handling and cleanup
-      const writeStream = fs.createWriteStream(tempFilePath)
-      let streamError: Error | null = null
-      
-      // Set up proper stream error handling
-      writeStream.on('error', (error) => {
-        streamError = error
-        console.error('[VOICE DEBUG] Write stream error:', error)
-      })
-      
-      response.data.on('error', (error: Error) => {
-        streamError = error
-        console.error('[VOICE DEBUG] Response stream error:', error)
-      })
-      
-      // Pipe the data
-      response.data.pipe(writeStream)
-      
-      // Wait for file to be written with timeout
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          writeStream.destroy()
-          reject(new Error('File write timeout'))
-        }, 30000) // 30 second timeout
-        
-        writeStream.on('finish', () => {
-          clearTimeout(timeout)
-          if (streamError) {
-            reject(streamError)
-          } else {
-            resolve()
-          }
+    // Process with AI handler using full context
+    console.log('[VOICE DEBUG] Processing message with AI handler...')
+    const aiResponse = await processEnhancedMessage(
+      transcribedText,
+      currentConversationHistory,
+      business.id,
+      currentActiveFlow,
+      callSid
+    )
+    
+    console.log('[Handle Speech] AI Handler response:', aiResponse)
+    
+    // Update conversation history with AI's response
+    currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
+    
+    // Update current active flow based on AI response
+    currentActiveFlow = aiResponse.currentFlow || null
+    
+    // Save updated session state
+    await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
+    console.log('[VOICE DEBUG] Updated session state:', { 
+      historyLength: currentConversationHistory.length, 
+      newFlow: currentActiveFlow 
+    })
+    
+    // Add enhanced session data
+    await addEnhancedMessage(callSid, 'user', transcribedText, {
+      entities: aiResponse.entities
+    })
+    
+    await addEnhancedMessage(callSid, 'assistant', aiResponse.reply, {
+      intent: aiResponse.intent,
+      confidence: aiResponse.confidence
+    })
+    
+    if (aiResponse.flowState) {
+      await updateSessionFlow(callSid, aiResponse.flowState)
+    }
+    
+    if (aiResponse.entities && Object.keys(aiResponse.entities).length > 0) {
+      await voiceSessionService.updateEntities(callSid, aiResponse.entities)
+    }
+    
+    if (aiResponse.intent && aiResponse.confidence) {
+      await voiceSessionService.addIntent(callSid, aiResponse.intent, aiResponse.confidence, transcribedText)
+    }
+    
+    // Create TwiML response
+    const twimlResponse = new VoiceResponse()
+    
+    // Determine OpenAI voice based on agentConfig
+    let openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+    
+    if (agentConfig?.twilioVoice) {
+      const twilioVoice = agentConfig.twilioVoice.toLowerCase()
+      if (twilioVoice.includes('female') || twilioVoice.includes('woman') || twilioVoice.includes('alice')) {
+        openaiVoice = 'nova'
+      } else if (twilioVoice.includes('male') || twilioVoice.includes('man')) {
+        openaiVoice = 'onyx'
+      } else if (twilioVoice.includes('young') || twilioVoice.includes('energetic')) {
+        openaiVoice = 'shimmer'
+      } else if (twilioVoice.includes('professional') || twilioVoice.includes('business')) {
+        openaiVoice = 'alloy'
+      }
+    }
+    
+    console.log(`[OpenAI TTS] Using voice: ${openaiVoice}`)
+    
+    // Generate AI response
+    if (aiResponse && aiResponse.reply) {
+      await generateAndPlayTTS(
+        aiResponse.reply, 
+        twimlResponse, 
+        openaiVoice, 
+        voiceToUse, 
+        languageToUse
+      );
+    } else {
+      await generateAndPlayTTS(
+        "I'm sorry, I encountered an issue. Let me try to help you differently.",
+        twimlResponse,
+        openaiVoice,
+        voiceToUse,
+        languageToUse
+      );
+    }
+    
+    // Handle next action based on AI response
+    const nextAction = aiResponse.nextVoiceAction || 'HANGUP'
+    console.log('[VOICE DEBUG] Next voice action determined:', nextAction)
+    
+    switch (nextAction) {
+      case 'CONTINUE':
+        // Continue conversation with another gather
+        const continueGather = twimlResponse.gather({
+          input: 'speech',
+          action: '/api/voice/handle-speech',
+          method: 'POST',
+          speechTimeout: 'auto',
+          timeout: 10
         })
         
-        writeStream.on('error', (error) => {
-          clearTimeout(timeout)
-          reject(error)
-        })
-      })
-      
-      console.log('[VOICE DEBUG] Audio file saved successfully')
-      if (ENABLE_VERBOSE_LOGGING) {
-        logMemoryUsage('After Audio Download')
-      }
-      
-      // Transcribe the audio
-      let transcribedText: string | null
-      try {
-        console.log('[VOICE DEBUG] Starting transcription...')
-        transcribedText = await getTranscription(tempFilePath)
-        console.log('[VOICE DEBUG] Transcription result:', transcribedText)
-        if (ENABLE_VERBOSE_LOGGING) {
-          logMemoryUsage('After Transcription')
-        }
-      } catch (transcriptionError) {
-        console.error('[VOICE DEBUG] Transcription failed:', transcriptionError)
-        
-        // Clean up temp file before returning
-        await cleanupTempFile(tempFilePath)
-        
-        const twiml = new VoiceResponse()
+        // Fallback if no response
+        const continueMessage = createSSMLMessage(
+          "Thank you for calling. Have a great day. Goodbye.",
+          { isConversational: true }
+        )
+        twimlResponse.say({ voice: voiceToUse, language: languageToUse }, continueMessage)
+        twimlResponse.hangup()
+        break
+
+      case 'HANGUP':
+        // End the call gracefully
+        twimlResponse.hangup()
+        await clearVoiceSession(callSid)
+        console.log('[VOICE DEBUG] Call ended with HANGUP action, session cleared for CallSid:', callSid)
+        break
+
+      case 'TRANSFER':
+        // TODO: Implement transfer logic
         await generateAndPlayTTS(
-          'I had trouble understanding. Could you please try again or call back later?',
-          twiml,
-          'nova', // Default voice for error messages
-          voiceToUse,
-          languageToUse
-        );
-        twiml.hangup()
-        
-        res.setHeader('Content-Type', 'application/xml')
-        res.send(twiml.toString())
-        return
-      }
-      
-      // Clean up temp file after successful transcription
-      await cleanupTempFile(tempFilePath)
-      
-      // Check if transcription is empty
-      if (!transcribedText || transcribedText.trim() === '') {
-        console.log('[VOICE DEBUG] Empty transcription result')
-        const twiml = new VoiceResponse()
-        await generateAndPlayTTS(
-          'I had trouble understanding. Could you please try again or call back later?',
-          twiml,
-          'nova', // Default voice for error messages
-          voiceToUse,
-          languageToUse
-        );
-        twiml.hangup()
-        
-        res.setHeader('Content-Type', 'application/xml')
-        res.send(twiml.toString())
-        return
-      }
-      
-      // Update conversation history with user's message
-      currentConversationHistory.push({ role: 'user', content: transcribedText })
-      console.log('[VOICE DEBUG] Updated conversation history with user message')
-      
-      // Process with AI handler using full context
-      console.log('[VOICE DEBUG] Processing message with AI handler...')
-      const aiResponse = await processEnhancedMessage(
-        transcribedText, // The latest transcribed message
-        currentConversationHistory, // Full conversation history
-        business.id,
-        currentActiveFlow, // Current flow state before this turn
-        callSid // Add the missing callSid parameter
-      )
-      
-      console.log('[Handle Recording] AI Handler response:', aiResponse)
-      
-      // Update conversation history with AI's response
-      currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
-      
-      // Update current active flow based on AI response
-      currentActiveFlow = aiResponse.currentFlow || null
-      
-      // Save updated session state
-      await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
-      console.log('[VOICE DEBUG] Updated session state:', { 
-        historyLength: currentConversationHistory.length, 
-        newFlow: currentActiveFlow 
-      })
-      
-      // After successful AI processing, update session with enhanced data
-      console.log('[VOICE DEBUG] AI Response with enhanced data:', {
-        intent: aiResponse.intent,
-        confidence: aiResponse.confidence,
-        entitiesFound: Object.keys(aiResponse.entities || {}).length,
-        flowState: aiResponse.flowState,
-        nextVoiceAction: aiResponse.nextVoiceAction
-      })
-      
-      // Add user message with extracted entities and intent
-      await addEnhancedMessage(callSid, 'user', transcribedText, {
-        entities: aiResponse.entities
-      })
-      
-      // Add AI response with intent information
-      await addEnhancedMessage(callSid, 'assistant', aiResponse.reply, {
-        intent: aiResponse.intent,
-        confidence: aiResponse.confidence
-      })
-      
-      // Update session flow state if provided
-      if (aiResponse.flowState) {
-        await updateSessionFlow(callSid, aiResponse.flowState)
-      }
-      
-      // Update entities in session
-      if (aiResponse.entities && Object.keys(aiResponse.entities).length > 0) {
-        await voiceSessionService.updateEntities(callSid, aiResponse.entities)
-      }
-      
-      // Add intent to session if identified
-      if (aiResponse.intent && aiResponse.confidence) {
-        await voiceSessionService.addIntent(callSid, aiResponse.intent, aiResponse.confidence, transcribedText)
-      }
-      
-      // Update legacy session for backwards compatibility
-      currentConversationHistory.push({ role: 'user', content: transcribedText })
-      currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
-      currentActiveFlow = aiResponse.currentFlow || null
-      
-      await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
-      
-      // Create TwiML response using nextVoiceAction for dynamic generation
-      const twimlResponse = new VoiceResponse()
-      
-      // Determine OpenAI voice based on agentConfig or use default
-      // For now, we'll map some common Twilio voices to OpenAI voices
-      let openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
-      
-      if (agentConfig?.twilioVoice) {
-        const twilioVoice = agentConfig.twilioVoice.toLowerCase()
-        if (twilioVoice.includes('female') || twilioVoice.includes('woman') || twilioVoice.includes('alice')) {
-          openaiVoice = 'nova' // Natural, conversational female voice
-        } else if (twilioVoice.includes('male') || twilioVoice.includes('man')) {
-          openaiVoice = 'onyx' // Natural male voice
-        } else if (twilioVoice.includes('young') || twilioVoice.includes('energetic')) {
-          openaiVoice = 'shimmer' // Energetic, youthful voice
-        } else if (twilioVoice.includes('professional') || twilioVoice.includes('business')) {
-          openaiVoice = 'alloy' // Professional, balanced voice
-        }
-      }
-      
-      console.log(`[OpenAI TTS] Using voice: ${openaiVoice} (based on Twilio config: ${agentConfig?.twilioVoice || 'default'})`)
-      
-      if (aiResponse && aiResponse.reply) {
-        // Generate OpenAI TTS for the main AI response
-        await generateAndPlayTTS(
-          aiResponse.reply, 
-          twimlResponse, 
-          openaiVoice, 
-          voiceToUse, 
-          languageToUse
-        );
-      } else {
-        // Fallback message if no AI response
-        await generateAndPlayTTS(
-          "I'm sorry, I encountered an issue. Let me try to help you differently.",
+          "I apologize, but our transfer system isn't configured yet. Please call our main number directly for immediate assistance.",
           twimlResponse,
           openaiVoice,
           voiceToUse,
           languageToUse
         );
-      }
-      
-      // Use switch statement on nextVoiceAction for dynamic TwiML generation
-      const nextAction = aiResponse.nextVoiceAction || 'HANGUP' // Default to HANGUP if not specified
-      console.log('[VOICE DEBUG] Next voice action determined:', nextAction)
-      
-      switch (nextAction) {
-        case 'CONTINUE':
-          // Continue conversation - prompt for more input with natural conversational flow
-          await generateAndPlayTTS(
-            "What else can I help you with? Or, say 'goodbye' to end the call.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          
-          twimlResponse.record({
-            action: '/api/voice/handle-recording',
-            method: 'POST',
-            maxLength: 30,
-            playBeep: true,
-            timeout: 7, // Seconds of silence before completing recording
-            transcribe: false
-          })
-          
-          // Fallback if no response with conversational flow
-          await generateAndPlayTTS(
-            "We did not receive any input. Thank you for calling. Goodbye.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          twimlResponse.hangup()
-          break
+        twimlResponse.hangup()
+        await clearVoiceSession(callSid)
+        break
 
-        case 'HANGUP':
-          // End the call gracefully and clear session
-          await generateAndPlayTTS(
-            "Thank you for calling. We'll be in touch soon. Goodbye.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          twimlResponse.hangup()
-          
-          // Clear session for ended call
-          await clearVoiceSession(callSid)
-          console.log('[VOICE DEBUG] Call ended with HANGUP action, session cleared for CallSid:', callSid)
-          break
+      case 'VOICEMAIL':
+        // TODO: Implement voicemail logic
+        await generateAndPlayTTS(
+          "Thank you for your message. Our team will review it and get back to you as soon as possible.",
+          twimlResponse,
+          openaiVoice,
+          voiceToUse,
+          languageToUse
+        );
+        twimlResponse.hangup()
+        await clearVoiceSession(callSid)
+        break
 
-        case 'TRANSFER':
-          // Future: Transfer call to human agent or business number
-          await generateAndPlayTTS(
-            "Let me transfer you to someone who can help you directly. Please hold on.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          
-          // TODO: Implement actual transfer logic when business phone numbers are configured
-          // For now, fall back to hangup with a message
-          await generateAndPlayTTS(
-            "I apologize, but our transfer system isn't configured yet. Please call our main number directly for immediate assistance. Thank you for calling.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          twimlResponse.hangup()
-          
-          // Clear session after transfer attempt
-          await clearVoiceSession(callSid)
-          console.log('[VOICE DEBUG] Call ended with TRANSFER action, session cleared for CallSid:', callSid)
-          break
-
-        case 'VOICEMAIL':
-          // Future: Take a voicemail message
-          await generateAndPlayTTS(
-            "I'd like to take a detailed message for our team. Please speak after the beep, and take your time.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          
-          // Record a longer voicemail message
-          twimlResponse.record({
-            action: '/api/voice/handle-voicemail-recording', // Future endpoint for voicemail processing
-            method: 'POST',
-            maxLength: 120, // Allow up to 2 minutes for voicemail
-            playBeep: true,
-            timeout: 3, // Shorter timeout for voicemail silence detection
-            transcribe: false
-          })
-          
-          // Fallback after voicemail recording
-          await generateAndPlayTTS(
-            "Thank you for your message. Our team will review it and get back to you as soon as possible. Goodbye.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          twimlResponse.hangup()
-          
-          // Note: Session will be cleared after voicemail processing
-          console.log('[VOICE DEBUG] Voicemail recording initiated for CallSid:', callSid)
-          break
-
-        default:
-          // Fallback to HANGUP for any unexpected action
-          console.warn('[VOICE DEBUG] Unexpected nextVoiceAction:', nextAction, 'falling back to HANGUP')
-          await generateAndPlayTTS(
-            "Thank you for calling. Have a great day.",
-            twimlResponse,
-            openaiVoice,
-            voiceToUse,
-            languageToUse
-          );
-          twimlResponse.hangup()
-          
-          await clearVoiceSession(callSid)
-          console.log('[VOICE DEBUG] Call ended with default action, session cleared for CallSid:', callSid)
-          break
-      }
-      
-      // Send TwiML response
-      res.setHeader('Content-Type', 'application/xml')
-      res.send(twimlResponse.toString())
-      
-      // Log final memory usage for this request (only in verbose mode)
-      if (ENABLE_VERBOSE_LOGGING) {
-        logMemoryUsage('End of Request Processing')
-      }
-      
-    } catch (downloadError: any) {
-      console.error('[VOICE DEBUG] Error downloading audio:', downloadError.isAxiosError ? downloadError.toJSON() : downloadError)
-      
-      // Clean up temp file if it was created
-      if (tempFilePath) {
-        await cleanupTempFile(tempFilePath)
-      }
-      
-      if (ENABLE_VERBOSE_LOGGING) {
-        logMemoryUsage('After Download Error')
-      }
-      
-      const twiml = new VoiceResponse()
-      await generateAndPlayTTS(
-        'Sorry, I had trouble accessing your message recording. Please try again.',
-        twiml,
-        'nova', // Default voice for error messages
-        voiceToUse,
-        languageToUse
-      );
-      twiml.hangup()
-      
-      res.setHeader('Content-Type', 'application/xml')
-      res.send(twiml.toString())
-      return
+      default:
+        // Fallback to HANGUP
+        twimlResponse.hangup()
+        await clearVoiceSession(callSid)
+        break
+    }
+    
+    // Send TwiML response
+    res.setHeader('Content-Type', 'application/xml')
+    res.send(twimlResponse.toString())
+    
+    if (ENABLE_VERBOSE_LOGGING) {
+      logMemoryUsage('End of Speech Processing')
     }
     
   } catch (error) {
-    console.error('[VOICE DEBUG] Error in /handle-recording route:', error)
+    console.error('[VOICE DEBUG] Error in /handle-speech route:', error)
     
     // Create fallback TwiML response
     const twiml = new VoiceResponse()
     await generateAndPlayTTS(
       'Sorry, we\'re experiencing some technical difficulties right now. Please try calling back in a few minutes.',
       twiml,
-      'nova', // Default voice for error messages
-      'alice', // Fallback Twilio voice
-      'en-US' // Fallback language
+      'nova',
+      'alice',
+      'en-US'
     );
     twiml.hangup()
     
@@ -1460,12 +1251,16 @@ router.get('/play-audio/:fileName', (req, res) => {
         res.status(500).end();
       } else {
         console.log(`[Play Audio] Successfully sent file: ${filePath}`);
-        // Clean up the file after sending it
-        fs.unlink(filePath, (unlinkErr) => {
-          if (unlinkErr) console.error(`[Play Audio] Error deleting temp audio file ${filePath}:`, unlinkErr);
-          else console.log(`[Play Audio] Cleaned up temp audio file: ${filePath}`);
-        });
       }
+      
+      // Ensure cleanup happens regardless of success or error
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr) {
+          console.error(`[Play Audio] Error deleting temp audio file ${filePath}:`, unlinkErr);
+        } else {
+          console.log(`[Play Audio] Cleaned up temp audio file: ${filePath}`);
+        }
+      });
     });
   } else {
     console.error(`[Play Audio] File not found: ${filePath}`);

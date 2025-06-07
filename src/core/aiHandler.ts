@@ -13,40 +13,166 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
  * Creates a refined system prompt for natural voice interactions
  */
 const createVoiceSystemPrompt = (businessName?: string): string => {
-  return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. Your primary goal is to provide clear, helpful, and natural-sounding spoken responses to users over the phone.
+  return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller speaking directly into their phone. Your responses will be converted to speech and played immediately.
 
-**RESPONSE GUIDELINES:**
+**ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
 
-1. **DIALOGUE-ONLY OUTPUT:** Your entire response must consist *solely* of the exact words the agent should speak. Do not include any explanations, preambles, meta-comments, or prefixes like "Say:" or "Response:".
+1. **DIALOGUE-ONLY OUTPUT:** Your response IS the exact words to be spoken. NEVER EVER include:
+   ❌ Prefixes: "Say:", "Response:", "AI:", "Assistant:", "Voice:", "Agent:", "Bot:", "System:", "Output:", "Reply:", "Answer:", "Speaking:", "Dialogue:", "Script:"
+   ❌ Meta-commentary: "[speaking naturally]", "(pause here)", "(thinking)", "[empathetic tone]"
+   ❌ Explanations: "I should say...", "Let me respond with...", "Here's what I'll say..."
+   ❌ Formatting: Quotation marks around entire response, markdown, bullet points
+   ❌ Stage directions: Actions, descriptions, or instructions about delivery
+   ❌ Technical artifacts: JSON, XML tags (except SSML), programming syntax
 
-2. **CONVERSATIONAL TONE:** Formulate your answers as if you are speaking directly and naturally to a person. Use shorter, well-punctuated sentences to ensure a clear and pleasant cadence. Avoid long, complex sentences that are hard to follow when spoken.
+2. **VOICE-FIRST SPEECH PATTERNS:**
+   - Use CONVERSATIONAL sentences (8-12 words per sentence maximum)
+   - Employ natural speech rhythm with pauses and breath points
+   - Use contractions authentically ("I'll", "we're", "that's", "can't", "won't")
+   - Include natural transitions: "Well,", "Actually,", "You know,", "So,", "Now,"
+   - Avoid written language patterns - speak as humans naturally do on the phone
+   - Use active voice and direct, simple language
+   - Break complex ideas into multiple short sentences
 
-3. **USE OF SSML (Speech Synthesis Markup Language):** To enhance naturalness, you may sparingly use the following SSML tags within your response:
-   * **PAUSES:** Use \`<break time="300ms"/>\` for a short, natural pause between ideas, similar to taking a breath. Use \`<break time="500ms"/>\` for a slightly longer pause before asking a question or presenting important information.
-     * *Example:* "Okay, I have that noted.<break time="400ms"/> Now, what is the best phone number for you?"
-   * **EMPHASIS:** Use \`<emphasis level="moderate">a key phrase</emphasis>\` to gently stress important words. Use this judiciously to guide the listener's attention.
-     * *Example:* "Your appointment is confirmed for <emphasis level="moderate">Tuesday at 3 PM</emphasis>."
-   * **PRONUNCIATION:** Use \`<phoneme alphabet="ipa" ph="liːd">lead</phoneme>\` to ensure the word "lead" is pronounced correctly as in "sales lead".
+3. **STRATEGIC SSML FOR NATURAL FLOW:** Use these SSML tags sparingly but effectively:
+   * **Natural Pauses:** \`<break time="300ms"/>\` between distinct thoughts (like taking a breath)
+   * **Processing Pauses:** \`<break time="500ms"/>\` before important questions or after receiving complex information
+   * **Gentle Emphasis:** \`<emphasis level="moderate">key information</emphasis>\` for critical details only
+   * **Pronunciation:** \`<phoneme alphabet="ipa" ph="liːd">leads</phoneme>\` for sales leads vs "led"
+   
+   SSML Examples:
+   - "Thanks for calling!<break time="300ms"/> How can I help you today?"
+   - "I understand you need <emphasis level="moderate">emergency plumbing</emphasis>.<break time="400ms"/> What's happening exactly?"
+   - "Let me get your <emphasis level="moderate">phone number</emphasis><break time="300ms"/> in case we get disconnected."
 
-4. **PERSONA:** Maintain a helpful, competent, and friendly persona at all times. Use natural conversational interjections like "Okay," "I see," "Alright," "Perfect," or "Got it" to make responses feel more human and engaging.
+4. **HELPFUL & EMPATHETIC PERSONA:**
+   - Begin responses with natural acknowledgments: "Absolutely", "Of course", "I understand", "Sure thing", "Got it"
+   - Use empathetic language for problems: "That sounds frustrating", "I can understand why you'd be concerned"
+   - Maintain warm professionalism - friendly but competent
+   - Mirror the caller's energy level appropriately
+   - Show genuine interest in helping solve their needs
 
-Your task is to take the user's query and any provided context, and generate a speech-ready response that adheres strictly to these guidelines.`
+5. **PHONE CONVERSATION MASTERY:**
+   - Always acknowledge what you heard before moving to next topic
+   - Ask ONE clear question at a time - avoid multiple questions in one response
+   - Confirm critical details by repeating them back
+   - Use verbal signaling: "Okay", "Right", "I see" to show you're following
+   - Provide clear next steps or endings
+   - Keep responses under 30 seconds when spoken (roughly 75-100 words max)
+
+**CRITICAL REMINDER:** You ARE the voice speaking live to a person on the phone. Every single word you generate will be spoken aloud immediately. There is no script, no narrator, no instructions - just natural human conversation through a phone call.`
 }
 
 /**
  * Post-processes AI responses to ensure clean speech output
+ * Acts as an aggressive safety net to strip any unwanted prefixes or formatting
  */
 const cleanVoiceResponse = (response: string): string => {
   if (!response) return response
   
-  // Remove common unwanted prefixes using a case-insensitive regex
-  let cleanedResponse = response.replace(/^(Say:|Response:|Here is the response:|Assistant:|AI:)\s*/i, '').trim()
+  let cleanedResponse = response.trim()
   
-  // Remove any remaining meta-commentary patterns
-  cleanedResponse = cleanedResponse.replace(/^\[.*?\]\s*/g, '').trim()
+  // ULTRA-AGGRESSIVE PREFIX REMOVAL - Comprehensive case-insensitive patterns
+  const prefixPatterns = [
+    // Core AI/Assistant prefixes
+    /^(Say|Response|Here is the response|Assistant|AI|Voice|Agent|Bot|System|Output|Reply|Answer|Speaking|Dialogue|Script|Chat|Message|Text):\s*/gi,
+    
+    // "I should/will/would" patterns
+    /^(I should say|Let me say|I'll say|I will say|I would say|I need to say|I want to say):\s*/gi,
+    /^(The response is|My response is|The answer is|My answer is):\s*/gi,
+    
+    // "Here's" patterns
+    /^(Here's what I would say|Here's my response|Here's what I'll say|Here's my answer|Here is what I would say):\s*/gi,
+    /^(This is what I would say|This is my response|This is what I'll say):\s*/gi,
+    
+    // Role-based prefixes
+    /^(Voice Assistant|Phone Agent|Call Handler|Customer Service|Support Agent|Virtual Assistant):\s*/gi,
+    /^(Business Assistant|Phone Support|Call Center|Help Desk|Service Rep):\s*/gi,
+    
+    // Action-based prefixes
+    /^(Speaking|Responding|Replying|Answering|Saying|Telling|Explaining):\s*/gi,
+    
+    // Formal response patterns
+    /^(The appropriate response would be|An appropriate response is|A good response would be):\s*/gi,
+    /^(In response to|As a response|For this response):\s*/gi,
+    
+    // Technical/Programming artifacts
+    /^(Function|Method|Return|Output|Result|Value):\s*/gi,
+    /^(Console\.log|Print|Echo|Display):\s*/gi,
+    
+    // Conversational artifacts that sometimes appear
+    /^(Well, I would say|So I would respond with|I think I should say):\s*/gi,
+    /^(Let me respond|Let me answer|Allow me to say):\s*/gi
+  ]
   
-  // Remove any trailing periods followed by quotes or brackets
-  cleanedResponse = cleanedResponse.replace(/\.\s*["'\]\}]*\s*$/, '').trim()
+  // Apply patterns iteratively until no more changes occur
+  let maxIterations = 10 // Prevent infinite loops
+  let iterations = 0
+  let previousLength = 0
+  
+  while (cleanedResponse.length !== previousLength && iterations < maxIterations) {
+    previousLength = cleanedResponse.length
+    iterations++
+    
+    for (const pattern of prefixPatterns) {
+      cleanedResponse = cleanedResponse.replace(pattern, '').trim()
+    }
+  }
+  
+  // Remove meta-commentary, stage directions, and technical artifacts
+  cleanedResponse = cleanedResponse.replace(/^\[.*?\]\s*/g, '').trim()  // [speaking naturally]
+  cleanedResponse = cleanedResponse.replace(/^\(.*?\)\s*/g, '').trim()  // (pause here)
+  cleanedResponse = cleanedResponse.replace(/^\{.*?\}\s*/g, '').trim()  // {thinking}
+  cleanedResponse = cleanedResponse.replace(/^<(?!break|emphasis|phoneme).*?>\s*/g, '').trim()  // <tone> but preserve SSML
+  
+  // Remove various quotation mark wrappings
+  const quotePatterns = [
+    /^"(.*)"$/s,     // Double quotes
+    /^'(.*)'$/s,     // Single quotes
+    /^`(.*)`$/s,     // Backticks
+    /^«(.*)»$/s,     // French quotes
+    /^"(.*)"$/s,     // Smart quotes
+    /^'(.*)'$/s      // Smart single quotes
+  ]
+  
+  for (const quotePattern of quotePatterns) {
+    const match = cleanedResponse.match(quotePattern)
+    if (match && match[1]) {
+      cleanedResponse = match[1].trim()
+      break
+    }
+  }
+  
+  // Remove markdown formatting artifacts
+  cleanedResponse = cleanedResponse.replace(/^\*\*(.*?)\*\*$/gs, '$1').trim()  // **bold**
+  cleanedResponse = cleanedResponse.replace(/^\*(.*?)\*$/gs, '$1').trim()      // *italic*
+  cleanedResponse = cleanedResponse.replace(/^_(.*?)_$/gs, '$1').trim()        // _underline_
+  cleanedResponse = cleanedResponse.replace(/^`(.*?)`$/gs, '$1').trim()        // `code`
+  
+  // Remove structured formatting
+  cleanedResponse = cleanedResponse.replace(/^[-=+*#]{2,}\s*/gm, '').trim()    // Headers/dividers
+  cleanedResponse = cleanedResponse.replace(/^>\s*/gm, '').trim()              // Block quotes
+  cleanedResponse = cleanedResponse.replace(/^\d+\.\s*/gm, '').trim()          // Numbered lists
+  cleanedResponse = cleanedResponse.replace(/^[-*+]\s*/gm, '').trim()          // Bullet lists
+  
+  // Remove programming/JSON artifacts
+  cleanedResponse = cleanedResponse.replace(/^\/\/.*$/gm, '').trim()           // Comments
+  cleanedResponse = cleanedResponse.replace(/^\/\*.*?\*\//gs, '').trim()       // Block comments
+  cleanedResponse = cleanedResponse.replace(/^\s*[\{\}]\s*$/gm, '').trim()     // Lone braces
+  
+  // Remove trailing artifacts
+  cleanedResponse = cleanedResponse.replace(/\.\s*["'\]\}]+\s*$/g, '.').trim() // Period + quotes/brackets
+  cleanedResponse = cleanedResponse.replace(/["\'\]\}]+\s*$/g, '').trim()      // Trailing quotes/brackets
+  
+  // Clean up whitespace and line breaks
+  cleanedResponse = cleanedResponse.replace(/\n\s*\n/g, '\n').trim()           // Multiple line breaks
+  cleanedResponse = cleanedResponse.replace(/\s+/g, ' ').trim()                // Multiple spaces
+  
+  // Final validation - if response becomes empty or too short, return original
+  if (!cleanedResponse || cleanedResponse.length < 2) {
+    console.warn('cleanVoiceResponse: Over-cleaned response, returning original:', response)
+    return response.trim()
+  }
   
   return cleanedResponse
 }
