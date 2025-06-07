@@ -830,27 +830,44 @@ router.post('/incoming', async (req, res) => {
       }
     }
     
-    // Create welcome message variable with conditional logic
+    // Create welcome message variable with conditional logic prioritizing voice-specific message
     let welcomeMessage: string
-    if (agentConfig && agentConfig.welcomeMessage && agentConfig.welcomeMessage.trim() !== '') {
+    if (agentConfig && agentConfig.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim() !== '') {
+      // PRO Plan: Use voice-specific greeting message
+      welcomeMessage = agentConfig.voiceGreetingMessage
+      console.log('[VOICE DEBUG] Using custom voice greeting message from agentConfig (PRO feature)')
+    } else if (agentConfig && agentConfig.welcomeMessage && agentConfig.welcomeMessage.trim() !== '') {
+      // Fallback: Use general welcome message for voice calls
       welcomeMessage = agentConfig.welcomeMessage
-      console.log('[VOICE DEBUG] Using custom welcome message from agentConfig')
+      console.log('[VOICE DEBUG] Using general welcome message from agentConfig as fallback')
     } else {
+      // Default: Use standard voice greeting
       welcomeMessage = 'Thank you for calling. How can I help you?'
-      console.log('[VOICE DEBUG] Using default welcome message')
+      console.log('[VOICE DEBUG] Using default voice greeting message')
     }
     
     console.log('[VOICE DEBUG] Welcome message text:', welcomeMessage)
     
-    // Use OpenAI TTS for natural-sounding welcome message
+    // Configure voice settings from agentConfig with fallbacks
+    const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
+    const openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 
+      (agentConfig?.openaiVoice as any) || 'nova'
+    const openaiModel: 'tts-1' | 'tts-1-hd' = 
+      (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
+    const twilioVoice = (agentConfig?.twilioVoice || 'alice') as any
+    const twilioLanguage = (agentConfig?.twilioLanguage || 'en-US') as any
+    
+    console.log(`[Voice Config] Welcome message - OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
+    
+    // Use configurable voice settings for natural-sounding welcome message
     await generateAndPlayTTS(
       welcomeMessage,
       twiml,
-      'nova',        // OpenAI voice (natural sounding)
-      'alice',       // Fallback Twilio voice
-      'en-US',       // Fallback language
-      true,          // Use OpenAI TTS
-      'tts-1'        // OpenAI model
+      openaiVoice,   // Configurable OpenAI voice
+      twilioVoice,   // Configurable fallback Twilio voice
+      twilioLanguage, // Configurable fallback language
+      useOpenaiTts,  // Configurable OpenAI TTS setting
+      openaiModel    // Configurable OpenAI model
     )
     
     // Use gather() for real-time speech input instead of record()
@@ -903,6 +920,10 @@ router.post('/handle-speech', async (req, res) => {
     const Caller = req.body.From
     const TwilioNumberCalled = req.body.To
     const callSid = req.body.CallSid
+    
+    // Assign user's speech directly from Gather result (no recording URL logic needed)
+    const transcribedText = SpeechResult
+    console.log('[VOICE DEBUG] Transcribed text from Gather:', transcribedText)
     
     console.log('[VOICE DEBUG] SpeechResult:', SpeechResult)
     console.log('[VOICE DEBUG] Caller:', Caller)
@@ -978,9 +999,9 @@ router.post('/handle-speech', async (req, res) => {
     console.log('[VOICE DEBUG] AFTER updateSessionMetadata with voice settings')
     
     // Retrieve session state
-    console.log('[VOICE DEBUG] BEFORE getVoiceSession for callSid:', callSid)
+    console.log('[VOICE DEBUG] Getting voice session...')
     const session = await getVoiceSession(callSid)
-    console.log('[VOICE DEBUG] AFTER getVoiceSession, session retrieved:', session ? 'Yes' : 'No')
+    console.log('[VOICE DEBUG] Session retrieved. History length:', session.history.length)
     let currentConversationHistory = session.history
     let currentActiveFlow = session.currentFlow
     
@@ -1028,7 +1049,6 @@ router.post('/handle-speech', async (req, res) => {
     }
     
     // We have speech input - use it directly (no file download/transcription needed)
-    const transcribedText = SpeechResult
     console.log('[VOICE DEBUG] Using speech result directly:', transcribedText)
     console.log('[VOICE DEBUG] transcribedText variable contents:', JSON.stringify(transcribedText))
     
@@ -1042,7 +1062,7 @@ router.post('/handle-speech', async (req, res) => {
     console.log('[VOICE DEBUG] AFTER updating conversation history with user message, length:', currentConversationHistory.length)
     
     // Process with AI handler using full context
-    console.log('[VOICE DEBUG] BEFORE processEnhancedMessage call')
+    console.log('[VOICE DEBUG] Calling AI Handler with history:', JSON.stringify(currentConversationHistory, null, 2))
     console.log('[VOICE DEBUG] processEnhancedMessage parameters:', {
       transcribedText,
       historyLength: currentConversationHistory.length,
@@ -1057,7 +1077,7 @@ router.post('/handle-speech', async (req, res) => {
       currentActiveFlow,
       callSid
     )
-    console.log('[VOICE DEBUG] AFTER processEnhancedMessage call')
+    console.log('[VOICE DEBUG] AI Handler returned reply:', aiResponse.reply)
     console.log('[VOICE DEBUG] aiResponse contents:', JSON.stringify(aiResponse))
     console.log('[VOICE DEBUG] aiResponse.reply contents:', JSON.stringify(aiResponse.reply))
     
@@ -1233,6 +1253,8 @@ router.post('/handle-speech', async (req, res) => {
     console.error('[VOICE DEBUG] FULL ERROR STACK TRACE:', error instanceof Error ? error.stack : 'No stack trace available');
     console.error('[VOICE DEBUG] ERROR NAME:', error instanceof Error ? error.name : 'Unknown');
     console.error('[VOICE DEBUG] ERROR MESSAGE:', error instanceof Error ? error.message : 'Unknown message');
+    console.error('[VOICE DEBUG] REQUEST BODY AT ERROR:', JSON.stringify(req.body, null, 2));
+    console.error('[VOICE DEBUG] ERROR OCCURRED AT:', new Date().toISOString());
     
     try {
       // Create fallback TwiML response with graceful error message
