@@ -1120,3 +1120,20 @@ User's message: ${message}`
     }
   }
 } 
+
+/**
+ * Generate a graceful, empathetic recovery response for critical voice processing errors
+ * This function provides a human-like response when the main AI processing fails
+ */
+export const generateRecoveryResponse = (): string => {
+  const recoveryMessages = [
+    "I do apologize, it seems I'm experiencing a technical issue with my connection right now. I can still take a message for the team if you'd like.",
+    "I'm sorry, I seem to be having some technical difficulties at the moment. Would you like to leave a message for someone to call you back?",
+    "My apologies - I'm experiencing a brief technical issue. I can take down your information so our team can reach out to you directly.",
+    "I'm sorry about that, I seem to be having a connection problem right now. I can still help by taking your details for a callback if that would be helpful."
+  ]
+  
+  // Return a random recovery message for more natural variation
+  const randomIndex = Math.floor(Math.random() * recoveryMessages.length)
+  return recoveryMessages[randomIndex]
+} 
