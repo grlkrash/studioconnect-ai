@@ -962,27 +962,19 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     
     console.log('[VOICE DEBUG] Welcome message text:', welcomeMessage)
     
-    // Configure voice settings from agentConfig with fallbacks
-    const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
-    const openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 
-      (agentConfig?.openaiVoice as any) || 'nova'
-    const openaiModel: 'tts-1' | 'tts-1-hd' = 
-      (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
+    // Configure voice settings from agentConfig with fallbacks for reliable greeting
     const twilioVoice = (agentConfig?.twilioVoice || 'alice') as any
     const twilioLanguage = (agentConfig?.twilioLanguage || 'en-US') as any
     
-    console.log(`[Voice Config] Welcome message - OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
+    console.log(`[Voice Config] Using reliable Twilio TTS for greeting - Voice: ${twilioVoice}, Language: ${twilioLanguage}`)
     
-    // Use configurable voice settings for natural-sounding welcome message
-    await generateAndPlayTTS(
-      welcomeMessage,
-      twiml,
-      openaiVoice,   // Configurable OpenAI voice
-      twilioVoice,   // Configurable fallback Twilio voice
-      twilioLanguage, // Configurable fallback language
-      useOpenaiTts,  // Configurable OpenAI TTS setting
-      openaiModel    // Configurable OpenAI model
-    )
+    // Use fast, reliable Twilio TTS for instant greeting (no file dependencies)
+    const greetingMessage = createSSMLMessage(welcomeMessage, { 
+      isGreeting: true, 
+      isConversational: true,
+      addPause: true
+    })
+    twiml.say({ voice: twilioVoice, language: twilioLanguage }, greetingMessage)
     
     // Use gather() for real-time speech input instead of record()
     const gather = twiml.gather({
@@ -1040,16 +1032,12 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
       console.log('[VOICE DEBUG] No speech result found - gather timed out')
       const twiml = new VoiceResponse()
       
-      // Give them another chance with a more encouraging message
-      await generateAndPlayTTS(
+      // Give them another chance with a more encouraging message (using reliable Twilio TTS)
+      const retryMessage = createSSMLMessage(
         "I didn't hear a response. Is there anything else I can help with?",
-        twiml,
-        'nova',
-        'alice',
-        'en-US',
-        true, // useOpenaiTts
-        'tts-1' // openaiModel
-      );
+        { isQuestion: true, isConversational: true }
+      )
+      twiml.say({ voice: 'alice', language: 'en-US' }, retryMessage)
       
       // Continue the conversation loop with another gather
       const gather = twiml.gather({
@@ -1326,19 +1314,14 @@ router.post('/handle-speech', customValidateTwilioRequest, async (req, res) => {
     console.error('[VOICE DEBUG] REQUEST BODY AT ERROR:', JSON.stringify(req.body, null, 2));
     
     try {
-      // Create fallback TwiML response with graceful recovery message
+      // Create fallback TwiML response with graceful recovery message (using reliable Twilio TTS)
       const twiml = new VoiceResponse()
       const recoveryMessage = generateRecoveryResponse()
-      
-      await generateAndPlayTTS(
+      const formattedRecoveryMessage = createSSMLMessage(
         recoveryMessage,
-        twiml,
-        'nova',
-        'alice',
-        'en-US',
-        true, // useOpenaiTts
-        'tts-1' // openaiModel
-      );
+        { isConversational: true, addEmphasis: true }
+      )
+      twiml.say({ voice: 'alice', language: 'en-US' }, formattedRecoveryMessage)
       
       // Add a gather to see if they want to leave a message
       const gather = twiml.gather({
