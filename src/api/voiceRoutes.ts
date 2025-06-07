@@ -791,10 +791,11 @@ router.post('/incoming', async (req, res) => {
     
     // Fetch business information based on the called phone number
     let businessName = 'our business'
+    let business = null
     
     if (toPhoneNumber) {
       try {
-        const business = await prisma.business.findFirst({
+        business = await prisma.business.findFirst({
           where: {
             twilioPhoneNumber: toPhoneNumber  // Fixed: should match twilioPhoneNumber field
           }
@@ -816,23 +817,41 @@ router.post('/incoming', async (req, res) => {
     // Add debugging for business name before processing
     console.log('[VOICE DEBUG] Original business name:', businessName)
     
-    // Handle business name for SSML - use our helper function that preserves apostrophes
-    const businessNameForSpeech = escapeTextForSSML(businessName)
+    // Fetch agentConfig for the business to get custom welcome message
+    let agentConfig = null
+    if (business) {
+      try {
+        agentConfig = await prisma.agentConfig.findUnique({
+          where: { businessId: business.id }
+        })
+        console.log('[VOICE DEBUG] Found agentConfig for business:', agentConfig ? 'Yes' : 'No')
+      } catch (configError) {
+        console.error('[VOICE DEBUG] Error fetching agentConfig:', configError)
+      }
+    }
     
-    console.log('[VOICE DEBUG] Business name after XML escaping (keeping apostrophes literal):', businessNameForSpeech)
+    // Create welcome message variable with conditional logic
+    let welcomeMessage: string
+    if (agentConfig && agentConfig.welcomeMessage && agentConfig.welcomeMessage.trim() !== '') {
+      welcomeMessage = agentConfig.welcomeMessage
+      console.log('[VOICE DEBUG] Using custom welcome message from agentConfig')
+    } else {
+      welcomeMessage = 'Thank you for calling. How can I help you?'
+      console.log('[VOICE DEBUG] Using default welcome message')
+    }
     
-    // Create well-formed SSML welcome message wrapped in <speak> tags
-    const finalWelcomeMessageSSML = 
-      `<speak><prosody rate="medium">Hey! <break time="300ms"/> Thank you for calling ${businessNameForSpeech}. <break time="300ms"/> How can I help you today?</prosody></speak>`
+    console.log('[VOICE DEBUG] Welcome message text:', welcomeMessage)
     
-    console.log('[VOICE DEBUG] EXACT SSML STRING being passed to twiml.say():', finalWelcomeMessageSSML)
-    console.log('[VOICE DEBUG] SSML string length:', finalWelcomeMessageSSML.length)
-    
-    // Say the welcome message with explicit voice settings
-    twiml.say({ 
-      voice: 'alice', 
-      language: 'en-US' 
-    }, finalWelcomeMessageSSML)
+    // Use OpenAI TTS for natural-sounding welcome message
+    await generateAndPlayTTS(
+      welcomeMessage,
+      twiml,
+      'nova',        // OpenAI voice (natural sounding)
+      'alice',       // Fallback Twilio voice
+      'en-US',       // Fallback language
+      true,          // Use OpenAI TTS
+      'tts-1'        // OpenAI model
+    )
     
     // Use gather() for real-time speech input instead of record()
     const gather = twiml.gather({
@@ -891,17 +910,21 @@ router.post('/handle-speech', async (req, res) => {
     console.log('[VOICE DEBUG] CallSid:', callSid)
     
     // Update session metadata with call information
+    console.log('[VOICE DEBUG] BEFORE updateSessionMetadata for callSid:', callSid)
     await updateSessionMetadata(callSid, {
       callerNumber: Caller,
       twilioCallSid: callSid
     })
+    console.log('[VOICE DEBUG] AFTER updateSessionMetadata for callSid:', callSid)
     
     // Find business by Twilio phone number
+    console.log('[VOICE DEBUG] BEFORE prisma.business.findFirst for phone:', TwilioNumberCalled)
     const business = await prisma.business.findFirst({
       where: {
         twilioPhoneNumber: TwilioNumberCalled
       }
     })
+    console.log('[VOICE DEBUG] AFTER prisma.business.findFirst, found business:', business ? business.name : 'null')
     
     if (!business) {
       console.error('[VOICE DEBUG] No business found for Twilio number:', TwilioNumberCalled)
@@ -921,17 +944,20 @@ router.post('/handle-speech', async (req, res) => {
     console.log('[VOICE DEBUG] Found business:', business.name)
     
     // Update session metadata with business information
+    console.log('[VOICE DEBUG] BEFORE updateSessionMetadata with businessId:', business.id)
     await updateSessionMetadata(callSid, {
       businessId: business.id
     })
+    console.log('[VOICE DEBUG] AFTER updateSessionMetadata with businessId:', business.id)
     
     // Fetch AgentConfig for voice settings
     let agentConfig = null
     try {
+      console.log('[VOICE DEBUG] BEFORE prisma.agentConfig.findUnique for businessId:', business.id)
       agentConfig = await prisma.agentConfig.findUnique({
         where: { businessId: business.id }
       })
-      console.log('[VOICE DEBUG] Found AgentConfig:', agentConfig ? 'Yes' : 'No')
+      console.log('[VOICE DEBUG] AFTER prisma.agentConfig.findUnique, found AgentConfig:', agentConfig ? 'Yes' : 'No')
     } catch (configError) {
       console.error('[VOICE DEBUG] Error fetching AgentConfig:', configError)
     }
@@ -942,15 +968,19 @@ router.post('/handle-speech', async (req, res) => {
     console.log('[VOICE DEBUG] Voice settings:', { voice: voiceToUse, language: languageToUse })
     
     // Update session metadata with voice settings
+    console.log('[VOICE DEBUG] BEFORE updateSessionMetadata with voice settings')
     await updateSessionMetadata(callSid, {
       voiceSettings: {
         voice: voiceToUse,
         language: languageToUse
       }
     })
+    console.log('[VOICE DEBUG] AFTER updateSessionMetadata with voice settings')
     
     // Retrieve session state
+    console.log('[VOICE DEBUG] BEFORE getVoiceSession for callSid:', callSid)
     const session = await getVoiceSession(callSid)
+    console.log('[VOICE DEBUG] AFTER getVoiceSession, session retrieved:', session ? 'Yes' : 'No')
     let currentConversationHistory = session.history
     let currentActiveFlow = session.currentFlow
     
@@ -1000,17 +1030,26 @@ router.post('/handle-speech', async (req, res) => {
     // We have speech input - use it directly (no file download/transcription needed)
     const transcribedText = SpeechResult
     console.log('[VOICE DEBUG] Using speech result directly:', transcribedText)
+    console.log('[VOICE DEBUG] transcribedText variable contents:', JSON.stringify(transcribedText))
     
     if (ENABLE_VERBOSE_LOGGING) {
       logMemoryUsage('Processing Speech Input')
     }
     
     // Update conversation history with user's message
+    console.log('[VOICE DEBUG] BEFORE updating conversation history with user message')
     currentConversationHistory.push({ role: 'user', content: transcribedText })
-    console.log('[VOICE DEBUG] Updated conversation history with user message')
+    console.log('[VOICE DEBUG] AFTER updating conversation history with user message, length:', currentConversationHistory.length)
     
     // Process with AI handler using full context
-    console.log('[VOICE DEBUG] Processing message with AI handler...')
+    console.log('[VOICE DEBUG] BEFORE processEnhancedMessage call')
+    console.log('[VOICE DEBUG] processEnhancedMessage parameters:', {
+      transcribedText,
+      historyLength: currentConversationHistory.length,
+      businessId: business.id,
+      currentActiveFlow,
+      callSid
+    })
     const aiResponse = await processEnhancedMessage(
       transcribedText,
       currentConversationHistory,
@@ -1018,42 +1057,59 @@ router.post('/handle-speech', async (req, res) => {
       currentActiveFlow,
       callSid
     )
-    
-    console.log('[Handle Speech] AI Handler response:', aiResponse)
+    console.log('[VOICE DEBUG] AFTER processEnhancedMessage call')
+    console.log('[VOICE DEBUG] aiResponse contents:', JSON.stringify(aiResponse))
+    console.log('[VOICE DEBUG] aiResponse.reply contents:', JSON.stringify(aiResponse.reply))
     
     // Update conversation history with AI's response
+    console.log('[VOICE DEBUG] BEFORE updating conversation history with AI response')
     currentConversationHistory.push({ role: 'assistant', content: aiResponse.reply })
+    console.log('[VOICE DEBUG] AFTER updating conversation history with AI response, length:', currentConversationHistory.length)
     
     // Update current active flow based on AI response
+    console.log('[VOICE DEBUG] BEFORE updating currentActiveFlow')
     currentActiveFlow = aiResponse.currentFlow || null
+    console.log('[VOICE DEBUG] AFTER updating currentActiveFlow:', currentActiveFlow)
     
     // Save updated session state
+    console.log('[VOICE DEBUG] BEFORE updateVoiceSession call')
     await updateVoiceSession(callSid, currentConversationHistory, currentActiveFlow)
+    console.log('[VOICE DEBUG] AFTER updateVoiceSession call')
     console.log('[VOICE DEBUG] Updated session state:', { 
       historyLength: currentConversationHistory.length, 
       newFlow: currentActiveFlow 
     })
     
     // Add enhanced session data
+    console.log('[VOICE DEBUG] BEFORE addEnhancedMessage (user)')
     await addEnhancedMessage(callSid, 'user', transcribedText, {
       entities: aiResponse.entities
     })
+    console.log('[VOICE DEBUG] AFTER addEnhancedMessage (user)')
     
+    console.log('[VOICE DEBUG] BEFORE addEnhancedMessage (assistant)')
     await addEnhancedMessage(callSid, 'assistant', aiResponse.reply, {
       intent: aiResponse.intent,
       confidence: aiResponse.confidence
     })
+    console.log('[VOICE DEBUG] AFTER addEnhancedMessage (assistant)')
     
     if (aiResponse.flowState) {
+      console.log('[VOICE DEBUG] BEFORE updateSessionFlow')
       await updateSessionFlow(callSid, aiResponse.flowState)
+      console.log('[VOICE DEBUG] AFTER updateSessionFlow')
     }
     
     if (aiResponse.entities && Object.keys(aiResponse.entities).length > 0) {
+      console.log('[VOICE DEBUG] BEFORE voiceSessionService.updateEntities')
       await voiceSessionService.updateEntities(callSid, aiResponse.entities)
+      console.log('[VOICE DEBUG] AFTER voiceSessionService.updateEntities')
     }
     
     if (aiResponse.intent && aiResponse.confidence) {
+      console.log('[VOICE DEBUG] BEFORE voiceSessionService.addIntent')
       await voiceSessionService.addIntent(callSid, aiResponse.intent, aiResponse.confidence, transcribedText)
+      console.log('[VOICE DEBUG] AFTER voiceSessionService.addIntent')
     }
     
     // Create TwiML response
@@ -1069,7 +1125,9 @@ router.post('/handle-speech', async (req, res) => {
     console.log(`[Voice Config] OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
     
     // Generate AI response
+    console.log('[VOICE DEBUG] BEFORE generateAndPlayTTS check, aiResponse exists:', !!aiResponse, 'reply exists:', !!aiResponse?.reply)
     if (aiResponse && aiResponse.reply) {
+      console.log('[VOICE DEBUG] BEFORE generateAndPlayTTS call with aiResponse.reply')
       await generateAndPlayTTS(
         aiResponse.reply, 
         twimlResponse, 
@@ -1079,7 +1137,9 @@ router.post('/handle-speech', async (req, res) => {
         useOpenaiTts,
         openaiModel
       );
+      console.log('[VOICE DEBUG] AFTER generateAndPlayTTS call with aiResponse.reply')
     } else {
+      console.log('[VOICE DEBUG] BEFORE generateAndPlayTTS call with fallback message')
       await generateAndPlayTTS(
         "I'm sorry, I encountered an issue. Let me try to help you differently.",
         twimlResponse,
@@ -1089,6 +1149,7 @@ router.post('/handle-speech', async (req, res) => {
         useOpenaiTts,
         openaiModel
       );
+      console.log('[VOICE DEBUG] AFTER generateAndPlayTTS call with fallback message')
     }
     
     // Handle next action based on AI response
@@ -1168,23 +1229,40 @@ router.post('/handle-speech', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('[VOICE DEBUG] Error in /handle-speech route:', error)
+    console.error('[VOICE DEBUG] CRITICAL ERROR IN /handle-speech:', error);
+    console.error('[VOICE DEBUG] FULL ERROR STACK TRACE:', error instanceof Error ? error.stack : 'No stack trace available');
+    console.error('[VOICE DEBUG] ERROR NAME:', error instanceof Error ? error.name : 'Unknown');
+    console.error('[VOICE DEBUG] ERROR MESSAGE:', error instanceof Error ? error.message : 'Unknown message');
     
-    // Create fallback TwiML response
-    const twiml = new VoiceResponse()
-    await generateAndPlayTTS(
-      'Sorry, we\'re experiencing some technical difficulties right now. Please try calling back in a few minutes.',
-      twiml,
-      'nova',
-      'alice',
-      'en-US',
-      true, // useOpenaiTts
-      'tts-1' // openaiModel
-    );
-    twiml.hangup()
-    
-    res.setHeader('Content-Type', 'application/xml')
-    res.send(twiml.toString())
+    try {
+      // Create fallback TwiML response with graceful error message
+      const twiml = new VoiceResponse()
+      console.log('[VOICE DEBUG] BEFORE generateAndPlayTTS in catch block')
+      await generateAndPlayTTS(
+        "I'm sorry, there seems to be an issue on our end. Please call back in a moment.",
+        twiml,
+        'nova',
+        'alice',
+        'en-US',
+        true, // useOpenaiTts
+        'tts-1' // openaiModel
+      );
+      console.log('[VOICE DEBUG] AFTER generateAndPlayTTS in catch block')
+      twiml.hangup()
+      
+      res.setHeader('Content-Type', 'application/xml')
+      res.send(twiml.toString())
+      console.log('[VOICE DEBUG] Sent graceful error response via TwiML')
+    } catch (fallbackError) {
+      console.error('[VOICE DEBUG] FALLBACK ERROR HANDLING FAILED:', fallbackError);
+      // Last resort - simple text response
+      res.setHeader('Content-Type', 'application/xml')
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Say voice="alice">I'm sorry, there seems to be an issue on our end. Please call back in a moment.</Say>
+          <Hangup/>
+        </Response>`)
+    }
   }
 })
 
