@@ -941,27 +941,14 @@ router.post('/incoming', validateTwilioRequest, async (req, res) => {
     
     console.log('[VOICE DEBUG] Welcome message text:', welcomeMessage)
     
-    // Configure voice settings from agentConfig with fallbacks
-    const useOpenaiTts = agentConfig?.useOpenaiTts !== false // Default to true if not set
-    const openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 
-      (agentConfig?.openaiVoice as any) || 'nova'
-    const openaiModel: 'tts-1' | 'tts-1-hd' = 
-      (agentConfig?.openaiModel as 'tts-1' | 'tts-1-hd') || 'tts-1'
+    // Configure voice settings from agentConfig with fallbacks for instant greeting
     const twilioVoice = (agentConfig?.twilioVoice || 'alice') as any
     const twilioLanguage = (agentConfig?.twilioLanguage || 'en-US') as any
     
-    console.log(`[Voice Config] Welcome message - OpenAI TTS enabled: ${useOpenaiTts}, Voice: ${openaiVoice}, Model: ${openaiModel}`)
+    console.log(`[Voice Config] Welcome message - Using instant Twilio voice: ${twilioVoice}, Language: ${twilioLanguage}`)
     
-    // Use configurable voice settings for natural-sounding welcome message
-    await generateAndPlayTTS(
-      welcomeMessage,
-      twiml,
-      openaiVoice,   // Configurable OpenAI voice
-      twilioVoice,   // Configurable fallback Twilio voice
-      twilioLanguage, // Configurable fallback language
-      useOpenaiTts,  // Configurable OpenAI TTS setting
-      openaiModel    // Configurable OpenAI model
-    )
+    // Use instant Twilio TTS for greeting to prevent timeouts
+    twiml.say({ voice: twilioVoice, language: twilioLanguage }, welcomeMessage)
     
     // Use gather() for real-time speech input instead of record()
     const gather = twiml.gather({
