@@ -23,8 +23,8 @@ export class RealtimeAgentService {
    */
   public async connect(): Promise<void> {
     try {
-      // Define the WebSocket URL with specified model
-      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini';
+      // Define the WebSocket URL with specified model (use supported realtime model)
+      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
       
       // Define headers for authentication and API version
       const headers = {
