@@ -295,15 +295,15 @@
                             name="openaiVoice"
                             style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
                         >
-                            <option value="alloy" <%= (agentConfig && agentConfig.openaiVoice === 'alloy') ? 'selected' : '' %>>Alloy (Neutral, Professional)</option>
-                            <option value="echo" <%= (agentConfig && agentConfig.openaiVoice === 'echo') ? 'selected' : '' %>>Echo (Clear, Articulate)</option>
-                            <option value="fable" <%= (agentConfig && agentConfig.openaiVoice === 'fable') ? 'selected' : '' %>>Fable (Warm, Expressive)</option>
-                            <option value="onyx" <%= (agentConfig && agentConfig.openaiVoice === 'onyx') ? 'selected' : '' %>>Onyx (Deep, Authoritative)</option>
-                            <option value="nova" <%= (agentConfig && agentConfig.openaiVoice === 'nova') ? 'selected' : ((!agentConfig || !agentConfig.openaiVoice) ? 'selected' : '') %>>Nova (Friendly, Natural) - Default</option>
-                            <option value="shimmer" <%= (agentConfig && agentConfig.openaiVoice === 'shimmer') ? 'selected' : '' %>>Shimmer (Energetic, Upbeat)</option>
+                            <option value="ALLOY" <%= (agentConfig && agentConfig.openaiVoice === 'ALLOY') ? 'selected' : '' %>>Alloy (Professional Male Voice)</option>
+                            <option value="ECHO" <%= (agentConfig && agentConfig.openaiVoice === 'ECHO') ? 'selected' : '' %>>Echo (Dramatic Male Voice)</option>
+                            <option value="FABLE" <%= (agentConfig && agentConfig.openaiVoice === 'FABLE') ? 'selected' : '' %>>Fable (Story-teller Male Voice)</option>
+                            <option value="ONYX" <%= (agentConfig && agentConfig.openaiVoice === 'ONYX') ? 'selected' : '' %>>Onyx (Deep, Professional Male Voice)</option>
+                            <option value="NOVA" <%= (agentConfig && agentConfig.openaiVoice === 'NOVA') ? 'selected' : ((!agentConfig || !agentConfig.openaiVoice) ? 'selected' : '') %>>Nova (Conversational Female Voice) - Default</option>
+                            <option value="SHIMMER" <%= (agentConfig && agentConfig.openaiVoice === 'SHIMMER') ? 'selected' : '' %>>Shimmer (Expressive Female Voice)</option>
                         </select>
                         <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                            Choose the OpenAI voice for natural, human-like speech. Nova is recommended for most business use cases.
+                            Choose the OpenAI voice that best fits your brand personality. Nova is recommended for most business use cases.
                         </small>
                     </div>
                     
@@ -484,12 +484,8 @@
             
             // Get OpenAI TTS configuration values (if PRO plan)
             const useOpenaiTts = document.getElementById('useOpenaiTts')?.checked || false;
-            const openaiVoice = document.getElementById('openaiVoice')?.value || 'nova';
+            const openaiVoice = document.getElementById('openaiVoice')?.value || 'NOVA';
             const openaiModel = document.getElementById('openaiModel')?.value || 'tts-1';
-            
-            // Get Twilio configuration values (if PRO plan)
-            const twilioVoice = document.getElementById('twilioVoice')?.value || 'alice';
-            const twilioLanguage = document.getElementById('twilioLanguage')?.value || 'en-US';
             
             // Construct colorTheme object
             const colorTheme = {
@@ -510,9 +506,7 @@
                 voiceEndCallMessage,
                 useOpenaiTts,
                 openaiVoice,
-                openaiModel,
-                twilioVoice,
-                twilioLanguage
+                openaiModel
             };
             
             try {

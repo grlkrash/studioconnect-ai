@@ -241,8 +241,9 @@ export async function initiateEmergencyVoiceCall(
     }
 
     // Configure voice settings with fallbacks - prioritize ENV var for HSP alerts
-    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || agentConfig?.twilioVoice || 'alice') as any
-    const languageToUse = (agentConfig?.twilioLanguage || 'en-US') as any
+    // Note: Using hardcoded defaults since we've migrated to OpenAI for voice customization
+    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || 'alice') as any
+    const languageToUse = 'en-US' as any
     console.log('[Emergency Call] Voice settings:', { voice: voiceToUse, language: languageToUse })
 
     // Enhanced XML escaping function for safe text insertion in SSML

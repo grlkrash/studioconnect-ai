@@ -174,9 +174,7 @@ router.post('/config', authMiddleware, async (req, res) => {
       voiceEndCallMessage,
       useOpenaiTts,
       openaiVoice,
-      openaiModel,
-      twilioVoice,
-      twilioLanguage
+      openaiModel
     } = req.body
 
     // Basic validation
@@ -184,6 +182,16 @@ router.post('/config', authMiddleware, async (req, res) => {
       return res.status(400).json({ 
         error: 'Missing required fields: agentName, personaPrompt, and welcomeMessage are required' 
       })
+    }
+
+    // Validate OpenAI voice for PRO plan businesses
+    if (business.planTier === 'PRO' && openaiVoice) {
+      const validVoices = ['ALLOY', 'ECHO', 'FABLE', 'ONYX', 'NOVA', 'SHIMMER']
+      if (!validVoices.includes(openaiVoice)) {
+        return res.status(400).json({ 
+          error: `Invalid OpenAI voice. Must be one of: ${validVoices.join(', ')}` 
+        })
+      }
     }
 
     // Prepare base config data
@@ -204,10 +212,8 @@ router.post('/config', authMiddleware, async (req, res) => {
           voiceEmergencyMessage: voiceEmergencyMessage || null,
           voiceEndCallMessage: voiceEndCallMessage || null,
           useOpenaiTts: useOpenaiTts !== undefined ? Boolean(useOpenaiTts) : true,
-          openaiVoice: openaiVoice || 'nova',
-          openaiModel: openaiModel || 'tts-1',
-          twilioVoice: twilioVoice || 'alice',
-          twilioLanguage: twilioLanguage || 'en-US'
+          openaiVoice: openaiVoice || 'NOVA',
+          openaiModel: openaiModel || 'tts-1'
         }
       : baseConfigData
 

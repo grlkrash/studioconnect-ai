@@ -57,9 +57,7 @@ model AgentConfig {
   voiceEmergencyMessage        String?
   voiceEndCallMessage          String?
   voiceGreetingMessage         String?
-  twilioLanguage               String                @default("en-US")
-  twilioVoice                  String                @default("alice")
-  openaiVoice                  String                @default("nova")
+  openaiVoice                  OpenAiVoice           @default(NOVA)
   useOpenaiTts                 Boolean               @default(true)
   openaiModel                  String                @default("tts-1")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -127,6 +125,15 @@ model Conversation {
   leadId     String?
 
   @@map("conversations")
+}
+
+enum OpenAiVoice {
+  ALLOY
+  ECHO
+  FABLE
+  ONYX
+  NOVA
+  SHIMMER
 }
 
 enum BusinessType {

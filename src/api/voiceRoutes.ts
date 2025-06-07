@@ -1013,8 +1013,8 @@ router.post('/start-conversation', customValidateTwilioRequest, async (req, res)
           twilioCallSid: callSid,
           businessId: business?.id,
           voiceSettings: {
-            voice: agentConfig?.twilioVoice || 'alice',
-            language: agentConfig?.twilioLanguage || 'en-US'
+            voice: 'alice', // Using hardcoded default since we've migrated to OpenAI for voice customization
+            language: 'en-US'
           }
         })
         

@@ -45,7 +45,16 @@ export class TwilioWebSocketServer {
           
           // Extract CallSid from the first message
           if (!callSid && data.start?.callSid) {
-            callSid = data.start.callSid;
+            const extractedCallSid = data.start.callSid;
+            
+            // Guard clause: Ensure CallSid is valid before proceeding
+            if (!extractedCallSid || typeof extractedCallSid !== 'string') {
+              console.error('[WebSocket] Connection rejected: CallSid could not be determined from request URL.');
+              ws.close(4001, 'CallSid not found');
+              return;
+            }
+            
+            callSid = extractedCallSid;
             console.log(`[WebSocket Server] CallSid identified: ${callSid}`);
             
             // Create and connect RealtimeAgentService
