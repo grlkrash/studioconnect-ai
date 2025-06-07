@@ -1,9 +1,9 @@
 # Developer Guide & System Architecture
-## AI Agent Assistant for SMBs - Voice-Enabled Multi-Channel Platform
+## AI Agent Assistant for SMBs - Advanced Voice-Enabled Multi-Channel Platform
 
-**Version:** 4.0  
+**Version:** 4.1  
 **Last Updated:** December 2024  
-**Purpose:** Technical implementation guide and architectural reference for the voice-enabled, plan-tier based AI agent platform
+**Purpose:** Technical implementation guide and architectural reference for the advanced voice-enabled, plan-tier based AI agent platform with OpenAI TTS integration and sophisticated session management
 
 ---
 
@@ -11,26 +11,28 @@
 
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Voice Agent System](#3-voice-agent-system)
-4. [Plan Tier Architecture](#4-plan-tier-architecture)
-5. [Enhanced Emergency System](#5-enhanced-emergency-system)
-6. [Session Management & Analytics](#6-session-management--analytics)
-7. [Data Flows & User Journeys](#7-data-flows--user-journeys)
-8. [Project Structure](#8-project-structure)
-9. [Core Components](#9-core-components)
-10. [Database Schema](#10-database-schema)
-11. [API Documentation](#11-api-documentation)
-12. [Development Setup](#12-development-setup)
-13. [Deployment Guide](#13-deployment-guide)
-14. [Security Considerations](#14-security-considerations)
-15. [Testing Strategy](#15-testing-strategy)
-16. [Troubleshooting](#16-troubleshooting)
+3. [Advanced Voice Agent System](#3-advanced-voice-agent-system)
+4. [OpenAI TTS Integration](#4-openai-tts-integration)
+5. [Enterprise Session Management](#5-enterprise-session-management)
+6. [Health Monitoring & Analytics](#6-health-monitoring--analytics)
+7. [Plan Tier Architecture](#7-plan-tier-architecture)
+8. [Enhanced Emergency System](#8-enhanced-emergency-system)
+9. [Data Flows & User Journeys](#9-data-flows--user-journeys)
+10. [Project Structure](#10-project-structure)
+11. [Core Components](#11-core-components)
+12. [Database Schema](#12-database-schema)
+13. [API Documentation](#13-api-documentation)
+14. [Development Setup](#14-development-setup)
+15. [Deployment Guide](#15-deployment-guide)
+16. [Security Considerations](#16-security-considerations)
+17. [Testing Strategy](#17-testing-strategy)
+18. [Troubleshooting](#18-troubleshooting)
 
 ---
 
 ## 1. Project Overview
 
-The AI Agent Assistant for SMBs has evolved into a comprehensive **Voice-Enabled Multi-Channel Platform** that provides intelligent conversation capabilities across chat and voice interactions. The system now includes sophisticated plan-based feature tiers, advanced emergency handling, and comprehensive analytics powered by Redis session management.
+The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voice-Enabled Multi-Channel Platform** that provides intelligent conversation capabilities across chat and voice interactions. The system now includes sophisticated OpenAI TTS integration, enterprise-grade Redis session management, advanced health monitoring, and production-ready memory management systems.
 
 ### Key Technologies
 
@@ -40,27 +42,27 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Voice-Enabled
 - **Database**: PostgreSQL 15+ with pgvector
 - **Session Store**: Redis with intelligent fallback and comprehensive session management
 - **ORM**: Prisma 5.x
-- **AI**: OpenAI API (GPT-4, Whisper, OpenAI TTS with voice models, text-embedding-3-small)
-- **Voice**: Twilio Voice API with OpenAI TTS integration and SSML processing
+- **AI**: OpenAI API (GPT-4, Whisper, **OpenAI TTS with voice models**, text-embedding-3-small)
+- **Voice**: Twilio Voice API with **OpenAI TTS primary integration** and SSML processing
 - **Authentication**: JWT (jsonwebtoken) with plan-aware middleware
 - **View Engine**: EJS with plan-based conditional rendering
 - **Containerization**: Docker & Docker Compose
 - **Email**: Nodemailer with enhanced templates
 
-### Major System Features (V4.0)
+### Major System Features (V4.1)
 
-1. **Enhanced Voice Agent System**: Complete Twilio integration with OpenAI TTS and advanced speech processing
-2. **Plan Tier Architecture**: FREE/BASIC/PRO tiers with comprehensive feature gating
-3. **Enhanced Emergency Handling**: Cross-channel emergency detection with priority voice notifications
-4. **Advanced Session Management**: Redis-powered with VoiceSessionService, analytics, and intelligent fallback
-5. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with entity extraction
-6. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and system monitoring
+1. **Advanced Voice Agent System**: OpenAI TTS primary integration with intelligent Twilio fallback and sophisticated SSML processing
+2. **Enterprise Session Management**: Redis-powered with comprehensive analytics, health monitoring, and intelligent memory management
+3. **Production-Ready Infrastructure**: Advanced health monitoring, automated cleanup systems, and configurable resource management
+4. **Enhanced Emergency Handling**: Cross-channel emergency detection with priority voice notifications and advanced analytics
+5. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with real-time entity extraction
+6. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and comprehensive system monitoring
 
 ---
 
 ## 2. System Architecture
 
-### High-Level Architecture (V4.0)
+### High-Level Architecture (V4.1)
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
@@ -72,174 +74,460 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Voice-Enabled
          │                     │                     │                     │
          ▼                     ▼                     ▼                     │
 ┌──────────────────────────────────────────────────────────────────────────┴────┐
-│                        Backend API (Express.js)                                │
+│                   Advanced Backend API (Express.js)                            │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐ │
-│  │   Chat API  │  │  Voice API  │  │  Admin API   │  │ Notification Service│ │
+│  │   Chat API  │  │Enhanced     │  │  Admin API   │  │Advanced Notification│ │
+│  │             │  │Voice API    │  │              │  │     Service         │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘  └──────────┬──────────┘ │
 │         │                │                │                       │           │
 │  ┌──────┴──────────────────┴────────────────┴───────────────────▼──────────┐ │
-│  │                    Business Logic Layer                                   │ │
+│  │                Enhanced Business Logic Layer                              │ │
 │  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │ │
-│  │  │  AI Handler │  │  RAG Service │  │ Voice Session│  │ Plan Manager │ │ │
-│  │  │   (Enhanced)│  │   (Enhanced) │  │   Service    │  │              │ │ │
+│  │  │Enhanced     │  │  RAG Service │  │Enterprise    │  │ Plan Manager │ │ │
+│  │  │AI Handler   │  │   (Enhanced) │  │Voice Session │  │              │ │ │
+│  │  │(Voice Opt.) │  │              │  │   Service    │  │              │ │ │
 │  │  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │ │
 │  └─────────┼────────────────┼──────────────────┼──────────────────┼─────────┘ │
 │            │                │                  │                  │            │
 │  ┌─────────▼────────────────▼──────────────────▼──────────────────▼────────┐  │
-│  │                  Data Access Layer (Prisma)                             │  │
+│  │                Enhanced Data Access Layer (Prisma)                      │  │
 │  └─────────────────────────┬──────────────────────────────┬────────────────┘  │
 └────────────────────────────┼──────────────────────────────┼───────────────────┘
                              │                              │
                     ┌────────▼────────┐            ┌────────▼────────┐
-                    │   PostgreSQL    │            │      Redis      │
-                    │    Database     │◄──────────►│ Session Storage │
-                    │   + pgvector    │            └─────────────────┘
-                    └─────────────────┘
+                    │   PostgreSQL    │            │Enterprise Redis │
+                    │    Database     │◄──────────►│Session Storage  │
+                    │   + pgvector    │            │+ Health Monitor │
+                    └─────────────────┘            └─────────────────┘
                              │
                     ┌────────▼────────┐            ┌─────────────────┐
-                    │   OpenAI API    │            │   Twilio Voice  │
-                    │ GPT/Whisper/TTS │            │       API       │
+                    │Enhanced OpenAI  │            │Enhanced Twilio  │
+                    │API (TTS Primary)│            │Voice (Fallback) │
                     └─────────────────┘            └─────────────────┘
 ```
 
-### Component Interactions
+### Advanced Component Interactions
 
-1. **Chat Flow**: Widget → Chat API → AI Handler → OpenAI/RAG → Database/Redis → Response
-2. **Voice Flow**: Caller → Twilio → Voice API → Voice Session Service → AI Handler → SSML Response
+1. **Enhanced Chat Flow**: Widget → Chat API → AI Handler → OpenAI/RAG → Database/Redis → Response
+2. **Advanced Voice Flow**: Caller → Twilio → Voice API → OpenAI TTS Primary → Voice Session Service → Enhanced Analytics
 3. **Admin Flow**: Dashboard → Admin API → Plan Manager → Auth Middleware → Business Logic → Database
-4. **Emergency Flow**: Detection → Priority Routing → Voice/Email Notifications → Session Analytics
+4. **Emergency Flow**: Detection → Priority Routing → Advanced Voice/Email Notifications → Comprehensive Analytics
 
 ---
 
-## 3. Voice Agent System
+## 3. Advanced Voice Agent System
 
-### 3.1. Twilio Integration Architecture
+### 3.1. Enhanced Twilio Integration Architecture
 
 ```typescript
-// Voice Routes Structure
-POST /api/voice/incoming     // Handle incoming calls
-POST /api/voice/gather       // Process user speech input
-POST /api/voice/action       // Handle dynamic voice actions
-GET  /api/voice/health       // Voice system health check
+// Advanced Voice Routes Structure
+POST /api/voice/incoming          // Handle incoming calls with business routing
+POST /api/voice/handle-speech     // Process real-time speech with OpenAI TTS response
+POST /api/voice/handle-voicemail-recording // Future voicemail processing
+GET  /api/voice/play-audio/:fileName       // Serve OpenAI generated audio files
+GET  /api/voice/health           // Comprehensive voice system health check
 ```
 
-### 3.2. Speech Processing Pipeline
+### 3.2. Advanced Speech Processing Pipeline
 
 ```
-Incoming Call → Twilio Webhook → Voice Route Handler
+Incoming Call → Twilio Webhook → Enhanced Voice Route Handler
        ↓
-Voice Session Creation (Redis) → Initial Greeting (SSML)
+Enterprise Session Creation (Redis+Fallback) → OpenAI TTS Greeting (SSML)
        ↓
 User Speech → Twilio Gather → OpenAI Whisper Transcription
        ↓
-AI Processing (Enhanced for Voice) → Intent Classification
+Enhanced AI Processing (Voice-Optimized) → Intent + Entity Classification
        ↓
-Response Generation → SSML Enhancement → Speech Synthesis
+Response Generation → Advanced SSML Enhancement → OpenAI TTS Primary
        ↓
-Voice Action Decision (CONTINUE/HANGUP/TRANSFER/VOICEMAIL)
+Audio File Generation → Temporary File Serving → Automatic Cleanup
+       ↓
+Voice Action Decision (CONTINUE/HANGUP/TRANSFER/VOICEMAIL) → Session Analytics
 ```
 
-### 3.3. SSML Processing
-
-The system uses advanced SSML (Speech Synthesis Markup Language) for natural voice interactions:
+### 3.3. Advanced SSML Processing Implementation
 
 ```typescript
-// SSML Enhancement Function
-function enhancePromptForVoice(response: string, context: VoiceContext): string {
-  // Add conversational interjections
-  // Apply appropriate pauses and emphasis
-  // Include natural speech patterns
-  // Handle emergency urgency markers
+// Advanced SSML Enhancement Function
+function createSSMLMessage(message: string, options: { 
+  isGreeting?: boolean, 
+  isQuestion?: boolean, 
+  isUrgent?: boolean,
+  addPause?: boolean, 
+  addEmphasis?: boolean, 
+  pauseDuration?: string,
+  isConversational?: boolean
+} = {}): string {
+  let ssmlMessage = message
+  
+  // Add greeting-specific enhancements
+  if (options.isGreeting) {
+    ssmlMessage = ssmlMessage.replace(/(Hey!|Hello!?|Hi!?)/gi, 
+      '<prosody rate="medium" pitch="+5%">$1</prosody>')
+    ssmlMessage = ssmlMessage.replace(/(Hey!|Hello!?|Hi!?)(\s*)/, 
+      '$1<break time="400ms"/>$2')
+  }
+  
+  // Add conversational pauses and flow
+  if (options.isConversational) {
+    ssmlMessage = ssmlMessage.replace(/\b(Now|So|Alright|Okay|Perfect|Great|Got it|Thanks)\b,?/gi, 
+      '<prosody rate="medium">$1</prosody><break time="300ms"/>')
+    ssmlMessage = ssmlMessage.replace(/,\s+/g, ',<break time="200ms"/>')
+    ssmlMessage = ssmlMessage.replace(/\b(please|thank you|thanks)\b/gi, 
+      '<emphasis level="moderate">$1</emphasis>')
+  }
+  
+  return ssmlMessage
 }
-```
-
-**SSML Features:**
-- Conversational interjections ("Got it," "Alright," "Perfect")
-- Context-appropriate pauses and emphasis
-- Emergency urgency markers with enhanced tone
-- Natural speech flow with prosody adjustments
-
-### 3.4. Voice Options & Languages
-
-**Standard Voices (All Plans):**
-- Alice, Man, Woman
-
-**Premium Voices (PRO Only):**
-- Amazon Polly Neural voices
-- Enhanced quality and naturalness
-
-**Generative Voices (PRO Only):**
-- Google Chirp3-HD
-- Amazon Polly Generative
-- Custom voice characteristics
-
-**Multi-Language Support:**
-- English (en-US, en-GB, en-AU)
-- Spanish (es-ES, es-MX)
-- French (fr-FR)
-- German (de-DE)
-- Italian (it-IT)
-- Portuguese (pt-BR)
-
-### 3.5. Enhanced Voice Session Service
-
-The VoiceSessionService provides comprehensive session management with advanced analytics:
-
-```typescript
-// Core Session Structure
-interface VoiceSession {
-  history: ConversationMessage[]          // Enhanced conversation history
-  identifiedIntents: AIIntent[]          // Intent tracking with confidence
-  extractedEntities: ExtractedEntities   // Real-time entity extraction
-  currentFlow: string | null             // Legacy flow compatibility
-  detailedFlow: DetailedFlowState        // Advanced flow management
-  metadata: SessionMetadata              // Call and session metadata
-}
-
-// Enhanced Analytics
-interface SessionAnalytics {
-  conversationLength: number
-  uniqueIntents: string[]
-  mostConfidentIntent?: AIIntent
-  extractedEntityCount: number
-  flowProgression: string[]
-  callDuration: number
-}
-```
-
-**Key Features:**
-- **Redis-First Storage**: Primary Redis storage with intelligent in-memory fallback
-- **Real-Time Analytics**: Live conversation tracking with entity extraction
-- **Memory Optimization**: Configurable session limits and automatic cleanup
-- **Health Monitoring**: Continuous Redis health checks and status reporting
-- **Entity Extraction**: Automatic extraction of emails, phones, names, dates, amounts
-- **Intent Classification**: Real-time intent identification with confidence scoring
-
-**Session Management:**
-```typescript
-// Session Creation and Updates
-await voiceSessionService.addConversationMessage(callSid, 'user', content, {
-  intent: 'booking_request',
-  confidence: 0.9,
-  entities: extractedEntities
-})
-
-// Flow State Management
-await voiceSessionService.updateDetailedFlow(callSid, {
-  primaryFlow: 'lead_capture',
-  subFlow: 'asking_contact',
-  completedSteps: ['greeting', 'problem_identification']
-})
-
-// Analytics Retrieval
-const analytics = await voiceSessionService.getSessionAnalytics(callSid)
 ```
 
 ---
 
-## 4. Plan Tier Architecture
+## 4. OpenAI TTS Integration
 
-### 4.1. Plan Tier Definitions
+### 4.1. Primary TTS Implementation
+
+```typescript
+// OpenAI TTS Service Implementation
+export const generateSpeechFromText = async (
+  textToSpeak: string,
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
+): Promise<string | null> => {
+  try {
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: voice,
+      input: textToSpeak,
+    });
+
+    const tempFileName = `openai_speech_${Date.now()}.mp3`;
+    const tempFilePath = path.join(os.tmpdir(), tempFileName);
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    await fs.promises.writeFile(tempFilePath, buffer);
+
+    return tempFilePath;
+  } catch (error) {
+    console.error('[OpenAI TTS] Error generating speech:', error);
+    return null;
+  }
+};
+```
+
+### 4.2. Intelligent Fallback System
+
+```typescript
+// Enhanced TTS with Intelligent Fallback
+async function generateAndPlayTTS(
+  text: string, 
+  twimlResponse: typeof VoiceResponse.prototype, 
+  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
+  fallbackTwilioVoice: any = 'alice',
+  fallbackLanguage: any = 'en-US'
+): Promise<void> {
+  try {
+    // Primary: OpenAI TTS
+    const tempAudioPath = await generateSpeechFromText(text, openaiVoice);
+    
+    if (tempAudioPath) {
+      const audioFileName = path.basename(tempAudioPath);
+      const audioUrl = `${process.env.APP_PRIMARY_URL}/api/voice/play-audio/${audioFileName}`;
+      twimlResponse.play(audioUrl);
+    } else {
+      // Fallback: Twilio TTS with SSML
+      const fallbackMessage = createSSMLMessage(text, { isConversational: true });
+      twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
+    }
+  } catch (error) {
+    // Enhanced Fallback: Twilio TTS
+    const fallbackMessage = createSSMLMessage(text, { isConversational: true });
+    twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
+  }
+}
+```
+
+### 4.3. Audio File Management
+
+```typescript
+// Secure Audio File Serving with Automatic Cleanup
+router.get('/play-audio/:fileName', (req, res) => {
+  const { fileName } = req.params;
+
+  // Security: Prevent path traversal
+  if (fileName.includes('..') || fileName.includes('/')) {
+    return res.status(400).send('Invalid filename.');
+  }
+
+  const filePath = path.join(os.tmpdir(), fileName);
+
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error(`[Play Audio] Error sending file:`, err);
+        res.status(500).end();
+      }
+      
+      // Automatic cleanup after serving
+      fs.unlink(filePath, (unlinkErr) => {
+        if (unlinkErr) {
+          console.error(`[Play Audio] Error deleting temp file:`, unlinkErr);
+        }
+      });
+    });
+  } else {
+    res.status(404).send('Audio not found.');
+  }
+});
+```
+
+---
+
+## 5. Enterprise Session Management
+
+### 5.1. Redis-Powered Session Architecture
+
+```typescript
+// Enhanced Voice Session Service
+class VoiceSessionService {
+  private static instance: VoiceSessionService;
+  private redis: RedisClientType | undefined;
+  private memoryStore: Map<string, VoiceSession>;
+  private healthMetrics: HealthMetrics;
+
+  // Comprehensive session analytics
+  async getSessionAnalytics(sessionId: string): Promise<SessionAnalytics> {
+    const session = await this.getSession(sessionId);
+    if (!session) return null;
+
+    return {
+      sessionId,
+      duration: session.endTime ? 
+        session.endTime.getTime() - session.startTime.getTime() : 
+        Date.now() - session.startTime.getTime(),
+      messageCount: session.messages.length,
+      intents: session.intents,
+      entities: session.entities,
+      emergencyDetected: session.emergencyDetected,
+      voiceActions: session.voiceActions,
+      completionStatus: session.status
+    };
+  }
+
+  // Advanced health monitoring
+  async getHealthMetrics(): Promise<HealthMetrics> {
+    return {
+      redis: {
+        connected: this.isRedisReady(),
+        latency: await this.measureRedisLatency(),
+        memoryUsage: await this.getRedisMemoryUsage()
+      },
+      sessions: {
+        active: this.memoryStore.size,
+        total: await this.getTotalSessionCount(),
+        averageDuration: await this.getAverageSessionDuration()
+      },
+      memory: {
+        heapUsed: process.memoryUsage().heapUsed,
+        heapTotal: process.memoryUsage().heapTotal,
+        rss: process.memoryUsage().rss
+      }
+    };
+  }
+}
+```
+
+### 5.2. Advanced Memory Management
+
+```typescript
+// Enhanced Memory Monitoring and Cleanup
+const MEMORY_CHECK_INTERVAL = parseInt(process.env.MEMORY_CHECK_INTERVAL || '300000') // 5 minutes
+const MAX_MEMORY_USAGE_MB = 1536; // Alert threshold for 2GB RAM instance
+const MAX_IN_MEMORY_SESSIONS = 100; // Max sessions in memory
+const IN_MEMORY_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+function logMemoryUsage(context: string = ''): void {
+  if (!ENABLE_MEMORY_MONITORING) return
+  
+  const usage = process.memoryUsage();
+  const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
+  
+  const memoryInfo = {
+    context,
+    rss: formatBytes(usage.rss),
+    heapUsed: formatBytes(usage.heapUsed),
+    heapTotal: formatBytes(usage.heapTotal),
+    external: formatBytes(usage.external)
+  }
+  
+  // Alert on high memory usage
+  if (memoryInfo.heapUsed > MAX_MEMORY_USAGE_MB) {
+    console.warn(`[Memory Alert] High memory usage: ${memoryInfo.heapUsed}MB > ${MAX_MEMORY_USAGE_MB}MB`);
+  }
+}
+
+function cleanupOldInMemorySessions(): void {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  // Remove sessions that exceed timeout
+  for (const [callSid, session] of voiceSessions.entries()) {
+    if (now - session.lastAccessed > IN_MEMORY_SESSION_TIMEOUT_MS) {
+      voiceSessions.delete(callSid);
+      cleanedCount++;
+    }
+  }
+  
+  // Enforce hard limit on session count
+  if (voiceSessions.size > MAX_IN_MEMORY_SESSIONS) {
+    const sessionsArray = Array.from(voiceSessions.entries());
+    sessionsArray.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
+    
+    while (voiceSessions.size > MAX_IN_MEMORY_SESSIONS && sessionsArray.length > 0) {
+      const oldestSession = sessionsArray.shift();
+      if (oldestSession) {
+        voiceSessions.delete(oldestSession[0]);
+      }
+    }
+  }
+}
+```
+
+---
+
+## 6. Health Monitoring & Analytics
+
+### 6.1. Comprehensive Health Monitoring
+
+```typescript
+// Advanced Health Check Endpoint
+router.get('/health', async (req, res) => {
+  try {
+    const memoryUsage = process.memoryUsage()
+    const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100
+    
+    const sessionStats = await voiceSessionService.getSessionStats()
+    const activeVoiceSessions = voiceSessions.size
+    
+    const healthData = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      memory: {
+        rss: formatBytes(memoryUsage.rss),
+        heapUsed: formatBytes(memoryUsage.heapUsed),
+        heapTotal: formatBytes(memoryUsage.heapTotal),
+        external: formatBytes(memoryUsage.external),
+        heapUsedPercent: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100)
+      },
+      redis: {
+        connected: isRedisClientReady(),
+        reconnectAttempts: redisReconnectAttempts,
+        maxReconnectAttempts: maxRedisReconnectAttempts,
+        consecutiveFailures
+      },
+      sessions: {
+        activeVoiceSessions,
+        ...sessionStats
+      },
+      timers: {
+        memoryMonitoringEnabled: ENABLE_MEMORY_MONITORING,
+        memoryCheckInterval: MEMORY_CHECK_INTERVAL,
+        sessionCleanupInterval: SESSION_CLEANUP_INTERVAL,
+        redisHealthCheckInterval: REDIS_HEALTH_CHECK_INTERVAL
+      },
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        verboseLogging: ENABLE_VERBOSE_LOGGING,
+        redisConfigured: !!process.env.REDIS_URL
+      }
+    }
+    
+    // Determine health status
+    if (formatBytes(memoryUsage.heapUsed) > MAX_MEMORY_USAGE_MB) {
+      healthData.status = 'warning'
+    }
+    
+    res.json(healthData)
+    
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+```
+
+### 6.2. Redis Connection Management
+
+```typescript
+// Advanced Redis Connection with Health Monitoring
+async function initializeRedis() {
+  if (redisReconnectAttempts >= maxRedisReconnectAttempts) {
+    console.warn(`[Redis] Max reconnection attempts reached. Stopping reconnection.`);
+    return;
+  }
+
+  try {
+    const client = createClient({ 
+      url: process.env.REDIS_URL,
+      socket: {
+        connectTimeout: 5000,
+        reconnectStrategy: (retries) => {
+          if (retries > 3) return false;
+          return Math.min(retries * 50, 500);
+        }
+      }
+    });
+
+    // Enhanced event handling
+    client.on('error', (err) => {
+      console.error('[Redis Error]:', err);
+      redisClient = undefined;
+      redisReconnectAttempts++;
+    });
+
+    client.on('ready', () => {
+      console.log('[Redis Ready] Client is ready.');
+      redisClient = client as RedisClientType;
+      redisReconnectAttempts = 0;
+    });
+
+    await client.connect();
+
+  } catch (err) {
+    console.error('[Redis] Connection failed:', err);
+    redisReconnectAttempts++;
+  }
+}
+
+// Periodic health check with smart backoff
+function startRedisHealthCheck() {
+  healthCheckInterval = setInterval(() => {
+    if (isRedisClientReady()) {
+      consecutiveFailures = 0;
+      return;
+    }
+    
+    if (redisReconnectAttempts >= maxRedisReconnectAttempts) return;
+    
+    // Exponential backoff for failures
+    const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveFailures), 60000);
+    if (consecutiveFailures > 0 && Date.now() - lastRedisCheckTime < backoffDelay) {
+      return;
+    }
+    
+    initializeRedis().catch(err => consecutiveFailures++);
+  }, REDIS_HEALTH_CHECK_INTERVAL);
+}
+```
+
+---
+
+## 7. Plan Tier Architecture
+
+### 7.1. Plan Tier Definitions
 
 ```typescript
 enum PlanTier {
@@ -249,7 +537,7 @@ enum PlanTier {
 }
 ```
 
-### 4.2. Feature Matrix
+### 7.2. Feature Matrix
 
 | Feature | FREE | BASIC | PRO |
 |---------|------|-------|-----|
@@ -262,7 +550,7 @@ enum PlanTier {
 | Branding | Visible | Visible | Hidden |
 | Voice Configuration | ❌ | ❌ | ✅ Full |
 
-### 4.3. Plan-Aware Middleware
+### 7.3. Plan-Aware Middleware
 
 ```typescript
 // Plan validation middleware
@@ -277,7 +565,7 @@ export const requirePlan = (requiredPlan: PlanTier) => {
 };
 ```
 
-### 4.4. Plan-Based UI Rendering
+### 7.4. Plan-Based UI Rendering
 
 The admin interface conditionally renders features based on plan tier:
 
@@ -295,9 +583,9 @@ app.get('/admin/settings', authMiddleware, (req, res) => {
 
 ---
 
-## 5. Enhanced Emergency System
+## 8. Enhanced Emergency System
 
-### 5.1. Cross-Channel Emergency Detection
+### 8.1. Cross-Channel Emergency Detection
 
 ```typescript
 // Emergency detection across channels
@@ -309,7 +597,7 @@ interface EmergencyDetection {
 }
 ```
 
-### 5.2. Emergency Response Flow
+### 8.2. Emergency Response Flow
 
 ```
 User Input (Chat/Voice) → Emergency Detection Engine
@@ -327,7 +615,7 @@ Multi-Channel Notifications:
 Session Analytics with Emergency Metrics
 ```
 
-### 5.3. Essential Question Flagging
+### 8.3. Essential Question Flagging
 
 The `isEssentialForEmergency` field on lead capture questions allows for streamlined emergency flows:
 
@@ -337,7 +625,7 @@ ALTER TABLE lead_capture_questions
 ADD COLUMN isEssentialForEmergency BOOLEAN DEFAULT false;
 ```
 
-### 5.4. Emergency Voice Notifications (PRO Feature)
+### 8.4. Emergency Voice Notifications (PRO Feature)
 
 For PRO tier users, the system makes immediate voice calls to business owners when emergencies are detected:
 
@@ -355,89 +643,13 @@ async function makeEmergencyCall(businessPhone: string, emergencyDetails: Emerge
 
 ---
 
-## 6. Session Management & Analytics
+## 9. Data Flows & User Journeys
 
-### 6.1. Redis-Powered Session Architecture
-
-```typescript
-// Voice Session Service
-class VoiceSessionService {
-  private redis: Redis;
-  private memoryStore: Map<string, VoiceSession>; // Fallback
-  
-  async createSession(sessionId: string, businessId: string): Promise<VoiceSession>
-  async updateSession(sessionId: string, update: Partial<VoiceSession>): Promise<void>
-  async getSession(sessionId: string): Promise<VoiceSession | null>
-  async endSession(sessionId: string): Promise<SessionAnalytics>
-  async cleanup(): Promise<void>
-}
-```
-
-### 6.2. Session Analytics
-
-The system tracks comprehensive analytics for each session:
-
-```typescript
-interface SessionAnalytics {
-  sessionId: string;
-  businessId: string;
-  channel: 'CHAT' | 'VOICE';
-  startTime: Date;
-  endTime?: Date;
-  duration?: number; // milliseconds
-  messageCount: number;
-  intents: Array<{
-    intent: string;
-    confidence: number;
-    timestamp: Date;
-  }>;
-  entities: {
-    emails: string[];
-    phones: string[];
-    names: string[];
-    dates: string[];
-    amounts: string[];
-    locations: string[];
-  };
-  voiceMetrics?: {
-    callDuration: number;
-    voiceActions: string[];
-    speechQuality: number;
-  };
-  emergencyDetected: boolean;
-  leadCaptured: boolean;
-  completionStatus: 'COMPLETED' | 'ABANDONED' | 'TRANSFERRED';
-}
-```
-
-### 6.3. Health Monitoring
-
-The system includes comprehensive health monitoring:
-
-```typescript
-// Health check endpoint
-GET /health
-// Returns:
-{
-  status: 'healthy' | 'degraded' | 'unhealthy',
-  database: { connected: boolean, latency: number },
-  redis: { connected: boolean, latency: number },
-  openai: { accessible: boolean, latency: number },
-  twilio: { accessible: boolean, webhook_status: string },
-  sessions: { active: number, total: number },
-  voice_calls: { active: number, total_today: number }
-}
-```
-
----
-
-## 7. Data Flows & User Journeys
-
-### 7.1. Voice Call Journey
+### 9.1. Advanced Voice Call Journey
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Voice Call Data Flow                                 │
+│                     Advanced Voice Call Data Flow                            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Customer Dials Business Number ──────┐
@@ -445,14 +657,15 @@ Customer Dials Business Number ──────┐
                              ┌──────────────┐
                              │ Twilio PSTN  │
                              └──────┬───────┘
-                                    │ Webhook
+                                    │ Enhanced Webhook
                                     ▼
-                             ┌──────────────┐    {callSid, from, to,
-                             │  Voice API   │     direction, callStatus}
-                             └──────┬───────┘              │
-                                    │                      ▼
+                             ┌──────────────┐    {callSid, from, to, direction,
+                             │Enhanced Voice│     callStatus, businessRouting}
+                             │     API      │              │
+                             └──────┬───────┘              ▼
                                     │              ┌──────────────┐
-                                    └─────────────►│Voice Session │◄─── Redis
+                                    └─────────────►│Enterprise    │◄─── Redis Primary
+                                                   │Voice Session │     + Memory Fallback
                                                    │   Service    │
                                                    └──────┬───────┘
                                                           │
@@ -460,8 +673,9 @@ Customer Dials Business Number ──────┐
                           │                     │                       │
                           ▼                     ▼                       ▼
                   ┌──────────────┐    ┌──────────────┐      ┌──────────────┐
-                  │ AI Handler   │    │ Emergency    │      │ Plan Manager │
-                  │ (Voice Mode) │    │ Detection    │      │              │
+                  │Enhanced AI   │    │ Advanced     │      │ Plan Manager │
+                  │Handler       │    │ Emergency    │      │   + Health   │
+                  │(Voice Opt.)  │    │ Detection    │      │  Monitor     │
                   └──────┬───────┘    └──────┬───────┘      └──────┬───────┘
                          │                   │                     │
                          └─────────────────────┼─────────────────────┘
@@ -470,18 +684,21 @@ Customer Dials Business Number ──────┐
                          │                                           │
                          ▼                                           ▼
                  ┌──────────────┐                            ┌──────────────┐
-                 │ SSML Response│                            │ Session      │
-                 │ Generation   │                            │ Analytics    │
+                 │OpenAI TTS    │                            │Comprehensive │
+                 │Primary +     │                            │Session       │
+                 │SSML Enhanced │                            │Analytics +   │
+                 │Twilio Fallback│                           │Health Metrics│
                  └──────┬───────┘                            └──────────────┘
                         │
                         ▼
                  ┌──────────────┐
-                 │ Twilio TwiML │
-                 │ Response     │
+                 │Audio File    │
+                 │Generation +  │
+                 │Auto Cleanup  │
                  └──────────────┘
 ```
 
-### 7.2. Cross-Channel Emergency Flow
+### 9.2. Cross-Channel Emergency Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -527,9 +744,9 @@ Emergency Input (Chat/Voice) ──────┐
 
 ---
 
-## 8. Project Structure
+## 10. Project Structure
 
-### 8.1. Enhanced Directory Structure
+### 10.1. Enhanced Directory Structure
 
 ```
 leads-support-agent-smb/
@@ -544,204 +761,186 @@ leads-support-agent-smb/
 │   │   ├── admin.ts              # Admin API with plan-aware features
 │   │   ├── authMiddleware.ts     # JWT auth with plan validation
 │   │   ├── chatRoutes.ts         # Enhanced chat API
-│   │   ├── voiceRoutes.ts        # NEW: Twilio voice integration
+│   │   ├── voiceRoutes.ts        # ENHANCED: Advanced Twilio + OpenAI TTS integration
 │   │   └── viewRoutes.ts         # Plan-aware view rendering
 │   ├── core/
-│   │   ├── aiHandler.ts          # Enhanced with voice optimization
+│   │   ├── aiHandler.ts          # ENHANCED: Voice optimization + response cleaning
 │   │   └── ragService.ts         # Voice-context aware RAG
 │   ├── services/
-│   │   ├── voiceSessionService.ts # NEW: Redis session management
+│   │   ├── voiceSessionService.ts # ENHANCED: Enterprise Redis session management
 │   │   ├── notificationService.ts # Enhanced with voice notifications
-│   │   ├── openai.ts             # Voice processing integration
+│   │   ├── openai.ts             # ENHANCED: OpenAI TTS + voice processing
 │   │   └── db.ts                 # Database service
 │   ├── utils/
-│   │   ├── voiceHelpers.ts       # NEW: Voice processing utilities
-│   │   ├── planUtils.ts          # NEW: Plan tier management
-│   │   ├── ssmlHelpers.ts        # NEW: SSML processing utilities
-│   │   └── emergencyDetection.ts # NEW: Emergency detection logic
+│   │   ├── voiceHelpers.ts       # ENHANCED: Advanced voice processing utilities
+│   │   ├── planUtils.ts          # Plan tier management
+│   │   ├── ssmlHelpers.ts        # ENHANCED: Advanced SSML processing
+│   │   ├── emergencyDetection.ts # Emergency detection logic
+│   │   ├── memoryManagement.ts   # NEW: Memory monitoring and cleanup
+│   │   └── healthMonitoring.ts   # NEW: Comprehensive health monitoring
 │   ├── types/
-│   │   ├── voice.ts              # NEW: Voice-related type definitions
-│   │   ├── plans.ts              # NEW: Plan tier types
-│   │   └── emergency.ts          # NEW: Emergency handling types
+│   │   ├── voice.ts              # ENHANCED: Advanced voice type definitions
+│   │   ├── plans.ts              # Plan tier types
+│   │   ├── emergency.ts          # Emergency handling types
+│   │   ├── session.ts            # NEW: Session management types
+│   │   └── health.ts             # NEW: Health monitoring types
 │   ├── middleware/
-│   │   ├── planMiddleware.ts     # NEW: Plan-based access control
-│   │   └── voiceMiddleware.ts    # NEW: Voice-specific middleware
+│   │   ├── planMiddleware.ts     # Plan-based access control
+│   │   ├── voiceMiddleware.ts    # ENHANCED: Voice-specific middleware
+│   │   └── healthMiddleware.ts   # NEW: Health monitoring middleware
 │   └── views/                    # EJS templates with plan-aware rendering
 │       ├── agent-settings.ejs   # Enhanced with voice configuration
-│       ├── voice-settings.ejs   # NEW: PRO voice configuration
+│       ├── voice-settings.ejs   # ENHANCED: Advanced voice configuration
 │       ├── dashboard.ejs         # Enhanced with analytics
-│       └── analytics.ejs         # NEW: Session analytics dashboard
+│       ├── analytics.ejs         # ENHANCED: Advanced session analytics
+│       └── health-monitor.ejs    # NEW: Health monitoring dashboard
 ├── redis/
-│   └── redis.conf                # Redis configuration
-├── docker-compose.yml            # Enhanced with Redis service
+│   └── redis.conf                # ENHANCED: Production Redis configuration
+├── docker-compose.yml            # ENHANCED: Advanced service configuration
 ├── Dockerfile                    # Updated with voice dependencies
 └── package.json                  # Updated dependencies
 ```
 
-### 8.2. Key New Components
+### 10.2. Key Enhanced Components
 
-**Voice Processing Stack:**
-- `voiceRoutes.ts`: Twilio webhook handling and voice API endpoints
-- `voiceSessionService.ts`: Redis-backed session management with analytics
-- `voiceHelpers.ts`: SSML processing and voice optimization utilities
+**Advanced Voice Processing Stack:**
+- `voiceRoutes.ts`: Advanced Twilio webhook handling with OpenAI TTS primary integration
+- `voiceSessionService.ts`: Enterprise Redis session management with comprehensive analytics
+- `openai.ts`: Enhanced OpenAI service with TTS integration and voice processing
+- `ssmlHelpers.ts`: Advanced SSML processing utilities for natural conversation
 
-**Plan Management:**
-- `planUtils.ts`: Plan tier validation and feature gating logic
-- `planMiddleware.ts`: Request-level plan validation
+**Enterprise Infrastructure:**
+- `memoryManagement.ts`: Advanced memory monitoring and cleanup systems
+- `healthMonitoring.ts`: Comprehensive health monitoring with detailed metrics
+- `healthMiddleware.ts`: Health monitoring middleware for API endpoints
 
-**Emergency System:**
-- `emergencyDetection.ts`: Cross-channel emergency detection engine
-- Enhanced notification service with voice call capabilities
+**Production-Ready Systems:**
+- Enhanced error handling and graceful degradation
+- Automated cleanup systems with configurable resource limits
+- Advanced health monitoring with component status tracking
 
 ---
 
-## 9. Core Components
+## 11. Core Components
 
-### 9.1. Enhanced AI Handler
-
-The AI Handler has been significantly enhanced for voice processing:
+### 11.1. Enhanced AI Handler with Voice Optimization
 
 ```typescript
 class AIHandler {
-  async processMessage(
-    message: string,
-    businessId: string,
-    conversationHistory: ConversationMessage[],
-    channel: 'CHAT' | 'VOICE' = 'CHAT',
-    sessionId?: string
-  ): Promise<ProcessedResponse> {
-    
-    // Voice-specific processing
-    if (channel === 'VOICE') {
-      const voiceOptimizedResponse = await this.processVoiceMessage(
-        message, businessId, conversationHistory, sessionId
-      );
-      return this.enhanceForVoice(voiceOptimizedResponse);
-    }
-    
-    // Standard chat processing with voice compatibility
-    return this.processStandardMessage(message, businessId, conversationHistory);
+  // Voice-optimized system prompt creation
+  private createVoiceSystemPrompt(businessName?: string): string {
+    return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller.
+
+**ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
+
+1. **DIALOGUE-ONLY OUTPUT:** Your response IS the exact words to be spoken. NEVER include:
+   ❌ Prefixes: "Say:", "Response:", "AI:", "Assistant:"
+   ❌ Meta-commentary: "[speaking naturally]", "(pause here)"
+   ❌ Explanations: "I should say...", "Let me respond with..."
+
+2. **VOICE-FIRST SPEECH PATTERNS:**
+   - Use CONVERSATIONAL sentences (8-12 words per sentence maximum)
+   - Employ natural speech rhythm with pauses and breath points
+   - Use contractions authentically ("I'll", "we're", "that's")
+   - Include natural transitions: "Well,", "Actually,", "You know,", "So,"
+
+3. **STRATEGIC SSML FOR NATURAL FLOW:**
+   * **Natural Pauses:** \`<break time="300ms"/>\` between distinct thoughts
+   * **Gentle Emphasis:** \`<emphasis level="moderate">key information</emphasis>\``;
   }
 
-  private async enhanceForVoice(response: string): Promise<string> {
-    // Add SSML markup for natural speech
-    // Include conversational interjections
-    // Apply appropriate pauses and emphasis
-    return enhancePromptForVoice(response, this.voiceContext);
+  // Advanced response cleaning for voice output
+  private cleanVoiceResponse(response: string): string {
+    let cleanedResponse = response.trim()
+    
+    // Ultra-aggressive prefix removal
+    const prefixPatterns = [
+      /^(Say|Response|Assistant|AI|Voice|Agent):\s*/gi,
+      /^(I should say|Let me say|I'll say|I will say):\s*/gi,
+      /^(Here's what I would say|Here's my response):\s*/gi,
+      // ... comprehensive prefix patterns
+    ]
+    
+    // Apply patterns iteratively
+    for (const pattern of prefixPatterns) {
+      cleanedResponse = cleanedResponse.replace(pattern, '').trim()
+    }
+    
+    // Remove meta-commentary and formatting
+    cleanedResponse = cleanedResponse.replace(/^\[.*?\]\s*/g, '').trim()
+    cleanedResponse = cleanedResponse.replace(/^\(.*?\)\s*/g, '').trim()
+    
+    return cleanedResponse
+  }
+
+  async processMessage(
+    message: string,
+    conversationHistory: ConversationMessage[],
+    businessId: string,
+    currentActiveFlow?: string | null
+  ): Promise<EnhancedAIResponse> {
+    // Enhanced processing with voice optimization, emergency detection,
+    // and comprehensive session management
   }
 }
 ```
 
-### 9.2. Voice Session Service
-
-Manages voice call sessions with Redis storage and comprehensive analytics:
+### 11.2. Enterprise Voice Session Service
 
 ```typescript
 class VoiceSessionService {
-  private redis: Redis;
+  private static instance: VoiceSessionService;
+  private redis: RedisClientType | undefined;
   private memoryStore: Map<string, VoiceSession>;
+  private healthMetrics: HealthMetrics;
 
-  async createSession(sessionId: string, businessId: string): Promise<VoiceSession> {
-    const session: VoiceSession = {
-      sessionId,
-      businessId,
-      startTime: new Date(),
-      messages: [],
-      intents: [],
-      entities: { emails: [], phones: [], names: [], dates: [], amounts: [], locations: [] },
-      status: 'ACTIVE',
-      channel: 'VOICE'
-    };
-
-    // Store in Redis with fallback to memory
-    try {
-      await this.redis.setex(`voice_session:${sessionId}`, 3600, JSON.stringify(session));
-    } catch (error) {
-      console.warn('Redis unavailable, using memory store');
-      this.memoryStore.set(sessionId, session);
-    }
-
-    return session;
-  }
-
-  async updateSession(sessionId: string, update: Partial<VoiceSession>): Promise<void> {
-    // Update session with new data and analytics
-  }
-
+  // Comprehensive session analytics
   async getSessionAnalytics(sessionId: string): Promise<SessionAnalytics> {
-    // Generate comprehensive analytics from session data
+    const session = await this.getSession(sessionId);
+    if (!session) return null;
+
+    return {
+      sessionId,
+      duration: session.endTime ? 
+        session.endTime.getTime() - session.startTime.getTime() : 
+        Date.now() - session.startTime.getTime(),
+      messageCount: session.messages.length,
+      intents: session.intents,
+      entities: session.entities,
+      emergencyDetected: session.emergencyDetected,
+      voiceActions: session.voiceActions,
+      completionStatus: session.status
+    };
   }
-}
-```
 
-### 9.3. Plan Manager
-
-Handles plan tier validation and feature gating:
-
-```typescript
-class PlanManager {
-  static isPlanSufficient(userPlan: PlanTier, requiredPlan: PlanTier): boolean {
-    const planHierarchy = { FREE: 0, BASIC: 1, PRO: 2 };
-    return planHierarchy[userPlan] >= planHierarchy[requiredPlan];
-  }
-
-  static getAvailableFeatures(planTier: PlanTier): string[] {
-    switch (planTier) {
-      case 'FREE':
-        return ['chat_widget', 'basic_faq', 'limited_questions'];
-      case 'BASIC':
-        return ['chat_widget', 'advanced_faq', 'unlimited_questions', 'priority_email'];
-      case 'PRO':
-        return ['all_features', 'voice_agent', 'premium_voices', 'emergency_calls', 'analytics'];
-      default:
-        return [];
-    }
-  }
-}
-```
-
-### 9.4. Emergency Detection Engine
-
-Cross-channel emergency detection with sophisticated keyword analysis:
-
-```typescript
-class EmergencyDetectionEngine {
-  private emergencyKeywords = {
-    URGENT: ['flooding', 'burst pipe', 'electrical fire', 'gas leak', 'no heat'],
-    HIGH: ['leak', 'clogged', 'sparking', 'strange smell'],
-    NORMAL: ['maintenance', 'quote', 'estimate', 'schedule']
-  };
-
-  detectEmergency(message: string, channel: 'CHAT' | 'VOICE'): EmergencyLevel {
-    const lowercaseMessage = message.toLowerCase();
-    
-    for (const [level, keywords] of Object.entries(this.emergencyKeywords)) {
-      if (keywords.some(keyword => lowercaseMessage.includes(keyword))) {
-        return level as EmergencyLevel;
+  // Advanced health monitoring
+  async getHealthMetrics(): Promise<HealthMetrics> {
+    return {
+      redis: {
+        connected: this.isRedisReady(),
+        latency: await this.measureRedisLatency(),
+        memoryUsage: await this.getRedisMemoryUsage()
+      },
+      sessions: {
+        active: this.memoryStore.size,
+        total: await this.getTotalSessionCount(),
+        averageDuration: await this.getAverageSessionDuration()
+      },
+      memory: {
+        heapUsed: process.memoryUsage().heapUsed,
+        heapTotal: process.memoryUsage().heapTotal,
+        rss: process.memoryUsage().rss
       }
-    }
-    
-    return 'NORMAL';
-  }
-
-  async handleEmergency(
-    emergencyLevel: EmergencyLevel,
-    leadData: any,
-    businessId: string,
-    channel: 'CHAT' | 'VOICE'
-  ): Promise<void> {
-    // Create priority lead
-    // Send emergency notifications
-    // Update session analytics
+    };
   }
 }
 ```
 
 ---
 
-## 10. Database Schema
+## 12. Database Schema
 
-### 10.1. Enhanced Schema (V4.0)
+### 12.1. Enhanced Schema (V4.0)
 
 The database schema has been enhanced to support voice features, plan tiers, and emergency handling:
 
@@ -827,7 +1026,7 @@ CREATE TYPE plan_tier AS ENUM ('FREE', 'BASIC', 'PRO');
 CREATE TYPE lead_priority AS ENUM ('LOW', 'NORMAL', 'HIGH', 'URGENT');
 ```
 
-### 10.2. Voice Session Storage (Redis)
+### 12.2. Voice Session Storage (Redis)
 
 Voice sessions are stored in Redis with the following structure:
 
@@ -869,9 +1068,9 @@ interface VoiceSession {
 
 ---
 
-## 11. API Documentation
+## 13. API Documentation
 
-### 11.1. Voice API Endpoints
+### 13.1. Voice API Endpoints
 
 ```typescript
 // Voice Routes (/api/voice)
@@ -896,7 +1095,7 @@ GET /api/voice/health
   - Includes active call metrics
 ```
 
-### 11.2. Enhanced Admin API
+### 13.2. Enhanced Admin API
 
 ```typescript
 // Plan-aware Admin Routes (/api/admin)
@@ -921,7 +1120,7 @@ GET /api/admin/sessions
   - Session cleanup controls
 ```
 
-### 11.3. Enhanced Health Monitoring
+### 13.3. Enhanced Health Monitoring
 
 ```typescript
 GET /health
@@ -962,9 +1161,9 @@ Response: {
 
 ---
 
-## 12. Development Setup
+## 14. Development Setup
 
-### 12.1. Enhanced Environment Configuration
+### 14.1. Enhanced Environment Configuration
 
 ```bash
 # Core Application
@@ -998,7 +1197,7 @@ WIDGET_DEMO_URL=https://demo.yourcompany.com
 WIDGET_TEST_URL=http://127.0.0.1:8080
 ```
 
-### 12.2. Enhanced Docker Configuration
+### 14.2. Enhanced Docker Configuration
 
 ```yaml
 # docker-compose.yml
@@ -1042,7 +1241,7 @@ volumes:
   redis_data:
 ```
 
-### 12.3. Development Commands
+### 14.3. Development Commands
 
 ```bash
 # Start all services
@@ -1066,9 +1265,9 @@ docker-compose exec app yarn test:analytics
 
 ---
 
-## 13. Deployment Guide
+## 15. Deployment Guide
 
-### 13.1. Production Environment Setup
+### 15.1. Production Environment Setup
 
 For production deployment, ensure the following services are configured:
 
@@ -1101,7 +1300,7 @@ TWILIO_WEBHOOK_BASE_URL="https://your-production-domain.com"
 JWT_SECRET="production-strength-jwt-secret"
 ```
 
-### 13.2. Production Deployment Checklist
+### 15.2. Production Deployment Checklist
 
 - [ ] Database migrations applied
 - [ ] Redis instance configured and accessible
@@ -1116,9 +1315,9 @@ JWT_SECRET="production-strength-jwt-secret"
 
 ---
 
-## 14. Security Considerations
+## 16. Security Considerations
 
-### 14.1. Voice Security
+### 16.1. Voice Security
 
 **Twilio Webhook Validation:**
 ```typescript
@@ -1143,7 +1342,7 @@ const validateTwilioSignature = (req: Request): boolean => {
 - No permanent storage of voice recordings
 - GDPR-compliant data handling
 
-### 14.2. Plan Tier Security
+### 16.2. Plan Tier Security
 
 **Plan-Based Access Control:**
 - Middleware validation for all plan-restricted endpoints
@@ -1159,9 +1358,9 @@ const validateTwilioSignature = (req: Request): boolean => {
 
 ---
 
-## 15. Testing Strategy
+## 17. Testing Strategy
 
-### 15.1. Voice Testing Framework
+### 17.1. Voice Testing Framework
 
 ```typescript
 // Voice interaction testing
@@ -1195,7 +1394,7 @@ describe('Voice Agent System', () => {
 });
 ```
 
-### 15.2. Plan Tier Testing
+### 17.2. Plan Tier Testing
 
 ```typescript
 // Plan-based feature testing
@@ -1225,7 +1424,7 @@ describe('Plan Tier System', () => {
 });
 ```
 
-### 15.3. Emergency System Testing
+### 17.3. Emergency System Testing
 
 ```typescript
 // Emergency detection testing
@@ -1248,9 +1447,9 @@ describe('Emergency Detection System', () => {
 
 ---
 
-## 16. Troubleshooting
+## 18. Troubleshooting
 
-### 16.1. Voice System Issues
+### 18.1. Voice System Issues
 
 **Common Twilio Integration Problems:**
 ```bash
@@ -1272,7 +1471,7 @@ docker-compose exec app yarn test:voice-session
 - Monitor network latency to Twilio
 - Validate voice model availability
 
-### 16.2. Redis Session Issues
+### 18.2. Redis Session Issues
 
 **Session Storage Problems:**
 ```bash
@@ -1289,7 +1488,7 @@ docker-compose exec app yarn redis:cleanup
 curl http://localhost:3000/health | jq '.metrics'
 ```
 
-### 16.3. Plan Tier Issues
+### 18.3. Plan Tier Issues
 
 **Feature Access Problems:**
 ```bash
@@ -1307,7 +1506,7 @@ curl -H "Authorization: Bearer $JWT_TOKEN" \
      http://localhost:3000/api/admin/config/voice
 ```
 
-### 16.4. Emergency Detection Issues
+### 18.4. Emergency Detection Issues
 
 **Emergency Not Detected:**
 - Review emergency keyword dictionary
@@ -1321,4 +1520,4 @@ curl -H "Authorization: Bearer $JWT_TOKEN" \
 - Add negative keywords to filter out false positives
 - Review emergency classification logic
 
-This enhanced developer guide now comprehensively covers the voice-enabled, plan-tier based AI agent platform with all its advanced features and capabilities. 
+This comprehensive developer guide now accurately reflects the advanced voice-enabled platform with OpenAI TTS integration, sophisticated session management, and enterprise-grade health monitoring capabilities. 

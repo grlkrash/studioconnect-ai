@@ -826,7 +826,7 @@ router.post('/incoming', async (req, res) => {
     
     // Use gather() for real-time speech input instead of record()
     const gather = twiml.gather({
-      input: 'speech',
+      input: ['speech'],
       action: '/api/voice/handle-speech',
       method: 'POST',
       speechTimeout: 'auto',
@@ -965,7 +965,7 @@ router.post('/handle-speech', async (req, res) => {
       
       // Continue the conversation loop with another gather
       const gather = twiml.gather({
-        input: 'speech',
+        input: ['speech'],
         action: '/api/voice/handle-speech',
         method: 'POST',
         speechTimeout: 'auto',
@@ -1092,7 +1092,7 @@ router.post('/handle-speech', async (req, res) => {
       case 'CONTINUE':
         // Continue conversation with another gather
         const continueGather = twimlResponse.gather({
-          input: 'speech',
+          input: ['speech'],
           action: '/api/voice/handle-speech',
           method: 'POST',
           speechTimeout: 'auto',

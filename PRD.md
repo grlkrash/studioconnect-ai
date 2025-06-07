@@ -1,5 +1,5 @@
 # Product Requirements Document: Leads Support AI Agent
-**Version:** 4.0 (Voice Agent & Plan Tier Implementation)
+**Version:** 4.1 (Advanced Voice & Session Management Implementation)
 **Date:** December 2024
 **Project Owner:** Sonia
 **Author:** AI Assistant (in collaboration with Sonia)
@@ -7,19 +7,36 @@
 ## 1. Introduction
 
 ### 1.1. Purpose of this Document
-This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the **Voice-Enabled Multi-Channel Platform** that has evolved from the original MVP to include comprehensive voice calling capabilities, plan-based feature tiers, enhanced emergency handling, and advanced analytics. The system is currently deployed and operational with both chat and voice functionalities.
+This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the **Advanced Voice-Enabled Multi-Channel Platform** that has evolved from the original MVP to include comprehensive voice calling capabilities with OpenAI TTS integration, sophisticated Redis-powered session management, advanced health monitoring, and enhanced emergency handling. The system is currently deployed and operational with both chat and voice functionalities.
 
 ### 1.2. Project Vision
-To empower Small to Medium-Sized Businesses (SMBs) with an intelligent, **multi-channel AI platform** that seamlessly handles both chat and voice interactions. The Agent provides 24/7 availability across communication channels, sophisticated emergency detection and response, plan-based access to advanced features that scale with business needs, and comprehensive analytics to help SMBs understand and optimize their customer interactions.
+To empower Small to Medium-Sized Businesses (SMBs) with an intelligent, **multi-channel AI platform** that seamlessly handles both chat and voice interactions. The Agent provides 24/7 availability across communication channels, sophisticated emergency detection and response, plan-based access to advanced features that scale with business needs, and comprehensive analytics powered by advanced session management and health monitoring systems.
 
 ### 1.3. Product Goals
 
-#### Current Implementation (V4.0 - Fully Deployed)
-* **Voice-Enabled AI Platform:** Complete integration with Twilio for incoming call handling, speech processing, and natural language voice responses
-* **Plan-Tier Architecture:** Three-tier system (FREE, BASIC, PRO) with progressive feature access and plan-based UI rendering
-* **Enhanced Emergency System:** Cross-channel emergency detection with priority voice notifications and essential question flagging
-* **Advanced Session Management:** Redis-backed session storage with comprehensive analytics and health monitoring
-* **Multi-Channel Lead Capture:** Seamless lead management across chat and voice with sophisticated routing
+#### Current Implementation (V4.1 - Fully Deployed with Advanced Features)
+* **Advanced Voice-Enabled AI Platform:** Complete Twilio integration with OpenAI TTS primary synthesis, sophisticated SSML processing, and intelligent fallback systems
+* **Sophisticated Session Management:** Redis-powered session storage with intelligent in-memory fallback, comprehensive analytics, and advanced memory monitoring
+* **Enhanced Health Monitoring:** Real-time system health tracking with detailed metrics, Redis connectivity monitoring, and automated cleanup systems
+* **Advanced Voice Processing:** OpenAI voice models (nova, alloy, onyx, shimmer, echo, fable) with dynamic audio generation and natural conversation flow
+* **Intelligent Memory Management:** Automated session cleanup, memory optimization, and configurable resource limits with production-ready monitoring
+
+#### Achieved Advanced Features
+* **Premium Voice Synthesis:**
+  - **Primary TTS**: OpenAI voice models with superior quality (nova, alloy, onyx, shimmer, echo, fable)
+  - **Intelligent Fallback**: Automatic fallback to Twilio TTS with SSML enhancement when OpenAI TTS unavailable
+  - **Dynamic Audio Generation**: Real-time audio file generation with automatic cleanup and memory management
+  - **Natural Conversation Flow**: Advanced SSML processing with conversational interjections, appropriate pauses, and intelligent emphasis
+* **Enterprise-Grade Session Management:**
+  - **Redis-First Architecture**: Primary Redis storage with comprehensive connection management and automatic reconnection
+  - **Intelligent Fallback System**: Seamless failover to in-memory storage with advanced cleanup and memory optimization
+  - **Advanced Analytics**: Real-time session tracking with entity extraction, intent classification, and conversation analytics
+  - **Health Monitoring**: Continuous Redis health checks with exponential backoff and detailed status reporting
+* **Production-Ready Infrastructure:**
+  - **Memory Monitoring**: Optional verbose logging and memory usage tracking for production debugging
+  - **Automated Cleanup**: Configurable session limits, automatic expiration, and resource management
+  - **Health Endpoints**: Comprehensive system status dashboards with detailed metrics and component health
+  - **Performance Optimization**: Memory-efficient session management with configurable limits and intelligent cleanup
 
 #### Achieved Core Features
 * **Sophisticated Voice Agent:**
@@ -56,7 +73,7 @@ Primary users are Small to Medium-Sized Businesses (SMBs) in service-oriented in
 * **Service Contractors:** Landscapers, roofers, contractors requiring multi-channel communication
 
 ### 1.5. Scope
-* **In Scope (Current V4.0 Implementation):** All voice agent features, plan tier system, enhanced emergency handling, Redis session management, advanced analytics
+* **In Scope (Current V4.1 Implementation):** All voice agent features, plan tier system, enhanced emergency handling, Redis session management, advanced analytics
 * **Phase 1 Future Development:** CRM integrations, advanced voice features, mobile applications
 * **Phase 2 Future Development:** Self-service SaaS platform, automated billing, advanced AI capabilities
 
@@ -98,40 +115,66 @@ SMBs lose significant business opportunities due to inability to handle immediat
 * **As Charlie,** I get immediate confirmation through voice that my emergency request is being treated as priority
 * **As Charlie,** I can continue the conversation across channels (start with chat, escalate to voice call) with full context preservation
 
-## 4. Detailed Feature Specifications (V4.0 Current Implementation)
+## 4. Detailed Feature Specifications (V4.1 Current Implementation)
 
-### 4.1. Voice Agent System (Complete Implementation)
+### 4.1. Advanced Voice Agent System (Premium Implementation)
 
-#### Voice Infrastructure
-* **Twilio Integration:** Complete webhook system handling incoming calls with business phone number routing
-* **Advanced Speech Processing Pipeline:**
-  - OpenAI Whisper transcription with noise filtering and accuracy optimization
-  - AI-powered response generation with voice-specific optimization and natural conversational flow
-  - **OpenAI TTS Integration:** High-quality text-to-speech using OpenAI's advanced voice models (alloy, echo, fable, onyx, nova, shimmer)
-  - SSML-enhanced speech synthesis with intelligent fallback to Twilio TTS
-  - Dynamic audio file generation and streaming for optimal voice quality
-* **Voice Options (Plan-Dependent):**
-  - **Standard (All Tiers):** Alice, Man, Woman (Twilio TTS)
-  - **Premium (PRO Only):** Amazon Polly Neural voices with enhanced naturalness
-  - **Advanced AI Voices (PRO Only):** OpenAI voice models with superior quality and conversational tone
-  - **Generative (PRO Only):** Google Chirp3-HD, Amazon Polly Generative
+#### Premium Voice Infrastructure
+* **OpenAI TTS Primary Integration:** 
+  - **High-Quality Voice Models**: nova (default), alloy (professional), onyx (male), shimmer (energetic), echo (balanced), fable (expressive)
+  - **Dynamic Audio Generation**: Real-time MP3 generation with temporary file management and automatic cleanup
+  - **Intelligent Quality Selection**: Voice model selection based on plan tier and business configuration
+  - **Fallback Architecture**: Seamless fallback to Twilio TTS with SSML enhancement when OpenAI services are unavailable
+* **Advanced SSML Processing Pipeline:**
+  - **Natural Conversation Flow**: Conversational interjections ("Got it," "Alright," "Perfect"), context-appropriate pauses
+  - **Intelligent Emphasis**: Dynamic emphasis for important information and emergency situations
+  - **Voice-Optimized Prompts**: Specialized system prompts designed specifically for voice interactions
+  - **Response Cleaning**: Aggressive post-processing to ensure clean speech output with comprehensive prefix removal
 
-#### Enhanced Voice Processing Features
-* **Intelligent Voice Routing:** Automatic selection of optimal TTS provider based on plan tier and content type
-* **Audio Quality Optimization:** Dynamic audio file generation with automatic cleanup and memory management
-* **Voice Response Caching:** Efficient temporary audio file serving with security validation
-* **Natural Conversation Flow:** Enhanced SSML processing with conversational interjections, appropriate pauses, and emphasis
-* **Voice Action Intelligence:** Dynamic determination of next actions (CONTINUE, HANGUP, TRANSFER, VOICEMAIL) based on conversation context
+#### Enterprise Session Management
+* **Redis-Powered Architecture:**
+  - **Primary Storage**: Redis with robust connection management, automatic reconnection, and health monitoring
+  - **Intelligent Fallback**: In-memory session storage with automatic failover and advanced cleanup
+  - **Connection Resilience**: Comprehensive error handling with exponential backoff and connection status tracking
+  - **Performance Optimization**: Configurable session limits, memory monitoring, and automated resource management
+* **Advanced Session Analytics:**
+  - **Real-Time Tracking**: Live conversation monitoring with intent classification and entity extraction
+  - **Comprehensive Metrics**: Call duration, message count, entity extraction, and conversation analytics
+  - **Health Monitoring**: Continuous system health checks with detailed component status reporting
+  - **Memory Management**: Optional verbose logging, memory usage tracking, and automated cleanup systems
 
-#### Multi-Language Support
-* **Supported Languages:** English (US/UK/AU), Spanish (es-ES/es-MX), French (fr-FR), German (de-DE), Italian (it-IT), Portuguese (pt-BR)
-* **Voice Matching:** Automatic voice selection based on chosen language
-* **SSML Localization:** Language-appropriate speech patterns and emphasis
-
-#### Voice Session Management
-* **Redis-Backed Sessions:** Robust session storage with automatic failover to in-memory backup
-* **Session Analytics:** Real-time tracking of conversation flow, intent classification, entity extraction
-* **Dynamic Actions:** CONTINUE, HANGUP, TRANSFER, VOICEMAIL routing based on conversation context
+#### Production-Ready Health Monitoring
+* **System Health Dashboard:**
+  ```json
+  {
+    "status": "healthy",
+    "memory": {
+      "heapUsed": 156.7,
+      "heapTotal": 234.5,
+      "heapUsedPercent": 67
+    },
+    "redis": {
+      "connected": true,
+      "reconnectAttempts": 0,
+      "consecutiveFailures": 0
+    },
+    "sessions": {
+      "activeVoiceSessions": 12,
+      "totalActiveSessions": 45,
+      "averageSessionDuration": 180
+    },
+    "environment": {
+      "nodeEnv": "production",
+      "memoryMonitoringEnabled": true,
+      "redisConfigured": true
+    }
+  }
+  ```
+* **Advanced Monitoring Features:**
+  - **Memory Alerts**: Configurable thresholds with automatic alerting for high memory usage
+  - **Redis Health Checks**: Continuous connectivity monitoring with smart reconnection strategies
+  - **Session Analytics**: Active session tracking, cleanup statistics, and performance metrics
+  - **Component Status**: Detailed health status for all system components with latency monitoring
 
 ### 4.2. Plan Tier System (Fully Implemented)
 
@@ -230,20 +273,30 @@ SMBs lose significant business opportunities due to inability to handle immediat
 * **Feature Availability:** Access to advanced features based on subscription
 * **Upgrade Integration:** In-widget upgrade prompts for premium features
 
-### 4.7. Advanced Notification System
+### 4.7. Advanced System Architecture (Production-Ready)
 
-#### Multi-Channel Notifications
-* **Email Notifications:** Enhanced formatting with emergency prioritization
-* **Voice Notifications (PRO):** SSML-enhanced phone calls for urgent leads
-* **Customer Confirmation:** Automated confirmations across all channels
-* **Analytics Integration:** Notification effectiveness tracking
+#### Memory Management & Optimization
+* **Intelligent Resource Management:**
+  - **Configurable Limits**: MAX_IN_MEMORY_SESSIONS (100), SESSION_TIMEOUT (30 minutes), MAX_MEMORY_USAGE (1536MB)
+  - **Automated Cleanup**: Regular session cleanup with configurable intervals and memory optimization
+  - **Memory Monitoring**: Optional detailed memory tracking with configurable logging levels
+  - **Performance Optimization**: Conversation history limits, session bounds enforcement, and efficient cleanup algorithms
 
-#### SSML-Enhanced Voice Notifications
-* **Natural Speech Patterns:** Conversational interjections and appropriate pauses
-* **Urgency Emphasis:** Enhanced SSML markup for emergency situations
-* **Business Context:** Personalized messaging with business-specific information
+#### Enhanced Error Handling & Resilience
+* **Redis Connection Management:**
+  - **Smart Reconnection**: Exponential backoff with maximum retry limits and connection state tracking
+  - **Graceful Degradation**: Seamless fallback to in-memory storage with full feature preservation
+  - **Health Monitoring**: Continuous connectivity checks with intelligent backoff and status reporting
+  - **Resource Cleanup**: Proper connection cleanup and graceful shutdown handling
 
-## 5. Technical Architecture Overview (Current V4.0)
+#### Advanced Audio Processing
+* **OpenAI TTS Integration:**
+  - **Voice Model Selection**: Dynamic selection based on business configuration and plan tier
+  - **Audio File Management**: Temporary file generation with automatic cleanup and security validation
+  - **Quality Optimization**: High-quality MP3 generation with optimized settings for voice calls
+  - **Error Handling**: Comprehensive fallback systems with detailed error logging and recovery
+
+## 5. Technical Architecture Overview (Current V4.1)
 
 ### 5.1. Core Infrastructure
 * **Containerized Application:** Docker-based deployment with multi-service architecture and health monitoring
@@ -278,16 +331,18 @@ SMBs lose significant business opportunities due to inability to handle immediat
 ## 6. Future Roadmap (V5.0+ Features)
 
 ### 6.1. Advanced AI Capabilities
-* **Contextual Memory:** Cross-session conversation awareness
-* **Proactive Engagement:** AI-initiated conversations based on website behavior
-* **Voice Cloning:** Custom voice synthesis for brand consistency
-* **Multi-Party Calls:** Conference call capabilities for complex service scenarios
+* **Enhanced Voice Features:**
+  - **Voice Cloning**: Custom voice synthesis for brand consistency using OpenAI's advanced voice capabilities
+  - **Multi-Language Expansion**: Additional language support with native voice models
+  - **Contextual Voice Adaptation**: Dynamic voice characteristics based on conversation context and customer sentiment
+  - **Advanced SSML**: Enhanced markup for even more natural conversations with emotion and tone control
 
-### 6.2. Platform Integrations
-* **CRM Synchronization:** Direct integration with HubSpot, Salesforce, industry-specific CRMs
-* **Calendar Integration:** Automatic appointment scheduling with Google Calendar, Outlook
-* **Payment Processing:** Integration with Stripe, Square for service booking
-* **Inventory Management:** Connection to service management platforms
+### 6.2. Enterprise Session Management
+* **Advanced Analytics Platform:**
+  - **Predictive Analytics**: Machine learning insights for customer behavior prediction and optimization
+  - **Advanced Reporting**: Comprehensive dashboards with custom metrics and business intelligence
+  - **Performance Optimization**: AI-driven session management and resource allocation
+  - **Enterprise Integration**: Advanced CRM synchronization with session analytics and customer journey tracking
 
 ### 6.3. Self-Service SaaS Platform
 * **Automated Onboarding:** Wizard-based setup for new businesses
