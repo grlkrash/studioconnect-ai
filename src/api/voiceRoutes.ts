@@ -801,7 +801,8 @@ async function processEnhancedMessage(
       transcribedText,
       conversationHistory,
       businessId,
-      currentActiveFlow
+      currentActiveFlow,
+      callSid
     )
     
     // Basic intent classification (can be enhanced with ML models)
@@ -853,7 +854,7 @@ async function processEnhancedMessage(
   } catch (error) {
     console.error('[Enhanced AI Processing] Error:', error)
     // Fallback to basic processing
-    const aiResponse = await processMessage(transcribedText, conversationHistory, businessId, currentActiveFlow)
+    const aiResponse = await processMessage(transcribedText, conversationHistory, businessId, currentActiveFlow, callSid)
     return {
       reply: aiResponse.reply,
       currentFlow: aiResponse.currentFlow,
@@ -1509,7 +1510,7 @@ router.post('/continue-conversation', validateTwilioRequest, async (req, res) =>
           "Thank you for calling. Have a great day. Goodbye.",
           { isConversational: true }
         )
-        twiml.say({ voice: voiceToUse, language: languageToUse }, continueMessage)
+        twiml.say({ voice: voiceToUse as any, language: languageToUse as any }, continueMessage)
         twiml.hangup()
         break
 

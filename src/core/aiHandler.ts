@@ -3,6 +3,7 @@ import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from '../services/notificationService'
 import { LeadCaptureQuestion, PlanTier } from '@prisma/client'
+import VoiceSessionService from '../services/voiceSessionService'
 
 // Extend the LeadCaptureQuestion type to include isEssentialForEmergency
 type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
@@ -300,7 +301,8 @@ export const processMessage = async (
   message: string,
   conversationHistory: any[],
   businessId: string,
-  currentActiveFlow?: string | null
+  currentActiveFlow?: string | null,
+  callSid?: string
 ): Promise<{ 
   reply: string; 
   currentFlow?: string | null; 
@@ -642,6 +644,36 @@ User's Question: ${message}`
       // Lead Capture Flow - Guide through questions
       console.log('Entering Lead Capture flow...')
       
+      // Extract the service of interest and save to session
+      if (callSid) {
+        try {
+          console.log('Extracting service of interest from user message...')
+          const serviceExtractionPrompt = `User message: "${message}". What is the primary service or product mentioned? Respond with only the service/product name, or "general inquiry" if none is found.`
+          const serviceOfInterest = await getChatCompletion(
+            serviceExtractionPrompt,
+            "You are a service extraction expert. Extract only the main service or product mentioned."
+          )
+          
+          const cleanedService = cleanVoiceResponse(serviceOfInterest || 'general inquiry')
+          console.log(`Extracted service of interest: "${cleanedService}"`)
+          
+          // Get current session and update with service of interest
+          const voiceSessionService = VoiceSessionService.getInstance()
+          const session = await voiceSessionService.getVoiceSession(callSid)
+          
+          await voiceSessionService.updateDetailedFlow(callSid, {
+            flowData: {
+              ...session.detailedFlow.flowData,
+              service_of_interest: cleanedService
+            }
+          })
+          
+          console.log(`Saved service of interest "${cleanedService}" to session ${callSid}`)
+        } catch (error) {
+          console.error('Error extracting/saving service of interest:', error)
+        }
+      }
+      
       console.log('Agent config questions:', agentConfig?.questions?.map((q: LeadCaptureQuestion) => ({ id: q.id, text: q.questionText, order: q.order })))
       
       if (!agentConfig || !agentConfig.questions || agentConfig.questions.length === 0) {
@@ -764,20 +796,75 @@ User's Question: ${message}`
       }
       
       if (nextQuestion) {
+        // Check for saved context to make the agent more intelligent
+        let contextualSystemPrompt = ""
+        let hasServiceContext = false
+        
+        if (callSid) {
+          try {
+            const voiceSessionService = VoiceSessionService.getInstance()
+            const session = await voiceSessionService.getVoiceSession(callSid)
+            
+            if (session.detailedFlow.flowData.service_of_interest) {
+              contextualSystemPrompt = `CONTEXT: The user has already stated they are interested in '${session.detailedFlow.flowData.service_of_interest}'. You are now in a lead capture flow. Ask the next question from your list directly. Do not repeat the initial greeting or ask what they need help with again.`
+              hasServiceContext = true
+              console.log(`Using saved context for lead capture: ${session.detailedFlow.flowData.service_of_interest}`)
+            }
+          } catch (error) {
+            console.error('Error retrieving session context for lead capture:', error)
+          }
+        }
+        
         // Determine if this is a follow-up question by checking conversation history
-        let questionPrefix = ""
         const assistantLeadQuestions = conversationHistory.filter(m => 
           m.role === 'assistant' && questionsToAsk.some(q => q.questionText === m.content)
         )
         
-        // If we've already asked at least one lead question, this is a follow-up
+        // If we have service context, use AI to generate a more natural question flow
+        if (hasServiceContext && contextualSystemPrompt) {
+          const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
+          const enhancedSystemPrompt = `${voiceSystemPrompt}\n\n${contextualSystemPrompt}`
+          
+          const questionPrompt = `You need to ask the following question as part of the lead capture process: "${nextQuestion.questionText}"
+
+${assistantLeadQuestions.length > 0 ? 
+  'This is a follow-up question in the lead capture sequence. Start with a natural acknowledgment like "Okay," "Got it," "Thanks," or "Perfect."' : 
+  'This is the first question in the lead capture sequence. Start with an enthusiastic acknowledgment that shows you understand their service interest.'
+}
+
+Generate a natural way to ask this question that flows well in the conversation.`
+          
+          const rawQuestionResponse = await getChatCompletion(questionPrompt, enhancedSystemPrompt)
+          const cleanedQuestionResponse = rawQuestionResponse ? cleanVoiceResponse(rawQuestionResponse) : null
+          
+          if (cleanedQuestionResponse) {
+            const leadQuestionReply = cleanedQuestionResponse
+            
+            return { 
+              reply: leadQuestionReply,
+              currentFlow: 'LEAD_CAPTURE',
+              showBranding,
+              nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+            }
+          }
+        }
+        
+        // Fallback to original prefix logic if AI generation fails or no context
+        let questionPrefix = ""
         if (assistantLeadQuestions.length > 0) {
           const followUpPrefixes = ["Okay, and ", "Got it. ", "Alright. ", "Thanks. ", "Perfect. ", "I see. "]
           questionPrefix = followUpPrefixes[Math.floor(Math.random() * followUpPrefixes.length)]
         } else {
-          // First question - use more welcoming interjections
-          const firstQuestionPrefixes = ["Alright, ", "Okay, ", "Sure thing! ", "Perfect. ", "Great! "]
-          questionPrefix = firstQuestionPrefixes[Math.floor(Math.random() * firstQuestionPrefixes.length)]
+          // First question - use more welcoming interjections, but consider context
+          if (hasServiceContext) {
+            // If we have context, use more direct transitions that acknowledge the service interest
+            const contextualPrefixes = ["Perfect! ", "Great! ", "Excellent! ", "Wonderful! "]
+            questionPrefix = contextualPrefixes[Math.floor(Math.random() * contextualPrefixes.length)]
+          } else {
+            // Standard first question prefixes
+            const firstQuestionPrefixes = ["Alright, ", "Okay, ", "Sure thing! ", "Perfect. ", "Great! "]
+            questionPrefix = firstQuestionPrefixes[Math.floor(Math.random() * firstQuestionPrefixes.length)]
+          }
         }
         
         const leadQuestionReply = `${questionPrefix}${nextQuestion.questionText}`
