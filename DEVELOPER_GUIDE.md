@@ -38,10 +38,10 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Voice-Enabled
 - **Language**: TypeScript 5.x
 - **Framework**: Express.js 4.x
 - **Database**: PostgreSQL 15+ with pgvector
-- **Session Store**: Redis with in-memory fallback
+- **Session Store**: Redis with intelligent fallback and comprehensive session management
 - **ORM**: Prisma 5.x
-- **AI**: OpenAI API (GPT-4, Whisper, text-embedding-3-small)
-- **Voice**: Twilio Voice API with SSML processing
+- **AI**: OpenAI API (GPT-4, Whisper, OpenAI TTS with voice models, text-embedding-3-small)
+- **Voice**: Twilio Voice API with OpenAI TTS integration and SSML processing
 - **Authentication**: JWT (jsonwebtoken) with plan-aware middleware
 - **View Engine**: EJS with plan-based conditional rendering
 - **Containerization**: Docker & Docker Compose
@@ -49,12 +49,12 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Voice-Enabled
 
 ### Major System Features (V4.0)
 
-1. **Voice Agent System**: Complete Twilio integration with advanced speech processing
-2. **Plan Tier Architecture**: FREE/BASIC/PRO tiers with feature gating
-3. **Enhanced Emergency Handling**: Cross-channel emergency detection and response
-4. **Redis Session Management**: Robust session storage with comprehensive analytics
-5. **Multi-Channel Lead Capture**: Unified lead management across chat and voice
-6. **Advanced Admin Interface**: Plan-aware UI with voice configuration options
+1. **Enhanced Voice Agent System**: Complete Twilio integration with OpenAI TTS and advanced speech processing
+2. **Plan Tier Architecture**: FREE/BASIC/PRO tiers with comprehensive feature gating
+3. **Enhanced Emergency Handling**: Cross-channel emergency detection with priority voice notifications
+4. **Advanced Session Management**: Redis-powered with VoiceSessionService, analytics, and intelligent fallback
+5. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with entity extraction
+6. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and system monitoring
 
 ---
 
@@ -180,6 +180,60 @@ function enhancePromptForVoice(response: string, context: VoiceContext): string 
 - German (de-DE)
 - Italian (it-IT)
 - Portuguese (pt-BR)
+
+### 3.5. Enhanced Voice Session Service
+
+The VoiceSessionService provides comprehensive session management with advanced analytics:
+
+```typescript
+// Core Session Structure
+interface VoiceSession {
+  history: ConversationMessage[]          // Enhanced conversation history
+  identifiedIntents: AIIntent[]          // Intent tracking with confidence
+  extractedEntities: ExtractedEntities   // Real-time entity extraction
+  currentFlow: string | null             // Legacy flow compatibility
+  detailedFlow: DetailedFlowState        // Advanced flow management
+  metadata: SessionMetadata              // Call and session metadata
+}
+
+// Enhanced Analytics
+interface SessionAnalytics {
+  conversationLength: number
+  uniqueIntents: string[]
+  mostConfidentIntent?: AIIntent
+  extractedEntityCount: number
+  flowProgression: string[]
+  callDuration: number
+}
+```
+
+**Key Features:**
+- **Redis-First Storage**: Primary Redis storage with intelligent in-memory fallback
+- **Real-Time Analytics**: Live conversation tracking with entity extraction
+- **Memory Optimization**: Configurable session limits and automatic cleanup
+- **Health Monitoring**: Continuous Redis health checks and status reporting
+- **Entity Extraction**: Automatic extraction of emails, phones, names, dates, amounts
+- **Intent Classification**: Real-time intent identification with confidence scoring
+
+**Session Management:**
+```typescript
+// Session Creation and Updates
+await voiceSessionService.addConversationMessage(callSid, 'user', content, {
+  intent: 'booking_request',
+  confidence: 0.9,
+  entities: extractedEntities
+})
+
+// Flow State Management
+await voiceSessionService.updateDetailedFlow(callSid, {
+  primaryFlow: 'lead_capture',
+  subFlow: 'asking_contact',
+  completedSteps: ['greeting', 'problem_identification']
+})
+
+// Analytics Retrieval
+const analytics = await voiceSessionService.getSessionAnalytics(callSid)
+```
 
 ---
 

@@ -104,14 +104,24 @@ SMBs lose significant business opportunities due to inability to handle immediat
 
 #### Voice Infrastructure
 * **Twilio Integration:** Complete webhook system handling incoming calls with business phone number routing
-* **Speech Processing Pipeline:**
-  - OpenAI Whisper transcription with noise filtering
-  - AI-powered response generation with voice optimization
-  - SSML-enhanced speech synthesis with multiple voice providers
+* **Advanced Speech Processing Pipeline:**
+  - OpenAI Whisper transcription with noise filtering and accuracy optimization
+  - AI-powered response generation with voice-specific optimization and natural conversational flow
+  - **OpenAI TTS Integration:** High-quality text-to-speech using OpenAI's advanced voice models (alloy, echo, fable, onyx, nova, shimmer)
+  - SSML-enhanced speech synthesis with intelligent fallback to Twilio TTS
+  - Dynamic audio file generation and streaming for optimal voice quality
 * **Voice Options (Plan-Dependent):**
-  - **Standard (All Tiers):** Alice, Man, Woman
-  - **Premium (PRO Only):** Amazon Polly Neural voices
+  - **Standard (All Tiers):** Alice, Man, Woman (Twilio TTS)
+  - **Premium (PRO Only):** Amazon Polly Neural voices with enhanced naturalness
+  - **Advanced AI Voices (PRO Only):** OpenAI voice models with superior quality and conversational tone
   - **Generative (PRO Only):** Google Chirp3-HD, Amazon Polly Generative
+
+#### Enhanced Voice Processing Features
+* **Intelligent Voice Routing:** Automatic selection of optimal TTS provider based on plan tier and content type
+* **Audio Quality Optimization:** Dynamic audio file generation with automatic cleanup and memory management
+* **Voice Response Caching:** Efficient temporary audio file serving with security validation
+* **Natural Conversation Flow:** Enhanced SSML processing with conversational interjections, appropriate pauses, and emphasis
+* **Voice Action Intelligence:** Dynamic determination of next actions (CONTINUE, HANGUP, TRANSFER, VOICEMAIL) based on conversation context
 
 #### Multi-Language Support
 * **Supported Languages:** English (US/UK/AU), Spanish (es-ES/es-MX), French (fr-FR), German (de-DE), Italian (it-IT), Portuguese (pt-BR)
@@ -169,16 +179,26 @@ SMBs lose significant business opportunities due to inability to handle immediat
 ### 4.4. Advanced Session Management & Analytics
 
 #### Redis-Powered Architecture
-* **Session Storage:** Robust Redis implementation with in-memory fallback
-* **Real-Time Analytics:** Live conversation tracking with timestamp precision
-* **Health Monitoring:** System status checks with Redis connectivity monitoring
-* **Automatic Cleanup:** Session expiration and garbage collection
+* **Primary Session Storage:** Redis with comprehensive connection management and automatic reconnection
+* **Intelligent Fallback:** In-memory session storage with automatic failover and cleanup
+* **Health Monitoring:** Continuous Redis health checks with exponential backoff and connection status tracking
+* **Session Cleanup:** Automatic session expiration, memory optimization, and resource management
+* **Memory Monitoring:** Optional verbose logging and memory usage tracking for production debugging
+
+#### Enhanced Voice Session Service
+* **Comprehensive Session Tracking:** Advanced conversation history with timestamp precision and metadata
+* **Entity Extraction & Storage:** Automatic extraction and storage of emails, phones, names, dates, amounts, locations
+* **Intent Classification:** Real-time intent identification with confidence scoring and context preservation
+* **Flow State Management:** Detailed flow tracking with primary/sub-flow states and completion tracking
+* **Session Analytics:** Call duration, message count, entity extraction, and conversation analytics
+* **Performance Optimization:** Memory-efficient session management with configurable limits and cleanup
 
 #### Analytics Dashboard (PRO Feature)
-* **Session Metrics:** Duration, message count, completion rates
-* **Intent Analysis:** Classification accuracy and confidence scoring
-* **Entity Extraction:** Automatic capture of emails, phones, names, dates, amounts, locations
-* **Call Analytics:** Voice-specific metrics including call duration and voice action usage
+* **Real-Time Metrics:** Live session tracking with Redis connection status and health monitoring  
+* **Voice Call Analytics:** Call duration, transcription accuracy, and voice action usage statistics
+* **Intent Analysis:** Classification accuracy, confidence scoring, and conversation flow analysis
+* **Entity Extraction Dashboard:** Contact information capture rates and entity recognition performance
+* **System Health Monitoring:** Memory usage, Redis status, session counts, and performance metrics
 
 ### 4.5. Enhanced Admin Interface (Plan-Aware)
 
@@ -226,22 +246,34 @@ SMBs lose significant business opportunities due to inability to handle immediat
 ## 5. Technical Architecture Overview (Current V4.0)
 
 ### 5.1. Core Infrastructure
-* **Containerized Application:** Docker-based deployment with multi-service architecture
-* **Database:** PostgreSQL with pgvector extension for AI embeddings
-* **Session Management:** Redis primary with in-memory fallback
-* **Voice Infrastructure:** Twilio Voice API with webhook handling
+* **Containerized Application:** Docker-based deployment with multi-service architecture and health monitoring
+* **Database:** PostgreSQL with pgvector extension for AI embeddings and comprehensive lead management
+* **Advanced Session Management:** 
+  - **Primary:** Redis with robust connection management, automatic reconnection, and health monitoring
+  - **Intelligent Fallback:** In-memory session storage with automatic cleanup and memory optimization
+  - **Session Service:** Enhanced VoiceSessionService with comprehensive analytics and entity extraction
+* **Voice Infrastructure:** Twilio Voice API with webhook handling and OpenAI TTS integration
 
 ### 5.2. AI & Voice Processing
-* **OpenAI Integration:** GPT-4 for conversations, Whisper for transcription, text-embedding-3-small for RAG
-* **SSML Processing:** Advanced speech synthesis with natural language patterns
-* **Entity Extraction:** Advanced NLP for contact information and intent classification
-* **Voice Optimization:** Specialized prompts and processing for voice interactions
+* **OpenAI Integration:** 
+  - **Conversation AI:** GPT-4 for intelligent conversations with voice-optimized prompts
+  - **Speech Recognition:** Whisper for high-accuracy transcription with noise filtering
+  - **Advanced TTS:** OpenAI voice models (nova, alloy, onyx, etc.) with dynamic audio generation
+  - **Embeddings:** text-embedding-3-small for RAG-based knowledge retrieval
+* **Enhanced SSML Processing:** Advanced speech synthesis with natural language patterns, conversational flow, and intelligent emphasis
+* **Entity Extraction:** Advanced NLP for real-time contact information and intent classification with confidence scoring
+* **Voice Optimization:** Specialized prompts and processing for voice interactions with dynamic action determination
 
-### 5.3. API Architecture
-* **RESTful Design:** Express.js-based API with comprehensive error handling
-* **Webhook System:** Twilio webhook handling for voice events
-* **Authentication:** JWT-based security with plan-aware middleware
-* **Rate Limiting:** Plan-based API access controls
+### 5.3. API Architecture & Session Management
+* **RESTful Design:** Express.js-based API with comprehensive error handling and plan-aware middleware
+* **Voice Webhook System:** Enhanced Twilio webhook handling for voice events with session management
+* **Authentication:** JWT-based security with plan-aware middleware and secure session management
+* **Advanced Session Storage:**
+  - **Redis Client Management:** Singleton pattern with connection pooling and automatic failover
+  - **Session Analytics:** Real-time conversation tracking with entity extraction and intent classification
+  - **Memory Optimization:** Configurable session limits, automatic cleanup, and memory monitoring
+  - **Health Monitoring:** Continuous Redis health checks with exponential backoff and status reporting
+* **Rate Limiting:** Plan-based API access controls with session-aware throttling
 
 ## 6. Future Roadmap (V5.0+ Features)
 
