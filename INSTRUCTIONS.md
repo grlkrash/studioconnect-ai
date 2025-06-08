@@ -1,14 +1,15 @@
-# AI Agent for SMBs - Voice-Enabled Multi-Channel Platform Implementation Instructions
+# AI Agent for SMBs - Realtime Voice-Enabled Multi-Channel Platform Implementation Instructions
 
 ## Project Overview
 
 This implementation guide covers the setup and configuration of a comprehensive voice and chat-enabled AI agent platform for Small to Medium-Sized Businesses. The system includes:
 
-- **Voice Agent System** with Twilio integration
-- **Plan Tier Architecture** (FREE, BASIC, PRO)
-- **Enhanced Emergency Handling** across all channels
-- **Redis Session Management** with analytics
-- **Multi-Channel Lead Capture** and routing
+- **OpenAI Realtime API Integration** with bidirectional audio streaming
+- **WebSocket Architecture** for low-latency voice communication
+- **Plan Tier Architecture** (FREE, BASIC, PRO) with Realtime API access
+- **Enhanced Emergency Handling** across all channels with real-time processing
+- **Redis Session Management** with WebSocket tracking and analytics
+- **Multi-Channel Lead Capture** and routing with real-time processing
 
 ## Phase 0: Enhanced Project Setup
 
@@ -235,16 +236,21 @@ REDIS_TTL=3600
 # Security
 JWT_SECRET="your-super-secret-jwt-key-with-at-least-32-characters"
 
-# AI Integration
+# OpenAI Realtime API Integration
 OPENAI_API_KEY="sk-your-openai-api-key-here"
-OPENAI_MODEL="gpt-4"
+OPENAI_REALTIME_MODEL="gpt-4o-realtime-preview-2024-10-01"
 OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
 
-# Twilio Voice Integration
+# Twilio Media Streams Integration
 TWILIO_ACCOUNT_SID="AC_your_twilio_account_sid"
 TWILIO_AUTH_TOKEN="your_twilio_auth_token"
 TWILIO_WEBHOOK_BASE_URL="https://your-domain.com"
 TWILIO_PHONE_NUMBER="+1234567890"
+
+# WebSocket Configuration
+WEBSOCKET_PING_INTERVAL=30000
+WEBSOCKET_PONG_TIMEOUT=5000
+MAX_WEBSOCKET_CONNECTIONS=100
 
 # Email Configuration
 SMTP_HOST="smtp.ethereal.email"
@@ -259,7 +265,8 @@ WIDGET_DEMO_URL="https://demo.yourcompany.com"
 WIDGET_TEST_URL="http://127.0.0.1:8080"
 
 # Feature Flags
-ENABLE_VOICE_FEATURES=true
+ENABLE_REALTIME_API=true
+ENABLE_WEBSOCKET_FEATURES=true
 ENABLE_PLAN_TIERS=true
 ENABLE_EMERGENCY_VOICE_CALLS=true
 ```

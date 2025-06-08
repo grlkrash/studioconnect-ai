@@ -1,9 +1,9 @@
 # Developer Guide & System Architecture
 ## AI Agent Assistant for SMBs - Advanced Voice-Enabled Multi-Channel Platform
 
-**Version:** 4.1  
+**Version:** 4.2  
 **Last Updated:** December 2024  
-**Purpose:** Technical implementation guide and architectural reference for the advanced voice-enabled, plan-tier based AI agent platform with OpenAI TTS integration and sophisticated session management
+**Purpose:** Technical implementation guide and architectural reference for the advanced voice-enabled, plan-tier based AI agent platform with OpenAI Realtime API integration and WebSocket architecture
 
 ---
 
@@ -11,8 +11,8 @@
 
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Advanced Voice Agent System](#3-advanced-voice-agent-system)
-4. [OpenAI TTS Integration](#4-openai-tts-integration)
+3. [OpenAI Realtime API Integration](#3-openai-realtime-api-integration)
+4. [WebSocket Infrastructure](#4-websocket-infrastructure)
 5. [Enterprise Session Management](#5-enterprise-session-management)
 6. [Health Monitoring & Analytics](#6-health-monitoring--analytics)
 7. [Plan Tier Architecture](#7-plan-tier-architecture)
@@ -32,67 +32,69 @@
 
 ## 1. Project Overview
 
-The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voice-Enabled Multi-Channel Platform** that provides intelligent conversation capabilities across chat and voice interactions. The system now includes sophisticated OpenAI TTS integration, enterprise-grade Redis session management, advanced health monitoring, and production-ready memory management systems.
+The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voice-Enabled Multi-Channel Platform** that provides intelligent conversation capabilities across chat and voice interactions. The system now features **OpenAI Realtime API integration** with bidirectional audio streaming, enterprise-grade Redis session management, WebSocket architecture, and production-ready infrastructure.
 
 ### Key Technologies
 
 - **Runtime**: Node.js 20.x
 - **Language**: TypeScript 5.x
-- **Framework**: Express.js 4.x
+- **Framework**: Express.js 4.x with WebSocket Server
 - **Database**: PostgreSQL 15+ with pgvector
 - **Session Store**: Redis with intelligent fallback and comprehensive session management
 - **ORM**: Prisma 5.x
-- **AI**: OpenAI API (GPT-4, Whisper, **OpenAI TTS with voice models**, text-embedding-3-small)
-- **Voice**: Twilio Voice API with **OpenAI TTS primary integration** and SSML processing
+- **AI**: **OpenAI Realtime API** (`gpt-4o-realtime-preview-2024-10-01`), Whisper transcription, text-embedding-3-small
+- **Voice**: **Twilio Media Streams** with bidirectional WebSocket integration
 - **Authentication**: JWT (jsonwebtoken) with plan-aware middleware
 - **View Engine**: EJS with plan-based conditional rendering
 - **Containerization**: Docker & Docker Compose
 - **Email**: Nodemailer with enhanced templates
 
-### Major System Features (V4.1)
+### Major System Features (V4.2)
 
-1. **Advanced Voice Agent System**: OpenAI TTS primary integration with intelligent Twilio fallback and sophisticated SSML processing
-2. **Enterprise Session Management**: Redis-powered with comprehensive analytics, health monitoring, and intelligent memory management
-3. **Production-Ready Infrastructure**: Advanced health monitoring, automated cleanup systems, and configurable resource management
-4. **Enhanced Emergency Handling**: Cross-channel emergency detection with priority voice notifications and advanced analytics
-5. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with real-time entity extraction
-6. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and comprehensive system monitoring
+1. **OpenAI Realtime API Integration**: Bidirectional audio streaming with real-time conversation capabilities
+2. **WebSocket Architecture**: Low-latency audio bridge between Twilio Media Streams and OpenAI
+3. **Voice Activity Detection**: Server-side VAD with intelligent interruption handling
+4. **Enterprise Session Management**: Redis-powered with comprehensive analytics and health monitoring
+5. **Production-Ready Infrastructure**: Advanced health monitoring, automated cleanup systems, and WebSocket connection management
+6. **Enhanced Emergency Handling**: Cross-channel emergency detection with real-time voice notifications
+7. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with real-time entity extraction
+8. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and comprehensive system monitoring
 
 ---
 
 ## 2. System Architecture
 
-### High-Level Architecture (V4.1)
+### High-Level Architecture (V4.2)
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │   SMB Website   │   │ Voice Callers   │   │ Admin Dashboard │   │   Email Client  │
-│   (widget.js)   │   │ (Twilio PSTN)   │   │  (EJS Views)    │   │                 │
+│   (widget.js)   │   │(Twilio Media)   │   │  (EJS Views)    │   │                 │
 └────────┬────────┘   └────────┬────────┘   └────────┬────────┘   └────────▲────────┘
          │                     │                     │                     │
-         │ HTTPS               │ SIP/WebRTC          │ HTTPS               │ SMTP
+         │ HTTPS               │ WebSocket (WSS)     │ HTTPS               │ SMTP
          │                     │                     │                     │
          ▼                     ▼                     ▼                     │
 ┌──────────────────────────────────────────────────────────────────────────┴────┐
-│                   Advanced Backend API (Express.js)                            │
+│               Advanced Backend API (Express.js + WebSocket)                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐ │
-│  │   Chat API  │  │Enhanced     │  │  Admin API   │  │Advanced Notification│ │
+│  │   Chat API  │  │Realtime     │  │  Admin API   │  │Advanced Notification│ │
 │  │             │  │Voice API    │  │              │  │     Service         │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘  └──────────┬──────────┘ │
 │         │                │                │                       │           │
-│  ┌──────┴──────────────────┴────────────────┴───────────────────▼──────────┐ │
-│  │                Enhanced Business Logic Layer                              │ │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │ │
-│  │  │Enhanced     │  │  RAG Service │  │Enterprise    │  │ Plan Manager │ │ │
-│  │  │AI Handler   │  │   (Enhanced) │  │Voice Session │  │              │ │ │
-│  │  │(Voice Opt.) │  │              │  │   Service    │  │              │ │ │
-│  │  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │ │
-│  └─────────┼────────────────┼──────────────────┼──────────────────┼─────────┘ │
-│            │                │                  │                  │            │
-│  ┌─────────▼────────────────▼──────────────────▼──────────────────▼────────┐  │
-│  │                Enhanced Data Access Layer (Prisma)                      │  │
-│  └─────────────────────────┬──────────────────────────────┬────────────────┘  │
-└────────────────────────────┼──────────────────────────────┼───────────────────┘
+│  ┌──────┴────────────────┴────────────────┴───────────────────▼──────────┐   │
+│  │                Enhanced Business Logic Layer                            │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │   │
+│  │  │Enhanced     │  │  RAG Service │  │Realtime Agent│  │ Plan Manager │ │   │
+│  │  │AI Handler   │  │   (Enhanced) │  │   Service    │  │              │ │   │
+│  │  │(Voice Opt.) │  │              │  │  (WebSocket) │  │              │ │   │
+│  │  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │   │
+│  └─────────┼────────────────┼──────────────────┼──────────────────┼─────────┘   │
+│            │                │                  │                  │             │
+│  ┌─────────▼────────────────▼──────────────────▼──────────────────▼────────┐   │
+│  │                Enhanced Data Access Layer (Prisma)                      │   │
+│  └─────────────────────────┬──────────────────────────────┬────────────────┘   │
+└────────────────────────────┼──────────────────────────────┼────────────────────┘
                              │                              │
                     ┌────────▼────────┐            ┌────────▼────────┐
                     │   PostgreSQL    │            │Enterprise Redis │
@@ -101,201 +103,414 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voic
                     └─────────────────┘            └─────────────────┘
                              │
                     ┌────────▼────────┐            ┌─────────────────┐
-                    │Enhanced OpenAI  │            │Enhanced Twilio  │
-                    │API (TTS Primary)│            │Voice (Fallback) │
+                    │OpenAI Realtime  │◄──────────►│Twilio Media     │
+                    │API (WebSocket)  │            │Streams (WS)     │
                     └─────────────────┘            └─────────────────┘
 ```
 
-### Advanced Component Interactions
+### Enhanced Component Interactions
 
 1. **Enhanced Chat Flow**: Widget → Chat API → AI Handler → OpenAI/RAG → Database/Redis → Response
-2. **Advanced Voice Flow**: Caller → Twilio → Voice API → OpenAI TTS Primary → Voice Session Service → Enhanced Analytics
+2. **Realtime Voice Flow**: Caller → Twilio Media Stream → WebSocket Server → Realtime Agent Service → OpenAI Realtime API → Response Audio
 3. **Admin Flow**: Dashboard → Admin API → Plan Manager → Auth Middleware → Business Logic → Database
-4. **Emergency Flow**: Detection → Priority Routing → Advanced Voice/Email Notifications → Comprehensive Analytics
+4. **Emergency Flow**: Detection → Priority Routing → Real-time Voice/Email Notifications → Comprehensive Analytics
 
 ---
 
-## 3. Advanced Voice Agent System
+## 3. OpenAI Realtime API Integration
 
-### 3.1. Enhanced Twilio Integration Architecture
-
-```typescript
-// Advanced Voice Routes Structure
-POST /api/voice/incoming          // Handle incoming calls with business routing
-POST /api/voice/handle-speech     // Process real-time speech with OpenAI TTS response
-POST /api/voice/handle-voicemail-recording // Future voicemail processing
-GET  /api/voice/play-audio/:fileName       // Serve OpenAI generated audio files
-GET  /api/voice/health           // Comprehensive voice system health check
-```
-
-### 3.2. Advanced Speech Processing Pipeline
-
-```
-Incoming Call → Twilio Webhook → Enhanced Voice Route Handler
-       ↓
-Enterprise Session Creation (Redis+Fallback) → OpenAI TTS Greeting (SSML)
-       ↓
-User Speech → Twilio Gather → OpenAI Whisper Transcription
-       ↓
-Enhanced AI Processing (Voice-Optimized) → Intent + Entity Classification
-       ↓
-Response Generation → Advanced SSML Enhancement → OpenAI TTS Primary
-       ↓
-Audio File Generation → Temporary File Serving → Automatic Cleanup
-       ↓
-Voice Action Decision (CONTINUE/HANGUP/TRANSFER/VOICEMAIL) → Session Analytics
-```
-
-### 3.3. Advanced SSML Processing Implementation
+### 3.1. Realtime API Architecture
 
 ```typescript
-// Advanced SSML Enhancement Function
-function createSSMLMessage(message: string, options: { 
-  isGreeting?: boolean, 
-  isQuestion?: boolean, 
-  isUrgent?: boolean,
-  addPause?: boolean, 
-  addEmphasis?: boolean, 
-  pauseDuration?: string,
-  isConversational?: boolean
-} = {}): string {
-  let ssmlMessage = message
-  
-  // Add greeting-specific enhancements
-  if (options.isGreeting) {
-    ssmlMessage = ssmlMessage.replace(/(Hey!|Hello!?|Hi!?)/gi, 
-      '<prosody rate="medium" pitch="+5%">$1</prosody>')
-    ssmlMessage = ssmlMessage.replace(/(Hey!|Hello!?|Hi!?)(\s*)/, 
-      '$1<break time="400ms"/>$2')
+// Realtime Agent Service - Core Implementation
+export class RealtimeAgentService {
+  private openAiWs: WebSocket | null = null;
+  private twilioWs: WebSocket | null = null;
+  private callSid: string;
+  private streamSid: string | null = null;
+  private readonly openaiApiKey: string;
+
+  constructor(callSid: string) {
+    this.callSid = callSid;
+    this.openaiApiKey = process.env.OPENAI_API_KEY || '';
+    
+    if (!this.openaiApiKey) {
+      throw new Error('OPENAI_API_KEY is required for RealtimeAgentService');
+    }
   }
-  
-  // Add conversational pauses and flow
-  if (options.isConversational) {
-    ssmlMessage = ssmlMessage.replace(/\b(Now|So|Alright|Okay|Perfect|Great|Got it|Thanks)\b,?/gi, 
-      '<prosody rate="medium">$1</prosody><break time="300ms"/>')
-    ssmlMessage = ssmlMessage.replace(/,\s+/g, ',<break time="200ms"/>')
-    ssmlMessage = ssmlMessage.replace(/\b(please|thank you|thanks)\b/gi, 
-      '<emphasis level="moderate">$1</emphasis>')
+
+  /**
+   * Establishes bidirectional audio bridge between Twilio and OpenAI
+   */
+  public async connect(twilioWs: WebSocket): Promise<void> {
+    try {
+      this.twilioWs = twilioWs;
+      this.setupTwilioListeners();
+      
+      // Connect to OpenAI Realtime API
+      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+      const headers = {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'OpenAI-Beta': 'realtime=v1'
+      };
+
+      this.openAiWs = new WebSocket(url, { headers });
+      this.setupOpenAiListeners();
+
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to connect for call ${this.callSid}:`, error);
+      throw error;
+    }
   }
-  
-  return ssmlMessage
+
+  /**
+   * Configures the OpenAI session for voice conversation
+   */
+  private configureOpenAiSession(): void {
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) return;
+
+    const sessionConfig = {
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+        voice: 'alloy',
+        input_audio_format: 'g711_ulaw',
+        output_audio_format: 'g711_ulaw',
+        input_audio_transcription: {
+          model: 'whisper-1'
+        },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
+        }
+      }
+    };
+
+    this.openAiWs.send(JSON.stringify(sessionConfig));
+  }
+
+  /**
+   * Handles incoming messages from Twilio WebSocket
+   */
+  private handleTwilioMessage(message: WebSocket.Data): void {
+    try {
+      const msg = JSON.parse(message.toString());
+      
+      switch (msg.event) {
+        case 'media':
+          // Forward audio from Twilio to OpenAI
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            const audioAppend = {
+              type: 'input_audio_buffer.append',
+              audio: msg.media.payload
+            };
+            this.openAiWs.send(JSON.stringify(audioAppend));
+          }
+          
+          // Send mark message back to Twilio to keep audio stream alive
+          if (this.twilioWs && this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+            const markMessage = {
+              event: 'mark',
+              streamSid: this.streamSid,
+              mark: { name: `audio_processed_${Date.now()}` }
+            };
+            this.twilioWs.send(JSON.stringify(markMessage));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error parsing Twilio message:`, error);
+    }
+  }
+
+  /**
+   * Handles incoming messages from OpenAI WebSocket
+   */
+  private handleOpenAiMessage(data: WebSocket.Data): void {
+    try {
+      const response = JSON.parse(data.toString());
+      
+      switch (response.type) {
+        case 'response.audio.delta':
+          // Forward audio from OpenAI back to Twilio
+          if (this.twilioWs && this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+            const twilioMessage = {
+              event: 'media',
+              streamSid: this.streamSid,
+              media: { payload: response.delta }
+            };
+            this.twilioWs.send(JSON.stringify(twilioMessage));
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_started':
+          // User started speaking - optionally interrupt AI
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_stopped':
+          // User stopped speaking - commit and respond
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error parsing OpenAI message:`, error);
+    }
+  }
+}
+```
+
+### 3.2. Bidirectional Audio Streaming
+
+```
+Twilio Media Stream → WebSocket → Realtime Agent Service
+       ↓
+Audio Buffer (G.711 μ-law) → OpenAI Realtime API
+       ↓
+Real-time AI Processing (Speech-to-Speech)
+       ↓
+Response Audio → Twilio Media Stream → WebSocket → Caller
+```
+
+### 3.3. Voice Activity Detection Configuration
+
+```typescript
+// Advanced VAD configuration
+private configureOpenAiSession(): void {
+  const sessionConfig = {
+    type: 'session.update',
+    session: {
+      modalities: ['text', 'audio'],
+      instructions: 'You are a helpful AI assistant for a business...',
+      voice: 'alloy',
+      input_audio_format: 'g711_ulaw',
+      output_audio_format: 'g711_ulaw',
+      input_audio_transcription: {
+        model: 'whisper-1'
+      },
+      turn_detection: {
+        type: 'server_vad',
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 500
+      }
+    }
+  };
+
+  this.openAiWs.send(JSON.stringify(sessionConfig));
 }
 ```
 
 ---
 
-## 4. OpenAI TTS Integration
+## 4. WebSocket Infrastructure
 
-### 4.1. Primary TTS Implementation
+### 4.1. WebSocket Server Implementation
 
 ```typescript
-// OpenAI TTS Service Implementation
-export const generateSpeechFromText = async (
-  textToSpeak: string,
-  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova'
-): Promise<string | null> => {
-  try {
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: voice,
-      input: textToSpeak,
+// WebSocket server for handling Twilio Media Streams
+export class TwilioWebSocketServer {
+  private wss: WebSocketServer;
+  private activeConnections = new Map<string, RealtimeAgentService>();
+
+  constructor(server: Server) {
+    this.wss = new WebSocketServer({ 
+      server,
+      path: '/' // Root path for WebSocket connections
     });
 
-    const tempFileName = `openai_speech_${Date.now()}.mp3`;
-    const tempFilePath = path.join(os.tmpdir(), tempFileName);
-
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    await fs.promises.writeFile(tempFilePath, buffer);
-
-    return tempFilePath;
-  } catch (error) {
-    console.error('[OpenAI TTS] Error generating speech:', error);
-    return null;
-  }
-};
-```
-
-### 4.2. Intelligent Fallback System
-
-```typescript
-// Enhanced TTS with Intelligent Fallback
-async function generateAndPlayTTS(
-  text: string, 
-  twimlResponse: typeof VoiceResponse.prototype, 
-  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
-  fallbackTwilioVoice: any = 'alice',
-  fallbackLanguage: any = 'en-US'
-): Promise<void> {
-  try {
-    // Primary: OpenAI TTS
-    const tempAudioPath = await generateSpeechFromText(text, openaiVoice);
-    
-    if (tempAudioPath) {
-      const audioFileName = path.basename(tempAudioPath);
-      const audioUrl = `${process.env.APP_PRIMARY_URL}/api/voice/play-audio/${audioFileName}`;
-      twimlResponse.play(audioUrl);
-    } else {
-      // Fallback: Twilio TTS with SSML
-      const fallbackMessage = createSSMLMessage(text, { isConversational: true });
-      twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
-    }
-  } catch (error) {
-    // Enhanced Fallback: Twilio TTS
-    const fallbackMessage = createSSMLMessage(text, { isConversational: true });
-    twimlResponse.say({ voice: fallbackTwilioVoice, language: fallbackLanguage }, fallbackMessage);
-  }
-}
-```
-
-### 4.3. Audio File Management
-
-```typescript
-// Secure Audio File Serving with Automatic Cleanup
-router.get('/play-audio/:fileName', (req, res) => {
-  const { fileName } = req.params;
-
-  // Security: Prevent path traversal
-  if (fileName.includes('..') || fileName.includes('/')) {
-    return res.status(400).send('Invalid filename.');
+    this.setupWebSocketServer();
   }
 
-  const filePath = path.join(os.tmpdir(), fileName);
-
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath, (err) => {
-      if (err) {
-        console.error(`[Play Audio] Error sending file:`, err);
-        res.status(500).end();
-      }
+  private setupWebSocketServer(): void {
+    this.wss.on('connection', (ws: WebSocket, request) => {
+      // Validate Twilio connection
+      const userAgent = request.headers['user-agent'] || '';
+      const isFromTwilio = userAgent.includes('TwilioProxy') || userAgent.includes('Twilio');
       
-      // Automatic cleanup after serving
-      fs.unlink(filePath, (unlinkErr) => {
-        if (unlinkErr) {
-          console.error(`[Play Audio] Error deleting temp file:`, unlinkErr);
+      if (!isFromTwilio) {
+        ws.close(1008, 'Only Twilio connections allowed');
+        return;
+      }
+
+      let callSid: string | null = null;
+      let realtimeAgent: RealtimeAgentService | null = null;
+
+      ws.on('message', async (message: WebSocket.Data) => {
+        const data = JSON.parse(message.toString());
+        
+        if (!callSid && data.start?.callSid) {
+          callSid = data.start.callSid;
+          realtimeAgent = new RealtimeAgentService(callSid);
+          this.activeConnections.set(callSid, realtimeAgent);
+          
+          await realtimeAgent.connect(ws);
         }
       });
     });
-  } else {
-    res.status(404).send('Audio not found.');
   }
-});
+}
+```
+
+### 4.2. Audio Stream Processing
+
+```typescript
+// Handle audio data from Twilio
+private handleTwilioMessage(message: WebSocket.Data): void {
+  const msg = JSON.parse(message.toString());
+  
+  switch (msg.event) {
+    case 'media':
+      // Forward audio from Twilio to OpenAI
+      if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+        const audioAppend = {
+          type: 'input_audio_buffer.append',
+          audio: msg.media.payload
+        };
+        this.openAiWs.send(JSON.stringify(audioAppend));
+      }
+      
+      // Send mark message to keep stream alive
+      if (this.twilioWs && this.streamSid) {
+        const markMessage = {
+          event: 'mark',
+          streamSid: this.streamSid,
+          mark: { name: `audio_processed_${Date.now()}` }
+        };
+        this.twilioWs.send(JSON.stringify(markMessage));
+      }
+      break;
+  }
+}
+
+// Handle responses from OpenAI
+private handleOpenAiMessage(data: WebSocket.Data): void {
+  const response = JSON.parse(data.toString());
+  
+  switch (response.type) {
+    case 'response.audio.delta':
+      // Forward audio from OpenAI back to Twilio
+      if (this.twilioWs && this.streamSid) {
+        const twilioMessage = {
+          event: 'media',
+          streamSid: this.streamSid,
+          media: { payload: response.delta }
+        };
+        this.twilioWs.send(JSON.stringify(twilioMessage));
+      }
+      break;
+      
+    case 'input_audio_buffer.speech_started':
+      // User started speaking - interrupt AI if needed
+      if (this.openAiWs) {
+        this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+      }
+      break;
+      
+    case 'input_audio_buffer.speech_stopped':
+      // User stopped speaking - process and respond
+      if (this.openAiWs) {
+        this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+        this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+      }
+      break;
+  }
+}
+```
+
+### 4.3. Dynamic Business Greetings
+
+```typescript
+/**
+ * Proactively triggers the agent's welcome message by fetching business config
+ */
+private async triggerGreeting(): Promise<void> {
+  try {
+    // Fetch call details from Twilio
+    const callDetails = await twilioClient.calls(this.callSid).fetch();
+    const toPhoneNumber = callDetails.to;
+    
+    // Find business by phone number
+    const business = await prisma.business.findUnique({
+      where: { twilioPhoneNumber: toPhoneNumber }
+    });
+    
+    let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
+    
+    if (business) {
+      const agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: business.id }
+      });
+      
+      if (agentConfig?.voiceGreetingMessage?.trim()) {
+        welcomeMessage = agentConfig.voiceGreetingMessage;
+      } else if (agentConfig?.welcomeMessage?.trim()) {
+        welcomeMessage = agentConfig.welcomeMessage;
+      }
+    }
+    
+    // Send text event to OpenAI to trigger greeting
+    if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+      const textEvent = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+          }]
+        }
+      };
+      
+      this.openAiWs.send(JSON.stringify(textEvent));
+      
+      // Trigger response
+      setTimeout(() => {
+        if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+          this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+        }
+      }, 100);
+    }
+    
+  } catch (error) {
+    console.error('Error triggering greeting:', error);
+  }
+}
 ```
 
 ---
 
 ## 5. Enterprise Session Management
 
-### 5.1. Redis-Powered Session Architecture
+### 5.1. Enhanced Session Service with WebSocket Support
 
 ```typescript
-// Enhanced Voice Session Service
 class VoiceSessionService {
   private static instance: VoiceSessionService;
   private redis: RedisClientType | undefined;
   private memoryStore: Map<string, VoiceSession>;
   private healthMetrics: HealthMetrics;
 
-  // Comprehensive session analytics
+  // WebSocket session tracking
+  async trackWebSocketConnection(callSid: string, connectionId: string): Promise<void> {
+    const session = await this.getSession(callSid);
+    if (session) {
+      session.webSocketConnectionId = connectionId;
+      session.connectionStatus = 'CONNECTED';
+      await this.storeSession(session);
+    }
+  }
+
+  // Real-time session analytics with WebSocket metrics
   async getSessionAnalytics(sessionId: string): Promise<SessionAnalytics> {
     const session = await this.getSession(sessionId);
     if (!session) return null;
@@ -310,11 +525,17 @@ class VoiceSessionService {
       entities: session.entities,
       emergencyDetected: session.emergencyDetected,
       voiceActions: session.voiceActions,
-      completionStatus: session.status
+      completionStatus: session.status,
+      webSocketMetrics: {
+        connectionId: session.webSocketConnectionId,
+        connectionStatus: session.connectionStatus,
+        audioPacketsReceived: session.audioPacketsReceived || 0,
+        audioPacketsSent: session.audioPacketsSent || 0
+      }
     };
   }
 
-  // Advanced health monitoring
+  // Advanced health monitoring with WebSocket status
   async getHealthMetrics(): Promise<HealthMetrics> {
     return {
       redis: {
@@ -327,6 +548,11 @@ class VoiceSessionService {
         total: await this.getTotalSessionCount(),
         averageDuration: await this.getAverageSessionDuration()
       },
+      webSocket: {
+        activeConnections: this.getActiveWebSocketConnections(),
+        totalMessages: await this.getTotalWebSocketMessages(),
+        averageLatency: await this.getAverageWebSocketLatency()
+      },
       memory: {
         heapUsed: process.memoryUsage().heapUsed,
         heapTotal: process.memoryUsage().heapTotal,
@@ -337,70 +563,14 @@ class VoiceSessionService {
 }
 ```
 
-### 5.2. Advanced Memory Management
-
-```typescript
-// Enhanced Memory Monitoring and Cleanup
-const MEMORY_CHECK_INTERVAL = parseInt(process.env.MEMORY_CHECK_INTERVAL || '300000') // 5 minutes
-const MAX_MEMORY_USAGE_MB = 1536; // Alert threshold for 2GB RAM instance
-const MAX_IN_MEMORY_SESSIONS = 100; // Max sessions in memory
-const IN_MEMORY_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-
-function logMemoryUsage(context: string = ''): void {
-  if (!ENABLE_MEMORY_MONITORING) return
-  
-  const usage = process.memoryUsage();
-  const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
-  
-  const memoryInfo = {
-    context,
-    rss: formatBytes(usage.rss),
-    heapUsed: formatBytes(usage.heapUsed),
-    heapTotal: formatBytes(usage.heapTotal),
-    external: formatBytes(usage.external)
-  }
-  
-  // Alert on high memory usage
-  if (memoryInfo.heapUsed > MAX_MEMORY_USAGE_MB) {
-    console.warn(`[Memory Alert] High memory usage: ${memoryInfo.heapUsed}MB > ${MAX_MEMORY_USAGE_MB}MB`);
-  }
-}
-
-function cleanupOldInMemorySessions(): void {
-  const now = Date.now();
-  let cleanedCount = 0;
-  
-  // Remove sessions that exceed timeout
-  for (const [callSid, session] of voiceSessions.entries()) {
-    if (now - session.lastAccessed > IN_MEMORY_SESSION_TIMEOUT_MS) {
-      voiceSessions.delete(callSid);
-      cleanedCount++;
-    }
-  }
-  
-  // Enforce hard limit on session count
-  if (voiceSessions.size > MAX_IN_MEMORY_SESSIONS) {
-    const sessionsArray = Array.from(voiceSessions.entries());
-    sessionsArray.sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
-    
-    while (voiceSessions.size > MAX_IN_MEMORY_SESSIONS && sessionsArray.length > 0) {
-      const oldestSession = sessionsArray.shift();
-      if (oldestSession) {
-        voiceSessions.delete(oldestSession[0]);
-      }
-    }
-  }
-}
-```
-
 ---
 
 ## 6. Health Monitoring & Analytics
 
-### 6.1. Comprehensive Health Monitoring
+### 6.1. Enhanced Health Monitoring with WebSocket Metrics
 
 ```typescript
-// Advanced Health Check Endpoint
+// Advanced Health Check Endpoint with WebSocket Support
 router.get('/health', async (req, res) => {
   try {
     const memoryUsage = process.memoryUsage()
@@ -408,6 +578,7 @@ router.get('/health', async (req, res) => {
     
     const sessionStats = await voiceSessionService.getSessionStats()
     const activeVoiceSessions = voiceSessions.size
+    const webSocketStats = await getWebSocketStats()
     
     const healthData = {
       status: 'healthy',
@@ -429,22 +600,31 @@ router.get('/health', async (req, res) => {
         activeVoiceSessions,
         ...sessionStats
       },
-      timers: {
-        memoryMonitoringEnabled: ENABLE_MEMORY_MONITORING,
-        memoryCheckInterval: MEMORY_CHECK_INTERVAL,
-        sessionCleanupInterval: SESSION_CLEANUP_INTERVAL,
-        redisHealthCheckInterval: REDIS_HEALTH_CHECK_INTERVAL
+      webSocket: {
+        activeConnections: webSocketStats.activeConnections,
+        totalMessages: webSocketStats.totalMessages,
+        averageLatency: webSocketStats.averageLatency,
+        connectionsToday: webSocketStats.connectionsToday
+      },
+      openAI: {
+        realtimeConnections: webSocketStats.openAIConnections,
+        modelStatus: 'gpt-4o-realtime-preview-2024-10-01',
+        averageResponseTime: webSocketStats.averageAIResponseTime
       },
       environment: {
         nodeEnv: process.env.NODE_ENV,
         verboseLogging: ENABLE_VERBOSE_LOGGING,
-        redisConfigured: !!process.env.REDIS_URL
+        realtimeAPIEnabled: !!process.env.OPENAI_API_KEY
       }
     }
     
     // Determine health status
     if (formatBytes(memoryUsage.heapUsed) > MAX_MEMORY_USAGE_MB) {
       healthData.status = 'warning'
+    }
+    
+    if (webSocketStats.activeConnections === 0 && webSocketStats.connectionsToday > 0) {
+      healthData.status = 'degraded'
     }
     
     res.json(healthData)
@@ -459,185 +639,136 @@ router.get('/health', async (req, res) => {
 })
 ```
 
-### 6.2. Redis Connection Management
+### 6.2. WebSocket Connection Management
 
 ```typescript
-// Advanced Redis Connection with Health Monitoring
-async function initializeRedis() {
-  if (redisReconnectAttempts >= maxRedisReconnectAttempts) {
-    console.warn(`[Redis] Max reconnection attempts reached. Stopping reconnection.`);
-    return;
-  }
-
-  try {
-    const client = createClient({ 
-      url: process.env.REDIS_URL,
-      socket: {
-        connectTimeout: 5000,
-        reconnectStrategy: (retries) => {
-          if (retries > 3) return false;
-          return Math.min(retries * 50, 500);
-        }
-      }
-    });
-
-    // Enhanced event handling
-    client.on('error', (err) => {
-      console.error('[Redis Error]:', err);
-      redisClient = undefined;
-      redisReconnectAttempts++;
-    });
-
-    client.on('ready', () => {
-      console.log('[Redis Ready] Client is ready.');
-      redisClient = client as RedisClientType;
-      redisReconnectAttempts = 0;
-    });
-
-    await client.connect();
-
-  } catch (err) {
-    console.error('[Redis] Connection failed:', err);
-    redisReconnectAttempts++;
-  }
+// WebSocket Health Monitoring
+function getWebSocketStats() {
+  return {
+    activeConnections: wss.clients.size,
+    totalMessages: totalWebSocketMessages,
+    averageLatency: calculateAverageLatency(),
+    connectionsToday: dailyConnectionCount,
+    openAIConnections: activeRealtimeConnections,
+    averageAIResponseTime: calculateAverageAIResponseTime()
+  };
 }
 
-// Periodic health check with smart backoff
-function startRedisHealthCheck() {
-  healthCheckInterval = setInterval(() => {
-    if (isRedisClientReady()) {
-      consecutiveFailures = 0;
-      return;
+// Connection cleanup and monitoring
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    } else {
+      // Clean up dead connections
+      cleanupDeadConnection(ws);
     }
-    
-    if (redisReconnectAttempts >= maxRedisReconnectAttempts) return;
-    
-    // Exponential backoff for failures
-    const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveFailures), 60000);
-    if (consecutiveFailures > 0 && Date.now() - lastRedisCheckTime < backoffDelay) {
-      return;
-    }
-    
-    initializeRedis().catch(err => consecutiveFailures++);
-  }, REDIS_HEALTH_CHECK_INTERVAL);
-}
+  });
+}, 30000); // Check every 30 seconds
 ```
 
 ---
 
 ## 7. Plan Tier Architecture
 
-### 7.1. Plan Tier Definitions
+### 7.1. Plan Tier Definitions (Updated for Realtime API)
 
 ```typescript
-enum PlanTier {
-  FREE = 'FREE',
-  BASIC = 'BASIC',
-  PRO = 'PRO'
-}
-```
-
-### 7.2. Feature Matrix
-
-| Feature | FREE | BASIC | PRO |
-|---------|------|-------|-----|
-| Chat Widget | ✅ Basic | ✅ Enhanced | ✅ Full |
-| Lead Capture Questions | 5 max | Unlimited | Unlimited |
-| Voice Agent | ❌ | ❌ | ✅ Full |
-| Premium Voices | ❌ | ❌ | ✅ |
-| Emergency Voice Calls | ❌ | ❌ | ✅ |
-| Advanced Analytics | ❌ | Basic | ✅ Full |
-| Branding | Visible | Visible | Hidden |
-| Voice Configuration | ❌ | ❌ | ✅ Full |
-
-### 7.3. Plan-Aware Middleware
-
-```typescript
-// Plan validation middleware
-export const requirePlan = (requiredPlan: PlanTier) => {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    const userPlan = req.user.business.planTier;
-    if (!isPlanSufficient(userPlan, requiredPlan)) {
-      return res.status(403).json({ error: 'Plan upgrade required' });
+export class PlanManager {
+  static getAvailableFeatures(planTier: PlanTier): string[] {
+    switch (planTier) {
+      case 'FREE':
+        return [
+          'chat_widget',
+          'basic_faq',
+          'limited_questions', // Max 5 questions
+          'email_notifications',
+          'basic_analytics'
+        ];
+      
+      case 'BASIC':
+        return [
+          'chat_widget',
+          'advanced_faq',
+          'unlimited_questions',
+          'priority_email_notifications',
+          'enhanced_analytics',
+          'knowledge_base_management'
+        ];
+      
+      case 'PRO':
+        return [
+          'all_basic_features',
+          'realtime_voice_agent', // Updated for Realtime API
+          'openai_realtime_api',  // New feature
+          'voice_activity_detection',
+          'emergency_voice_calls',
+          'advanced_analytics',
+          'websocket_monitoring',
+          'session_management',
+          'branding_removal',
+          'voice_configuration',
+          'priority_support'
+        ];
+      
+      default:
+        return [];
     }
-    next();
-  };
-};
-```
+  }
 
-### 7.4. Plan-Based UI Rendering
-
-The admin interface conditionally renders features based on plan tier:
-
-```typescript
-// Plan-aware view rendering
-app.get('/admin/settings', authMiddleware, (req, res) => {
-  const { planTier } = req.user.business;
-  res.render('agent-settings', {
-    showVoiceSettings: planTier === 'PRO',
-    showAdvancedAnalytics: planTier === 'PRO',
-    showUpgradePrompts: planTier !== 'PRO'
-  });
-});
+  static canAccessRealtimeFeatures(planTier: PlanTier): boolean {
+    return planTier === 'PRO';
+  }
+}
 ```
 
 ---
 
 ## 8. Enhanced Emergency System
 
-### 8.1. Cross-Channel Emergency Detection
+### 8.1. Real-time Emergency Processing
 
 ```typescript
-// Emergency detection across channels
-interface EmergencyDetection {
-  keywords: string[];
-  urgencyLevel: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
-  channelType: 'CHAT' | 'VOICE';
-  responseTime: number; // milliseconds
+// Emergency detection with real-time response
+export class EmergencyDetectionEngine {
+  static async handleEmergency(
+    emergencyLevel: EmergencyLevel,
+    leadData: any,
+    businessId: string,
+    channel: 'CHAT' | 'VOICE'
+  ): Promise<void> {
+    // Create priority lead
+    const priorityLead = await createEmergencyLead(leadData, emergencyLevel, businessId);
+    
+    // Real-time notifications for urgent emergencies
+    if (emergencyLevel === 'URGENT' && channel === 'VOICE') {
+      await sendRealtimeEmergencyNotification(priorityLead);
+    }
+    
+    // Update session analytics with emergency metrics
+    await updateSessionAnalytics(priorityLead.sessionId, {
+      emergencyDetected: true,
+      emergencyLevel: emergencyLevel,
+      emergencyChannel: channel,
+      emergencyTimestamp: new Date()
+    });
+  }
 }
-```
 
-### 8.2. Emergency Response Flow
-
-```
-User Input (Chat/Voice) → Emergency Detection Engine
-       ↓
-Priority Classification (LOW/NORMAL/HIGH/URGENT)
-       ↓
-Essential Questions Only (isEssentialForEmergency: true)
-       ↓
-Lead Creation with Priority Flag
-       ↓
-Multi-Channel Notifications:
-  - PRO: Immediate voice call to business owner (SSML-enhanced)
-  - All: Priority email with emergency indicators
-       ↓
-Session Analytics with Emergency Metrics
-```
-
-### 8.3. Essential Question Flagging
-
-The `isEssentialForEmergency` field on lead capture questions allows for streamlined emergency flows:
-
-```sql
--- Database field
-ALTER TABLE lead_capture_questions 
-ADD COLUMN isEssentialForEmergency BOOLEAN DEFAULT false;
-```
-
-### 8.4. Emergency Voice Notifications (PRO Feature)
-
-For PRO tier users, the system makes immediate voice calls to business owners when emergencies are detected:
-
-```typescript
-// Emergency voice notification
-async function makeEmergencyCall(businessPhone: string, emergencyDetails: EmergencyLead) {
-  const urgentMessage = createSSMLEmergencyMessage(emergencyDetails);
-  await twilioClient.calls.create({
-    to: businessPhone,
-    from: TWILIO_BUSINESS_NUMBER,
-    twiml: `<Response><Say voice="alice">${urgentMessage}</Say></Response>`
+// Real-time emergency notifications via WebSocket
+async function sendRealtimeEmergencyNotification(lead: EmergencyLead): Promise<void> {
+  const business = await prisma.business.findUnique({
+    where: { id: lead.businessId }
   });
+  
+  if (business?.notificationPhoneNumber) {
+    // Send immediate voice call using Twilio
+    await twilioClient.calls.create({
+      to: business.notificationPhoneNumber,
+      from: TWILIO_BUSINESS_NUMBER,
+      twiml: generateEmergencyTwiML(lead)
+    });
+  }
 }
 ```
 
@@ -645,11 +776,11 @@ async function makeEmergencyCall(businessPhone: string, emergencyDetails: Emerge
 
 ## 9. Data Flows & User Journeys
 
-### 9.1. Advanced Voice Call Journey
+### 9.1. Realtime Voice Call Journey
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     Advanced Voice Call Data Flow                            │
+│                     Realtime Voice Call Data Flow                            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 Customer Dials Business Number ──────┐
@@ -657,11 +788,17 @@ Customer Dials Business Number ──────┐
                              ┌──────────────┐
                              │ Twilio PSTN  │
                              └──────┬───────┘
-                                    │ Enhanced Webhook
+                                    │ Media Stream (WSS)
                                     ▼
-                             ┌──────────────┐    {callSid, from, to, direction,
-                             │Enhanced Voice│     callStatus, businessRouting}
-                             │     API      │              │
+                             ┌──────────────┐
+                             │WebSocket     │ ◄─── Twilio Media Stream
+                             │Server        │
+                             └──────┬───────┘
+                                    │
+                                    ▼
+                             ┌──────────────┐    {callSid, audio_stream,
+                             │Realtime      │     businessRouting, session}
+                             │Agent Service │              │
                              └──────┬───────┘              ▼
                                     │              ┌──────────────┐
                                     └─────────────►│Enterprise    │◄─── Redis Primary
@@ -673,9 +810,9 @@ Customer Dials Business Number ──────┐
                           │                     │                       │
                           ▼                     ▼                       ▼
                   ┌──────────────┐    ┌──────────────┐      ┌──────────────┐
-                  │Enhanced AI   │    │ Advanced     │      │ Plan Manager │
-                  │Handler       │    │ Emergency    │      │   + Health   │
-                  │(Voice Opt.)  │    │ Detection    │      │  Monitor     │
+                  │OpenAI        │    │ Enhanced     │      │ Plan Manager │
+                  │Realtime API  │    │ Emergency    │      │   + Health   │
+                  │(WebSocket)   │    │ Detection    │      │  Monitor     │
                   └──────┬───────┘    └──────┬───────┘      └──────┬───────┘
                          │                   │                     │
                          └─────────────────────┼─────────────────────┘
@@ -684,69 +821,26 @@ Customer Dials Business Number ──────┐
                          │                                           │
                          ▼                                           ▼
                  ┌──────────────┐                            ┌──────────────┐
-                 │OpenAI TTS    │                            │Comprehensive │
-                 │Primary +     │                            │Session       │
-                 │SSML Enhanced │                            │Analytics +   │
-                 │Twilio Fallback│                           │Health Metrics│
+                 │Bidirectional │                            │Comprehensive │
+                 │Audio Stream  │                            │Session       │
+                 │Processing +  │                            │Analytics +   │
+                 │VAD + Response│                            │WebSocket     │
+                 │Generation    │                            │Metrics       │
                  └──────┬───────┘                            └──────────────┘
                         │
                         ▼
                  ┌──────────────┐
-                 │Audio File    │
-                 │Generation +  │
-                 │Auto Cleanup  │
+                 │Audio Response│
+                 │Back to       │
+                 │Twilio Stream │
                  └──────────────┘
-```
-
-### 9.2. Cross-Channel Emergency Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Emergency Detection & Response                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Emergency Input (Chat/Voice) ──────┐
-                                   ▼
-                          ┌──────────────┐
-                          │ Emergency    │ Keywords: "flooding", "burst pipe",
-                          │ Detection    │ "no heat", "electrical fire", etc.
-                          │ Engine       │
-                          └──────┬───────┘
-                                 │
-                                 ▼
-                          ┌──────────────┐
-                          │ Priority     │ LOW → NORMAL → HIGH → URGENT
-                          │ Classification│
-                          └──────┬───────┘
-                                 │
-                                 ▼
-                          ┌──────────────┐
-                          │ Essential    │ isEssentialForEmergency: true
-                          │ Questions    │ (Skip non-critical questions)
-                          │ Filter       │
-                          └──────┬───────┘
-                                 │
-                                 ▼
-                          ┌──────────────┐
-                          │ Lead Creation│ priority: URGENT
-                          │ with Priority│ notes: Emergency details
-                          └──────┬───────┘
-                                 │
-                     ┌───────────┴───────────┐
-                     │                       │
-                     ▼                       ▼
-            ┌──────────────┐        ┌──────────────┐
-            │ Voice Call   │        │ Priority     │
-            │ to Owner     │        │ Email Alert  │
-            │ (PRO Only)   │        │ (All Plans)  │
-            └──────────────┘        └──────────────┘
 ```
 
 ---
 
 ## 10. Project Structure
 
-### 10.1. Enhanced Directory Structure
+### 10.1. Enhanced Directory Structure (V4.2)
 
 ```
 leads-support-agent-smb/
@@ -761,177 +855,200 @@ leads-support-agent-smb/
 │   │   ├── admin.ts              # Admin API with plan-aware features
 │   │   ├── authMiddleware.ts     # JWT auth with plan validation
 │   │   ├── chatRoutes.ts         # Enhanced chat API
-│   │   ├── voiceRoutes.ts        # ENHANCED: Advanced Twilio + OpenAI TTS integration
+│   │   ├── voiceRoutes.ts        # ENHANCED: Twilio webhook endpoints
 │   │   └── viewRoutes.ts         # Plan-aware view rendering
 │   ├── core/
 │   │   ├── aiHandler.ts          # ENHANCED: Voice optimization + response cleaning
 │   │   └── ragService.ts         # Voice-context aware RAG
 │   ├── services/
+│   │   ├── realtimeAgentService.ts # NEW: OpenAI Realtime API integration
+│   │   ├── websocketServer.ts     # NEW: WebSocket server for Twilio Media Streams
 │   │   ├── voiceSessionService.ts # ENHANCED: Enterprise Redis session management
 │   │   ├── notificationService.ts # Enhanced with voice notifications
-│   │   ├── openai.ts             # ENHANCED: OpenAI TTS + voice processing
+│   │   ├── openai.ts             # ENHANCED: Realtime API integration
 │   │   └── db.ts                 # Database service
 │   ├── utils/
-│   │   ├── voiceHelpers.ts       # ENHANCED: Advanced voice processing utilities
+│   │   ├── voiceHelpers.ts       # ENHANCED: Realtime voice processing utilities
 │   │   ├── planUtils.ts          # Plan tier management
-│   │   ├── ssmlHelpers.ts        # ENHANCED: Advanced SSML processing
 │   │   ├── emergencyDetection.ts # Emergency detection logic
-│   │   ├── memoryManagement.ts   # NEW: Memory monitoring and cleanup
-│   │   └── healthMonitoring.ts   # NEW: Comprehensive health monitoring
+│   │   ├── memoryManagement.ts   # Memory monitoring and cleanup
+│   │   ├── healthMonitoring.ts   # NEW: Comprehensive health monitoring
+│   │   └── websocketUtils.ts     # NEW: WebSocket utilities and helpers
 │   ├── types/
-│   │   ├── voice.ts              # ENHANCED: Advanced voice type definitions
+│   │   ├── voice.ts              # ENHANCED: Realtime voice type definitions
 │   │   ├── plans.ts              # Plan tier types
 │   │   ├── emergency.ts          # Emergency handling types
-│   │   ├── session.ts            # NEW: Session management types
-│   │   └── health.ts             # NEW: Health monitoring types
+│   │   ├── session.ts            # Enhanced session management types
+│   │   ├── websocket.ts          # NEW: WebSocket type definitions
+│   │   └── health.ts             # Enhanced health monitoring types
 │   ├── middleware/
 │   │   ├── planMiddleware.ts     # Plan-based access control
 │   │   ├── voiceMiddleware.ts    # ENHANCED: Voice-specific middleware
-│   │   └── healthMiddleware.ts   # NEW: Health monitoring middleware
+│   │   ├── websocketMiddleware.ts # NEW: WebSocket middleware
+│   │   └── healthMiddleware.ts   # Health monitoring middleware
 │   └── views/                    # EJS templates with plan-aware rendering
 │       ├── agent-settings.ejs   # Enhanced with voice configuration
-│       ├── voice-settings.ejs   # ENHANCED: Advanced voice configuration
+│       ├── voice-settings.ejs   # ENHANCED: Realtime voice configuration
 │       ├── dashboard.ejs         # Enhanced with analytics
 │       ├── analytics.ejs         # ENHANCED: Advanced session analytics
-│       └── health-monitor.ejs    # NEW: Health monitoring dashboard
+│       ├── websocket-monitor.ejs # NEW: WebSocket connection monitoring
+│       └── health-monitor.ejs    # Enhanced health monitoring dashboard
 ├── redis/
-│   └── redis.conf                # ENHANCED: Production Redis configuration
+│   └── redis.conf                # Production Redis configuration
 ├── docker-compose.yml            # ENHANCED: Advanced service configuration
-├── Dockerfile                    # Updated with voice dependencies
+├── Dockerfile                    # Updated with WebSocket dependencies
 └── package.json                  # Updated dependencies
 ```
-
-### 10.2. Key Enhanced Components
-
-**Advanced Voice Processing Stack:**
-- `voiceRoutes.ts`: Advanced Twilio webhook handling with OpenAI TTS primary integration
-- `voiceSessionService.ts`: Enterprise Redis session management with comprehensive analytics
-- `openai.ts`: Enhanced OpenAI service with TTS integration and voice processing
-- `ssmlHelpers.ts`: Advanced SSML processing utilities for natural conversation
-
-**Enterprise Infrastructure:**
-- `memoryManagement.ts`: Advanced memory monitoring and cleanup systems
-- `healthMonitoring.ts`: Comprehensive health monitoring with detailed metrics
-- `healthMiddleware.ts`: Health monitoring middleware for API endpoints
-
-**Production-Ready Systems:**
-- Enhanced error handling and graceful degradation
-- Automated cleanup systems with configurable resource limits
-- Advanced health monitoring with component status tracking
 
 ---
 
 ## 11. Core Components
 
-### 11.1. Enhanced AI Handler with Voice Optimization
+### 11.1. Realtime Agent Service (Core Implementation)
 
 ```typescript
-class AIHandler {
-  // Voice-optimized system prompt creation
-  private createVoiceSystemPrompt(businessName?: string): string {
-    return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller.
+// Core Realtime Agent Service
+export class RealtimeAgentService {
+  private openAiWs: WebSocket | null = null;
+  private twilioWs: WebSocket | null = null;
+  private callSid: string;
+  private streamSid: string | null = null;
+  private readonly openaiApiKey: string;
 
-**ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
-
-1. **DIALOGUE-ONLY OUTPUT:** Your response IS the exact words to be spoken. NEVER include:
-   ❌ Prefixes: "Say:", "Response:", "AI:", "Assistant:"
-   ❌ Meta-commentary: "[speaking naturally]", "(pause here)"
-   ❌ Explanations: "I should say...", "Let me respond with..."
-
-2. **VOICE-FIRST SPEECH PATTERNS:**
-   - Use CONVERSATIONAL sentences (8-12 words per sentence maximum)
-   - Employ natural speech rhythm with pauses and breath points
-   - Use contractions authentically ("I'll", "we're", "that's")
-   - Include natural transitions: "Well,", "Actually,", "You know,", "So,"
-
-3. **STRATEGIC SSML FOR NATURAL FLOW:**
-   * **Natural Pauses:** \`<break time="300ms"/>\` between distinct thoughts
-   * **Gentle Emphasis:** \`<emphasis level="moderate">key information</emphasis>\``;
-  }
-
-  // Advanced response cleaning for voice output
-  private cleanVoiceResponse(response: string): string {
-    let cleanedResponse = response.trim()
+  constructor(callSid: string) {
+    this.callSid = callSid;
+    this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
-    // Ultra-aggressive prefix removal
-    const prefixPatterns = [
-      /^(Say|Response|Assistant|AI|Voice|Agent):\s*/gi,
-      /^(I should say|Let me say|I'll say|I will say):\s*/gi,
-      /^(Here's what I would say|Here's my response):\s*/gi,
-      // ... comprehensive prefix patterns
-    ]
-    
-    // Apply patterns iteratively
-    for (const pattern of prefixPatterns) {
-      cleanedResponse = cleanedResponse.replace(pattern, '').trim()
+    if (!this.openaiApiKey) {
+      throw new Error('OPENAI_API_KEY is required for RealtimeAgentService');
     }
-    
-    // Remove meta-commentary and formatting
-    cleanedResponse = cleanedResponse.replace(/^\[.*?\]\s*/g, '').trim()
-    cleanedResponse = cleanedResponse.replace(/^\(.*?\)\s*/g, '').trim()
-    
-    return cleanedResponse
   }
 
-  async processMessage(
-    message: string,
-    conversationHistory: ConversationMessage[],
-    businessId: string,
-    currentActiveFlow?: string | null
-  ): Promise<EnhancedAIResponse> {
-    // Enhanced processing with voice optimization, emergency detection,
-    // and comprehensive session management
-  }
-}
-```
+  /**
+   * Establishes bidirectional audio bridge between Twilio and OpenAI
+   */
+  public async connect(twilioWs: WebSocket): Promise<void> {
+    try {
+      this.twilioWs = twilioWs;
+      this.setupTwilioListeners();
+      
+      // Connect to OpenAI Realtime API
+      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+      const headers = {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'OpenAI-Beta': 'realtime=v1'
+      };
 
-### 11.2. Enterprise Voice Session Service
+      this.openAiWs = new WebSocket(url, { headers });
+      this.setupOpenAiListeners();
 
-```typescript
-class VoiceSessionService {
-  private static instance: VoiceSessionService;
-  private redis: RedisClientType | undefined;
-  private memoryStore: Map<string, VoiceSession>;
-  private healthMetrics: HealthMetrics;
-
-  // Comprehensive session analytics
-  async getSessionAnalytics(sessionId: string): Promise<SessionAnalytics> {
-    const session = await this.getSession(sessionId);
-    if (!session) return null;
-
-    return {
-      sessionId,
-      duration: session.endTime ? 
-        session.endTime.getTime() - session.startTime.getTime() : 
-        Date.now() - session.startTime.getTime(),
-      messageCount: session.messages.length,
-      intents: session.intents,
-      entities: session.entities,
-      emergencyDetected: session.emergencyDetected,
-      voiceActions: session.voiceActions,
-      completionStatus: session.status
-    };
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to connect for call ${this.callSid}:`, error);
+      throw error;
+    }
   }
 
-  // Advanced health monitoring
-  async getHealthMetrics(): Promise<HealthMetrics> {
-    return {
-      redis: {
-        connected: this.isRedisReady(),
-        latency: await this.measureRedisLatency(),
-        memoryUsage: await this.getRedisMemoryUsage()
-      },
-      sessions: {
-        active: this.memoryStore.size,
-        total: await this.getTotalSessionCount(),
-        averageDuration: await this.getAverageSessionDuration()
-      },
-      memory: {
-        heapUsed: process.memoryUsage().heapUsed,
-        heapTotal: process.memoryUsage().heapTotal,
-        rss: process.memoryUsage().rss
+  /**
+   * Configures the OpenAI session for voice conversation
+   */
+  private configureOpenAiSession(): void {
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) return;
+
+    const sessionConfig = {
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+        voice: 'alloy',
+        input_audio_format: 'g711_ulaw',
+        output_audio_format: 'g711_ulaw',
+        input_audio_transcription: {
+          model: 'whisper-1'
+        },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
+        }
       }
     };
+
+    this.openAiWs.send(JSON.stringify(sessionConfig));
+  }
+
+  /**
+   * Handles incoming messages from Twilio WebSocket
+   */
+  private handleTwilioMessage(message: WebSocket.Data): void {
+    try {
+      const msg = JSON.parse(message.toString());
+      
+      switch (msg.event) {
+        case 'media':
+          // Forward audio from Twilio to OpenAI
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            const audioAppend = {
+              type: 'input_audio_buffer.append',
+              audio: msg.media.payload
+            };
+            this.openAiWs.send(JSON.stringify(audioAppend));
+          }
+          
+          // Send mark message back to Twilio to keep audio stream alive
+          if (this.twilioWs && this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+            const markMessage = {
+              event: 'mark',
+              streamSid: this.streamSid,
+              mark: { name: `audio_processed_${Date.now()}` }
+            };
+            this.twilioWs.send(JSON.stringify(markMessage));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error parsing Twilio message:`, error);
+    }
+  }
+
+  /**
+   * Handles incoming messages from OpenAI WebSocket
+   */
+  private handleOpenAiMessage(data: WebSocket.Data): void {
+    try {
+      const response = JSON.parse(data.toString());
+      
+      switch (response.type) {
+        case 'response.audio.delta':
+          // Forward audio from OpenAI back to Twilio
+          if (this.twilioWs && this.twilioWs.readyState === WebSocket.OPEN && this.streamSid) {
+            const twilioMessage = {
+              event: 'media',
+              streamSid: this.streamSid,
+              media: { payload: response.delta }
+            };
+            this.twilioWs.send(JSON.stringify(twilioMessage));
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_started':
+          // User started speaking - optionally interrupt AI
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+          }
+          break;
+          
+        case 'input_audio_buffer.speech_stopped':
+          // User stopped speaking - commit and respond
+          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+            this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error parsing OpenAI message:`, error);
+    }
   }
 }
 ```
@@ -940,25 +1057,25 @@ class VoiceSessionService {
 
 ## 12. Database Schema
 
-### 12.1. Enhanced Schema (V4.0)
-
-The database schema has been enhanced to support voice features, plan tiers, and emergency handling:
+### 12.1. Enhanced Schema for Realtime Voice Features
 
 ```sql
--- Enhanced Business model with plan tier and voice features
+-- Enhanced Business model with Realtime voice features
 CREATE TABLE businesses (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   business_type business_type DEFAULT 'OTHER',
-  plan_tier plan_tier DEFAULT 'FREE',        -- NEW: Plan tier system
-  twilio_phone_number TEXT UNIQUE,           -- NEW: Voice phone number
+  plan_tier plan_tier DEFAULT 'FREE',
+  twilio_phone_number TEXT UNIQUE,           -- For Realtime voice calls
   notification_email TEXT,
   notification_phone_number TEXT,
+  realtime_api_enabled BOOLEAN DEFAULT false, -- New: Realtime API access
+  websocket_enabled BOOLEAN DEFAULT false,    -- New: WebSocket support
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Enhanced AgentConfig with voice settings
+-- Enhanced AgentConfig with Realtime settings
 CREATE TABLE agent_configs (
   id TEXT PRIMARY KEY,
   business_id TEXT UNIQUE REFERENCES businesses(id) ON DELETE CASCADE,
@@ -966,204 +1083,79 @@ CREATE TABLE agent_configs (
   persona_prompt TEXT DEFAULT 'You are a helpful and friendly assistant.',
   welcome_message TEXT DEFAULT 'Hello! How can I help you today?',
   color_theme JSONB DEFAULT '{"primary": "#0ea5e9", "secondary": "#64748b"}',
-  -- NEW: Voice-specific configuration fields
+  -- Enhanced voice configuration for Realtime API
   voice_greeting_message TEXT,
   voice_completion_message TEXT,
   voice_emergency_message TEXT,
   voice_end_call_message TEXT,
-  twilio_voice TEXT DEFAULT 'alice',
-  twilio_language TEXT DEFAULT 'en-US',
+  realtime_voice_model TEXT DEFAULT 'alloy',          -- New: OpenAI voice model
+  realtime_instructions TEXT,                         -- New: Custom AI instructions
+  vad_threshold DECIMAL DEFAULT 0.5,                  -- New: VAD configuration
+  silence_duration_ms INTEGER DEFAULT 500,            -- New: Silence detection
+  prefix_padding_ms INTEGER DEFAULT 300,              -- New: Audio padding
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Enhanced LeadCaptureQuestion with emergency flagging
-CREATE TABLE lead_capture_questions (
-  id TEXT PRIMARY KEY,
-  config_id TEXT REFERENCES agent_configs(id) ON DELETE CASCADE,
-  question_text TEXT NOT NULL,
-  expected_format expected_format DEFAULT 'TEXT',
-  "order" INTEGER NOT NULL,
-  is_required BOOLEAN DEFAULT true,
-  maps_to_lead_field TEXT,
-  is_essential_for_emergency BOOLEAN DEFAULT false,  -- NEW: Emergency question flagging
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(config_id, "order")
-);
-
--- Enhanced Lead model with priority and contact fields
-CREATE TABLE leads (
+-- Enhanced Voice Sessions for Realtime tracking
+CREATE TABLE voice_sessions (
   id TEXT PRIMARY KEY,
   business_id TEXT REFERENCES businesses(id) ON DELETE CASCADE,
-  captured_data JSONB DEFAULT '{}',
-  conversation_transcript TEXT NOT NULL,
-  status lead_status DEFAULT 'NEW',
-  priority lead_priority DEFAULT 'NORMAL',    -- Enhanced priority system
-  contact_email TEXT,
-  contact_phone TEXT,
-  contact_name TEXT,
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- NEW: Conversation sessions for analytics
-CREATE TABLE conversations (
-  id TEXT PRIMARY KEY,
-  business_id TEXT NOT NULL,
-  session_id TEXT UNIQUE NOT NULL,
-  messages JSONB DEFAULT '[]',
+  call_sid TEXT UNIQUE NOT NULL,
+  websocket_connection_id TEXT,                       -- New: WebSocket tracking
+  from_number TEXT,
+  to_number TEXT,
+  session_data JSONB DEFAULT '{}',                    -- Enhanced session data
+  realtime_metrics JSONB DEFAULT '{}',               -- New: Realtime API metrics
+  audio_duration_seconds INTEGER DEFAULT 0,          -- New: Audio duration tracking
+  interruption_count INTEGER DEFAULT 0,              -- New: Interruption tracking
+  vad_events JSONB DEFAULT '[]',                     -- New: VAD event log
   started_at TIMESTAMP DEFAULT NOW(),
   ended_at TIMESTAMP,
-  lead_id TEXT
+  status voice_session_status DEFAULT 'ACTIVE'
 );
 
--- Plan tier enum
-CREATE TYPE plan_tier AS ENUM ('FREE', 'BASIC', 'PRO');
-
--- Enhanced priority enum
-CREATE TYPE lead_priority AS ENUM ('LOW', 'NORMAL', 'HIGH', 'URGENT');
-```
-
-### 12.2. Voice Session Storage (Redis)
-
-Voice sessions are stored in Redis with the following structure:
-
-```typescript
-interface VoiceSession {
-  sessionId: string;
-  businessId: string;
-  callSid: string;
-  fromNumber: string;
-  toNumber: string;
-  startTime: Date;
-  endTime?: Date;
-  status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
-  messages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
-    transcriptionConfidence?: number;
-  }>;
-  intents: Array<{
-    intent: string;
-    confidence: number;
-    timestamp: Date;
-  }>;
-  entities: {
-    emails: string[];
-    phones: string[];
-    names: string[];
-    dates: string[];
-    amounts: string[];
-    locations: string[];
-  };
-  emergencyDetected: boolean;
-  voiceActions: string[];
-  currentQuestion?: number;
-  leadCaptured: boolean;
-}
+-- New enums for Realtime features
+CREATE TYPE voice_session_status AS ENUM ('ACTIVE', 'COMPLETED', 'FAILED', 'INTERRUPTED');
+CREATE TYPE realtime_event_type AS ENUM ('SPEECH_STARTED', 'SPEECH_STOPPED', 'AUDIO_DELTA', 'SESSION_UPDATE');
 ```
 
 ---
 
 ## 13. API Documentation
 
-### 13.1. Voice API Endpoints
+### 13.1. Enhanced Voice Routes for Realtime API
 
 ```typescript
-// Voice Routes (/api/voice)
+// Voice Routes for Twilio Integration
 POST /api/voice/incoming
   - Handles incoming Twilio calls
-  - Creates voice session
-  - Returns initial TwiML greeting
+  - Initiates WebSocket connection for Media Streams
+  - Returns TwiML with Media Stream configuration
 
-POST /api/voice/gather
-  - Processes user speech input
-  - Updates session with transcription
-  - Returns AI response as TwiML
+// WebSocket Endpoint
+WS /
+  - Twilio Media Stream WebSocket connection
+  - Bidirectional audio streaming
+  - Real-time session management
 
-POST /api/voice/action
-  - Handles voice actions (HANGUP, TRANSFER, etc.)
-  - Updates session analytics
-  - Returns appropriate TwiML
-
+// Health and Monitoring
 GET /api/voice/health
-  - Voice system health check
-  - Returns Twilio connectivity status
-  - Includes active call metrics
-```
-
-### 13.2. Enhanced Admin API
-
-```typescript
-// Plan-aware Admin Routes (/api/admin)
-GET /api/admin/config
-  - Returns agent configuration
-  - Includes plan-based feature flags
-  - Voice settings for PRO users only
-
-POST /api/admin/config/voice
-  - Updates voice configuration (PRO only)
-  - Validates voice and language options
-  - Returns updated configuration
-
-GET /api/admin/analytics
-  - Session analytics dashboard (PRO only)
-  - Voice call metrics
-  - Emergency detection statistics
-
-GET /api/admin/sessions
+  - Voice system health with WebSocket metrics
+  - Realtime API connection status
   - Active session monitoring
-  - Redis health status
-  - Session cleanup controls
-```
 
-### 13.3. Enhanced Health Monitoring
-
-```typescript
-GET /health
-Response: {
-  status: 'healthy' | 'degraded' | 'unhealthy',
-  timestamp: '2024-12-15T10:30:00Z',
-  components: {
-    database: {
-      status: 'healthy',
-      latency: 15,
-      connection_pool: { active: 5, idle: 10 }
-    },
-    redis: {
-      status: 'healthy',
-      latency: 8,
-      memory_usage: '45%',
-      connected_clients: 12
-    },
-    openai: {
-      status: 'healthy',
-      latency: 120,
-      rate_limit_remaining: 850
-    },
-    twilio: {
-      status: 'healthy',
-      webhook_status: 'active',
-      phone_numbers: 5
-    }
-  },
-  metrics: {
-    active_sessions: 23,
-    total_sessions_today: 145,
-    active_voice_calls: 3,
-    emergency_calls_today: 7
-  }
-}
+GET /api/voice/sessions
+  - Active voice session monitoring
+  - WebSocket connection status
+  - Realtime API metrics
 ```
 
 ---
 
 ## 14. Development Setup
 
-### 14.1. Enhanced Environment Configuration
+### 14.1. Enhanced Environment for Realtime API
 
 ```bash
 # Core Application
@@ -1176,348 +1168,84 @@ DIRECT_URL="postgresql://db_user:db_password@localhost:5433/app_db?schema=public
 
 # Redis Session Storage
 REDIS_URL="redis://localhost:6379"
-REDIS_PASSWORD=""
-REDIS_DB=0
 
-# OpenAI Integration
+# OpenAI Realtime API Integration
 OPENAI_API_KEY="sk-your-key-here"
+OPENAI_REALTIME_MODEL="gpt-4o-realtime-preview-2024-10-01"
 
-# Twilio Voice Integration
+# Twilio Media Streams Integration
 TWILIO_ACCOUNT_SID="AC_your_account_sid"
 TWILIO_AUTH_TOKEN="your_auth_token"
 TWILIO_WEBHOOK_BASE_URL="https://your-domain.com"
 
+# WebSocket Configuration
+WEBSOCKET_PING_INTERVAL=30000
+WEBSOCKET_PONG_TIMEOUT=5000
+MAX_WEBSOCKET_CONNECTIONS=100
+
 # JWT Configuration
 JWT_SECRET="your-super-secret-jwt-key"
-
-# CORS and Frontend URLs
-APP_PRIMARY_URL=http://localhost:3000
-ADMIN_CUSTOM_DOMAIN_URL=https://app.yourcompany.com
-WIDGET_DEMO_URL=https://demo.yourcompany.com
-WIDGET_TEST_URL=http://127.0.0.1:8080
 ```
 
-### 14.2. Enhanced Docker Configuration
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://db_user:db_password@db:5432/app_db
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - .:/app
-      - /app/node_modules
-
-  db:
-    image: pgvector/pgvector:pg15
-    environment:
-      POSTGRES_DB: app_db
-      POSTGRES_USER: db_user
-      POSTGRES_PASSWORD: db_password
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-
-volumes:
-  postgres_data:
-  redis_data:
-```
-
-### 14.3. Development Commands
+### 14.2. Development Commands for Realtime Features
 
 ```bash
-# Start all services
-docker-compose up
+# Start with Realtime API support
+npm run dev:realtime
 
-# Voice-specific database migration
-docker-compose exec app npx prisma migrate dev --name add_voice_features
+# Test Realtime API integration
+npm run test:realtime
 
-# Redis session cleanup
-docker-compose exec app yarn redis:cleanup
+# Monitor WebSocket connections
+npm run monitor:websockets
 
-# Voice system testing
-docker-compose exec app yarn test:voice
+# Test voice session management
+npm run test:voice-sessions
 
-# Run with voice debugging
-docker-compose exec app yarn dev:voice
-
-# Analytics dashboard testing
-docker-compose exec app yarn test:analytics
+# WebSocket health check
+npm run health:websockets
 ```
 
 ---
 
 ## 15. Deployment Guide
 
-### 15.1. Production Environment Setup
-
-For production deployment, ensure the following services are configured:
+### 15.1. Production Environment for Realtime API
 
 **Infrastructure Requirements:**
 - Node.js 20.x runtime
 - PostgreSQL 15+ with pgvector extension
 - Redis 7.x for session storage
-- SSL certificates for HTTPS/WSS
-- Twilio account with phone numbers
-- OpenAI API access
+- **SSL certificates for HTTPS/WSS** (required for WebSocket)
+- **Twilio account with Media Streams enabled**
+- **OpenAI API access with Realtime API permissions**
 
-**Environment Variables:**
-```bash
-# Production configuration
-NODE_ENV=production
-PORT=3000
+### 15.2. WebSocket Configuration for Production
 
-# Database (production URLs)
-DATABASE_URL="postgresql://prod_user:prod_password@prod_host:5432/prod_db"
-DIRECT_URL="postgresql://prod_user:prod_password@prod_host:5432/prod_db"
-
-# Redis (production instance)
-REDIS_URL="redis://prod_redis_host:6379"
-REDIS_PASSWORD="prod_redis_password"
-
-# Twilio (production webhook URLs)
-TWILIO_WEBHOOK_BASE_URL="https://your-production-domain.com"
-
-# Security
-JWT_SECRET="production-strength-jwt-secret"
-```
-
-### 15.2. Production Deployment Checklist
-
-- [ ] Database migrations applied
-- [ ] Redis instance configured and accessible
-- [ ] Twilio webhooks pointing to production URLs
-- [ ] OpenAI API rate limits configured
-- [ ] SSL certificates installed
-- [ ] Environment variables secured
-- [ ] Health monitoring endpoints configured
-- [ ] Log aggregation setup
-- [ ] Backup procedures in place
-- [ ] Plan tier billing integration (if applicable)
-
----
-
-## 16. Security Considerations
-
-### 16.1. Voice Security
-
-**Twilio Webhook Validation:**
-```typescript
-// Validate Twilio webhook signatures
-const validateTwilioSignature = (req: Request): boolean => {
-  const signature = req.headers['x-twilio-signature'];
-  const url = `${process.env.TWILIO_WEBHOOK_BASE_URL}${req.originalUrl}`;
-  const params = req.body;
-  
-  return twilio.validateRequest(
-    process.env.TWILIO_AUTH_TOKEN,
-    signature,
-    url,
-    params
-  );
-};
-```
-
-**Voice Data Protection:**
-- All voice transcriptions encrypted in transit and at rest
-- Session data in Redis with TTL for automatic expiration
-- No permanent storage of voice recordings
-- GDPR-compliant data handling
-
-### 16.2. Plan Tier Security
-
-**Plan-Based Access Control:**
-- Middleware validation for all plan-restricted endpoints
-- Frontend feature gating to prevent unauthorized access
-- Server-side plan verification for all premium features
-- Audit logging for plan tier changes
-
-**Session Security:**
-- Redis sessions with secure configuration
-- Session invalidation on plan downgrades
-- Encrypted session data storage
-- Regular session cleanup
-
----
-
-## 17. Testing Strategy
-
-### 17.1. Voice Testing Framework
-
-```typescript
-// Voice interaction testing
-describe('Voice Agent System', () => {
-  it('should handle incoming calls correctly', async () => {
-    const mockTwilioCall = createMockTwilioCall();
-    const response = await request(app)
-      .post('/api/voice/incoming')
-      .send(mockTwilioCall)
-      .expect(200);
+```nginx
+# Nginx configuration for WebSocket support
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
     
-    expect(response.text).toContain('<Response>');
-    expect(response.text).toContain('<Say>');
-  });
-
-  it('should detect emergencies in voice calls', async () => {
-    const emergencyTranscript = "My basement is flooding and water is everywhere";
-    const session = await voiceSessionService.createSession('test-session', 'business-id');
-    
-    const result = await aiHandler.processMessage(
-      emergencyTranscript, 
-      'business-id', 
-      [], 
-      'VOICE', 
-      'test-session'
-    );
-    
-    expect(result.emergencyDetected).toBe(true);
-    expect(result.priority).toBe('URGENT');
-  });
-});
-```
-
-### 17.2. Plan Tier Testing
-
-```typescript
-// Plan-based feature testing
-describe('Plan Tier System', () => {
-  it('should restrict voice features to PRO users', async () => {
-    const freeUser = createMockUser('FREE');
-    const response = await request(app)
-      .get('/api/admin/config/voice')
-      .set('Authorization', `Bearer ${freeUser.token}`)
-      .expect(403);
-    
-    expect(response.body.error).toContain('Plan upgrade required');
-  });
-
-  it('should allow voice configuration for PRO users', async () => {
-    const proUser = createMockUser('PRO');
-    const voiceConfig = { twilioVoice: 'polly.Amy', twilioLanguage: 'en-GB' };
-    
-    const response = await request(app)
-      .post('/api/admin/config/voice')
-      .set('Authorization', `Bearer ${proUser.token}`)
-      .send(voiceConfig)
-      .expect(200);
-    
-    expect(response.body.twilioVoice).toBe('polly.Amy');
-  });
-});
-```
-
-### 17.3. Emergency System Testing
-
-```typescript
-// Emergency detection testing
-describe('Emergency Detection System', () => {
-  it('should detect various emergency keywords', async () => {
-    const emergencyScenarios = [
-      { input: "burst pipe flooding basement", expected: 'URGENT' },
-      { input: "electrical fire in kitchen", expected: 'URGENT' },
-      { input: "small water leak under sink", expected: 'HIGH' },
-      { input: "schedule maintenance visit", expected: 'NORMAL' }
-    ];
-
-    for (const scenario of emergencyScenarios) {
-      const result = emergencyEngine.detectEmergency(scenario.input, 'CHAT');
-      expect(result).toBe(scenario.expected);
+    # WebSocket upgrade handling
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket specific timeouts
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
     }
-  });
-});
+}
 ```
 
 ---
 
-## 18. Troubleshooting
-
-### 18.1. Voice System Issues
-
-**Common Twilio Integration Problems:**
-```bash
-# Check Twilio webhook connectivity
-curl -X POST https://your-domain.com/api/voice/incoming \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "CallSid=test&From=+1234567890&To=+1987654321"
-
-# Verify Twilio credentials
-docker-compose exec app yarn twilio:verify
-
-# Test voice session creation
-docker-compose exec app yarn test:voice-session
-```
-
-**Voice Quality Issues:**
-- Verify SSML markup is valid
-- Check OpenAI Whisper transcription accuracy
-- Monitor network latency to Twilio
-- Validate voice model availability
-
-### 18.2. Redis Session Issues
-
-**Session Storage Problems:**
-```bash
-# Check Redis connectivity
-docker-compose exec redis redis-cli ping
-
-# Monitor Redis memory usage
-docker-compose exec redis redis-cli info memory
-
-# Clear stuck sessions
-docker-compose exec app yarn redis:cleanup
-
-# Check session statistics
-curl http://localhost:3000/health | jq '.metrics'
-```
-
-### 18.3. Plan Tier Issues
-
-**Feature Access Problems:**
-```bash
-# Verify user plan tier
-SELECT businesses.name, businesses.plan_tier 
-FROM businesses 
-JOIN users ON businesses.id = users.business_id 
-WHERE users.email = 'user@example.com';
-
-# Check plan middleware logs
-docker-compose logs app | grep "Plan validation"
-
-# Test plan-based endpoints
-curl -H "Authorization: Bearer $JWT_TOKEN" \
-     http://localhost:3000/api/admin/config/voice
-```
-
-### 18.4. Emergency Detection Issues
-
-**Emergency Not Detected:**
-- Review emergency keyword dictionary
-- Check message preprocessing (lowercasing, stemming)
-- Verify emergency detection logs
-- Test with known emergency phrases
-
-**False Emergency Detection:**
-- Adjust emergency keyword weights
-- Implement context-aware detection
-- Add negative keywords to filter out false positives
-- Review emergency classification logic
-
-This comprehensive developer guide now accurately reflects the advanced voice-enabled platform with OpenAI TTS integration, sophisticated session management, and enterprise-grade health monitoring capabilities. 
+This comprehensive developer guide now accurately reflects the current OpenAI Realtime API implementation with WebSocket architecture, providing technical implementation details and architectural reference for the advanced voice-enabled platform. 

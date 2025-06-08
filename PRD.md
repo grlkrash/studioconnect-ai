@@ -1,5 +1,5 @@
 # Product Requirements Document: Leads Support AI Agent
-**Version:** 4.1 (Advanced Voice & Session Management Implementation)
+**Version:** 4.2 (OpenAI Realtime API & WebSocket Implementation)
 **Date:** December 2024
 **Project Owner:** Sonia
 **Author:** AI Assistant (in collaboration with Sonia)
@@ -7,49 +7,50 @@
 ## 1. Introduction
 
 ### 1.1. Purpose of this Document
-This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the **Advanced Voice-Enabled Multi-Channel Platform** that has evolved from the original MVP to include comprehensive voice calling capabilities with OpenAI TTS integration, sophisticated Redis-powered session management, advanced health monitoring, and enhanced emergency handling. The system is currently deployed and operational with both chat and voice functionalities.
+This document defines the product requirements, features, and strategic vision for the "Leads Support AI Agent" (hereinafter "the Agent"). It details the **Advanced Voice-Enabled Multi-Channel Platform** that has evolved from the original MVP to include comprehensive voice calling capabilities with **OpenAI Realtime API integration**, bidirectional audio streaming via WebSocket architecture, sophisticated Redis-powered session management, advanced health monitoring, and enhanced emergency handling. The system is currently deployed and operational with both chat and voice functionalities.
 
 ### 1.2. Project Vision
 To empower Small to Medium-Sized Businesses (SMBs) with an intelligent, **multi-channel AI platform** that seamlessly handles both chat and voice interactions. The Agent provides 24/7 availability across communication channels, sophisticated emergency detection and response, plan-based access to advanced features that scale with business needs, and comprehensive analytics powered by advanced session management and health monitoring systems.
 
 ### 1.3. Product Goals
 
-#### Current Implementation (V4.1 - Fully Deployed with Advanced Features)
-* **Advanced Voice-Enabled AI Platform:** Complete Twilio integration with OpenAI TTS primary synthesis, sophisticated SSML processing, and intelligent fallback systems
-* **Sophisticated Session Management:** Redis-powered session storage with intelligent in-memory fallback, comprehensive analytics, and advanced memory monitoring
-* **Enhanced Health Monitoring:** Real-time system health tracking with detailed metrics, Redis connectivity monitoring, and automated cleanup systems
-* **Advanced Voice Processing:** OpenAI voice models (nova, alloy, onyx, shimmer, echo, fable) with dynamic audio generation and natural conversation flow
-* **Intelligent Memory Management:** Automated session cleanup, memory optimization, and configurable resource limits with production-ready monitoring
+#### Current Implementation (V4.2 - Fully Deployed with Realtime API Features)
+* **OpenAI Realtime API Platform:** Complete integration with bidirectional audio streaming, real-time speech-to-speech processing, and WebSocket architecture
+* **WebSocket Infrastructure:** Low-latency audio bridge between Twilio Media Streams and OpenAI Realtime API with intelligent connection management
+* **Voice Activity Detection:** Server-side VAD with configurable thresholds, interruption handling, and natural conversation flow
+* **Sophisticated Session Management:** Redis-powered session storage with WebSocket tracking, intelligent in-memory fallback, and comprehensive analytics
+* **Enhanced Health Monitoring:** Real-time system health tracking with WebSocket metrics, Redis connectivity monitoring, and automated cleanup systems
+* **Intelligent Memory Management:** Automated session cleanup, WebSocket connection monitoring, and configurable resource limits with production-ready monitoring
 
 #### Achieved Advanced Features
-* **Premium Voice Synthesis:**
-  - **Primary TTS**: OpenAI voice models with superior quality (nova, alloy, onyx, shimmer, echo, fable)
-  - **Intelligent Fallback**: Automatic fallback to Twilio TTS with SSML enhancement when OpenAI TTS unavailable
-  - **Dynamic Audio Generation**: Real-time audio file generation with automatic cleanup and memory management
-  - **Natural Conversation Flow**: Advanced SSML processing with conversational interjections, appropriate pauses, and intelligent emphasis
+* **Realtime Voice Processing:**
+  - **Bidirectional Audio Streaming**: Real-time speech-to-speech processing via OpenAI Realtime API
+  - **Voice Activity Detection**: Server-side VAD with intelligent interruption handling and natural turn-taking
+  - **WebSocket Architecture**: Low-latency audio bridge between Twilio Media Streams and OpenAI
+  - **Dynamic Business Greetings**: Context-aware greeting generation based on business configuration and automatic AI delivery
 * **Enterprise-Grade Session Management:**
-  - **Redis-First Architecture**: Primary Redis storage with comprehensive connection management and automatic reconnection
+  - **Redis-First Architecture**: Primary Redis storage with WebSocket connection tracking and comprehensive session management
   - **Intelligent Fallback System**: Seamless failover to in-memory storage with advanced cleanup and memory optimization
-  - **Advanced Analytics**: Real-time session tracking with entity extraction, intent classification, and conversation analytics
-  - **Health Monitoring**: Continuous Redis health checks with exponential backoff and detailed status reporting
+  - **Advanced Analytics**: Real-time session tracking with WebSocket metrics, entity extraction, intent classification, and conversation analytics
+  - **Health Monitoring**: Continuous Redis health checks with WebSocket status monitoring and detailed status reporting
 * **Production-Ready Infrastructure:**
   - **Memory Monitoring**: Optional verbose logging and memory usage tracking for production debugging
-  - **Automated Cleanup**: Configurable session limits, automatic expiration, and resource management
-  - **Health Endpoints**: Comprehensive system status dashboards with detailed metrics and component health
-  - **Performance Optimization**: Memory-efficient session management with configurable limits and intelligent cleanup
+  - **Automated Cleanup**: Configurable session limits, WebSocket connection cleanup, automatic expiration, and resource management
+  - **Health Endpoints**: Comprehensive system status dashboards with WebSocket metrics, detailed component health, and connection monitoring
+  - **Performance Optimization**: Memory-efficient session management with WebSocket connection pooling and intelligent cleanup
 
 #### Achieved Core Features
-* **Sophisticated Voice Agent:**
-  - Twilio integration with webhook handling for incoming calls
-  - OpenAI Whisper transcription and SSML-enhanced speech synthesis
-  - Multiple voice options (Standard, Premium Neural, Generative)
-  - Multi-language support (English variants, Spanish, French, German, Italian, Portuguese)
-  - Dynamic voice actions (CONTINUE, HANGUP, TRANSFER, VOICEMAIL)
+* **Sophisticated Realtime Voice Agent:**
+  - Twilio Media Streams integration with WebSocket handling for bidirectional audio
+  - OpenAI Realtime API with real-time speech-to-speech processing
+  - Voice Activity Detection with configurable thresholds and intelligent interruption handling
+  - G.711 μ-law audio format support with Whisper transcription integration
+  - Dynamic business greeting delivery with context-aware messaging
 * **Advanced Analytics Platform:**
-  - Session-based conversation tracking with Redis
-  - Entity extraction and intent classification
-  - Voice call duration and interaction metrics
-  - Health monitoring with system status dashboards
+  - Session-based conversation tracking with Redis and WebSocket connection monitoring
+  - Entity extraction and intent classification with real-time processing
+  - Voice call duration, audio streaming metrics, and WebSocket interaction tracking
+  - Health monitoring with system status dashboards and connection analytics
 * **Plan-Based Feature Gating:**
   - FREE tier with basic chat functionality
   - BASIC tier with enhanced lead capture
@@ -73,8 +74,8 @@ Primary users are Small to Medium-Sized Businesses (SMBs) in service-oriented in
 * **Service Contractors:** Landscapers, roofers, contractors requiring multi-channel communication
 
 ### 1.5. Scope
-* **In Scope (Current V4.1 Implementation):** All voice agent features, plan tier system, enhanced emergency handling, Redis session management, advanced analytics
-* **Phase 1 Future Development:** CRM integrations, advanced voice features, mobile applications
+* **In Scope (Current V4.2 Implementation):** OpenAI Realtime API integration, WebSocket architecture, plan tier system, enhanced emergency handling, Redis session management with WebSocket tracking, advanced analytics
+* **Phase 1 Future Development:** CRM integrations, enhanced Realtime API features, mobile applications
 * **Phase 2 Future Development:** Self-service SaaS platform, automated billing, advanced AI capabilities
 
 ## 2. Product Overview
@@ -83,21 +84,21 @@ Primary users are Small to Medium-Sized Businesses (SMBs) in service-oriented in
 SMBs lose significant business opportunities due to inability to handle immediate customer needs, especially emergency situations, across multiple communication channels. The Voice-Enabled AI Agent provides comprehensive coverage with intelligent routing, sophisticated emergency detection, and plan-based access to advanced features that scale with business needs.
 
 ### 2.2. Key Differentiators (Implemented & Validated)
-* **True Multi-Channel Platform:** Seamless integration between chat and voice with unified session management
-* **Advanced Emergency Response:** Cross-channel emergency detection with priority voice notifications to business owners
-* **Plan-Based Value Proposition:** Clear feature progression from FREE to BASIC to PRO tiers
-* **Voice-First Design:** SSML-enhanced natural speech synthesis optimized for business conversations
-* **Sophisticated Analytics:** Real-time session tracking with entity extraction and intent analysis
-* **Service SMB Focus:** Built specifically for emergency-responsive service businesses
+* **True Multi-Channel Platform:** Seamless integration between chat and voice with unified session management and WebSocket architecture
+* **Advanced Emergency Response:** Cross-channel emergency detection with real-time voice notifications to business owners
+* **Plan-Based Value Proposition:** Clear feature progression from FREE to BASIC to PRO tiers with Realtime API access
+* **Realtime Voice-First Design:** Bidirectional audio streaming with OpenAI Realtime API optimized for natural business conversations
+* **Sophisticated Analytics:** Real-time session tracking with WebSocket metrics, entity extraction, and intent analysis
+* **Service SMB Focus:** Built specifically for emergency-responsive service businesses with low-latency voice processing
 
 ## 3. User Personas & Stories (Current Implementation)
 
 ### 3.1. Helen the HSP (Plumber) - PRO Tier User
-* **As Helen,** I receive voice calls directly to my business number when customers have plumbing emergencies, and the AI handles initial triage with natural conversation
-* **As Helen,** I get immediate voice calls to my mobile when the AI detects flooding or burst pipe emergencies, with enhanced SSML messaging for urgency
-* **As Helen,** I can customize voice greetings and messages for my specific business needs in my PRO admin dashboard
-* **As Helen,** I access detailed analytics showing call duration, intent analysis, and peak emergency times to optimize my response strategy
-* **As Helen,** I can choose from premium voice options (Polly Neural, Generative) to match my brand personality
+* **As Helen,** I receive voice calls directly to my business number when customers have plumbing emergencies, and the AI handles initial triage with natural, real-time conversation
+* **As Helen,** I get immediate voice calls to my mobile when the AI detects flooding or burst pipe emergencies, with real-time voice notifications for urgency
+* **As Helen,** I can customize voice greetings and messages for my specific business needs in my PRO admin dashboard with Realtime API configuration
+* **As Helen,** I access detailed analytics showing call duration, WebSocket connection metrics, intent analysis, and peak emergency times to optimize my response strategy
+* **As Helen,** I benefit from low-latency voice processing with natural interruption handling that feels like talking to a real person
 
 ### 3.2. Sarah the Small Business Owner - BASIC Tier User
 * **As Sarah,** I have access to enhanced chat functionality and advanced lead capture without voice features

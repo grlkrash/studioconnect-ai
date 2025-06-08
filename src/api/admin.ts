@@ -187,7 +187,8 @@ router.post('/config', authMiddleware, async (req, res) => {
     // Validate OpenAI voice for PRO plan businesses
     if (business.planTier === 'PRO' && openaiVoice) {
       const validVoices = ['ALLOY', 'ECHO', 'FABLE', 'ONYX', 'NOVA', 'SHIMMER']
-      if (!validVoices.includes(openaiVoice)) {
+      const normalizedVoice = openaiVoice.toUpperCase()
+      if (!validVoices.includes(normalizedVoice)) {
         return res.status(400).json({ 
           error: `Invalid OpenAI voice. Must be one of: ${validVoices.join(', ')}` 
         })
@@ -212,7 +213,7 @@ router.post('/config', authMiddleware, async (req, res) => {
           voiceEmergencyMessage: voiceEmergencyMessage || null,
           voiceEndCallMessage: voiceEndCallMessage || null,
           useOpenaiTts: useOpenaiTts !== undefined ? Boolean(useOpenaiTts) : true,
-          openaiVoice: openaiVoice || 'NOVA',
+          openaiVoice: openaiVoice ? openaiVoice.toUpperCase() : 'NOVA',
           openaiModel: openaiModel || 'tts-1'
         }
       : baseConfigData
