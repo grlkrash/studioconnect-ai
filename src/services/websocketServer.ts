@@ -21,8 +21,8 @@ export class TwilioWebSocketServer {
     this.wss.on('connection', (ws: WebSocket, req) => {
       console.log('[WebSocket Server] New Twilio connection established.');
       
-      const parameters = url.parse(req.url!, true).query;
-      const callSid = parameters.CallSid as string;
+      const requestUrl = new URL(req.url!, `http://${req.headers.host}`);
+      const callSid = requestUrl.searchParams.get('CallSid');
 
       if (!callSid) {
         console.error('[WebSocket Server] Connection rejected: CallSid not found in request URL.');
