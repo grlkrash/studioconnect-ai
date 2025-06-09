@@ -929,6 +929,13 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
   try {
     console.log('[VOICE STREAM] Incoming call received for real-time streaming:', req.body.CallSid)
     
+    // Debug: Log all relevant environment variables
+    console.log('[VOICE STREAM] Environment variables check:')
+    console.log('[VOICE STREAM] HOSTNAME:', process.env.HOSTNAME)
+    console.log('[VOICE STREAM] HOST:', process.env.HOST)
+    console.log('[VOICE STREAM] APP_PRIMARY_URL:', process.env.APP_PRIMARY_URL)
+    console.log('[VOICE STREAM] NODE_ENV:', process.env.NODE_ENV)
+    
     // Validate HOSTNAME environment variable
     if (!process.env.HOSTNAME) {
       throw new Error('HOSTNAME environment variable is required for WebSocket streaming')
@@ -948,8 +955,12 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     
     console.log('[VOICE STREAM] Connecting to WebSocket URL:', `wss://${process.env.HOSTNAME}/`)
     
+    // Debug: Log the generated TwiML
+    const twimlString = response.toString()
+    console.log('[VOICE STREAM] Generated TwiML:', twimlString)
+    
     res.type('text/xml')
-    res.send(response.toString())
+    res.send(twimlString)
     
     console.log('[VOICE STREAM] Successfully initiated media stream for CallSid:', req.body.CallSid)
     
