@@ -23,14 +23,13 @@ interface ConnectionState {
  * Handles real-time bidirectional voice conversations
  */
 export class RealtimeAgentService {
-  private twilioWs: WebSocket;
+  private twilioWs: WebSocket | null = null;
   private openAiWs: WebSocket | null = null;
   private callSid: string;
   private state: ConnectionState;
   private readonly openaiApiKey: string;
 
-  constructor(twilioWs: WebSocket, callSid: string) {
-    this.twilioWs = twilioWs;
+  constructor(callSid: string) {
     this.callSid = callSid;
     this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
@@ -44,19 +43,30 @@ export class RealtimeAgentService {
       streamSid: null,
       audioQueue: [],
     };
-    this.setupTwilioListeners();
   }
 
   /**
-   * Public method to maintain compatibility with existing code
+   * Establishes bidirectional audio bridge between Twilio and OpenAI
    */
   public async connect(twilioWs: WebSocket): Promise<void> {
-    // This method is kept for compatibility but the actual connection
-    // is now handled in the constructor and triggered by Twilio start event
-    console.log(`[RealtimeAgent] Connection initiated for call ${this.callSid}`);
+    try {
+      this.twilioWs = twilioWs;
+      console.log(`[RealtimeAgent] Connection initiated for call ${this.callSid}`);
+      
+      // Set up Twilio WebSocket listeners - connection to OpenAI will be triggered by 'start' event
+      this.setupTwilioListeners();
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to connect for call ${this.callSid}:`, error);
+      throw error;
+    }
   }
 
   private setupTwilioListeners() {
+    if (!this.twilioWs) {
+      console.error(`[RealtimeAgent] Cannot setup Twilio listeners: WebSocket is null for call ${this.callSid}`);
+      return;
+    }
+
     this.twilioWs.on('message', (message: WebSocket.RawData) => {
       this.handleTwilioMessage(message);
     });
@@ -89,15 +99,15 @@ export class RealtimeAgentService {
           this.openAiWs.send(JSON.stringify(audioAppend));
         }
         
-        // Send mark message back to Twilio to keep audio stream alive
-        if (this.state.streamSid) {
-          const markMsg = {
-            event: "mark", 
-            streamSid: this.state.streamSid,
-            mark: { name: `forwarded_to_openai_${Date.now()}` }
-          };
-          this.twilioWs.send(JSON.stringify(markMsg));
-        }
+                 // Send mark message back to Twilio to keep audio stream alive
+         if (this.state.streamSid && this.twilioWs) {
+           const markMsg = {
+             event: "mark", 
+             streamSid: this.state.streamSid,
+             mark: { name: `forwarded_to_openai_${Date.now()}` }
+           };
+           this.twilioWs.send(JSON.stringify(markMsg));
+         }
       } else if (msg.event === "stop") {
         console.log(`[RealtimeAgent] Twilio stream stopped for call: ${this.callSid}`);
         this.cleanup('Twilio');
@@ -288,27 +298,27 @@ export class RealtimeAgentService {
     this.processAudioQueue();
   }
 
-  private processAudioQueue() {
-    // Only process audio if both connections are ready
-    if (!this.state.isTwilioReady || !this.state.streamSid) {
-      console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}`);
-      return;
-    }
+     private processAudioQueue() {
+     // Only process audio if both connections are ready
+     if (!this.state.isTwilioReady || !this.state.streamSid || !this.twilioWs) {
+       console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}`);
+       return;
+     }
 
-    // Process all queued audio chunks
-    while (this.state.audioQueue.length > 0) {
-      const audioChunk = this.state.audioQueue.shift();
-      if (audioChunk && this.twilioWs.readyState === WebSocket.OPEN) {
-        const twilioMsg = {
-          event: "media",
-          streamSid: this.state.streamSid,
-          media: { payload: audioChunk },
-        };
-        console.log(`[RealtimeAgent] Forwarding queued audio to Twilio for call ${this.callSid}`);
-        this.twilioWs.send(JSON.stringify(twilioMsg));
-      }
-    }
-  }
+     // Process all queued audio chunks
+     while (this.state.audioQueue.length > 0) {
+       const audioChunk = this.state.audioQueue.shift();
+       if (audioChunk && this.twilioWs.readyState === WebSocket.OPEN) {
+         const twilioMsg = {
+           event: "media",
+           streamSid: this.state.streamSid,
+           media: { payload: audioChunk },
+         };
+         console.log(`[RealtimeAgent] Forwarding queued audio to Twilio for call ${this.callSid}`);
+         this.twilioWs.send(JSON.stringify(twilioMsg));
+       }
+     }
+   }
 
   /**
    * Sends a message to the OpenAI Realtime API
@@ -327,26 +337,27 @@ export class RealtimeAgentService {
     }
   }
 
-  private cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
-    console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
-    
-    if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {
-      this.openAiWs.close();
-      this.openAiWs = null;
-    }
-    
-    if (this.twilioWs && this.twilioWs.readyState !== WebSocket.CLOSED) {
-      this.twilioWs.close();
-    }
-    
-    // Reset state
-    this.state = {
-      isTwilioReady: false,
-      isAiReady: false,
-      streamSid: null,
-      audioQueue: [],
-    };
-  }
+     private cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
+     console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
+     
+     if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {
+       this.openAiWs.close();
+       this.openAiWs = null;
+     }
+     
+     if (this.twilioWs && this.twilioWs.readyState !== WebSocket.CLOSED) {
+       this.twilioWs.close();
+       this.twilioWs = null;
+     }
+     
+     // Reset state
+     this.state = {
+       isTwilioReady: false,
+       isAiReady: false,
+       streamSid: null,
+       audioQueue: [],
+     };
+   }
 
   /**
    * Public disconnect method for compatibility
@@ -358,19 +369,19 @@ export class RealtimeAgentService {
   /**
    * Gets the current connection status
    */
-  public getConnectionStatus(): string {
-    const openAiStatus = !this.openAiWs ? 'disconnected' : 
-      this.openAiWs.readyState === WebSocket.CONNECTING ? 'connecting' :
-      this.openAiWs.readyState === WebSocket.OPEN ? 'connected' :
-      this.openAiWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
-    
-    const twilioStatus = !this.twilioWs ? 'disconnected' :
-      this.twilioWs.readyState === WebSocket.CONNECTING ? 'connecting' :
-      this.twilioWs.readyState === WebSocket.OPEN ? 'connected' :
-      this.twilioWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
-    
-    return `OpenAI: ${openAiStatus}, Twilio: ${twilioStatus}, State: AI=${this.state.isAiReady}, Twilio=${this.state.isTwilioReady}`;
-  }
+     public getConnectionStatus(): string {
+     const openAiStatus = !this.openAiWs ? 'disconnected' : 
+       this.openAiWs.readyState === WebSocket.CONNECTING ? 'connecting' :
+       this.openAiWs.readyState === WebSocket.OPEN ? 'connected' :
+       this.openAiWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
+     
+     const twilioStatus = !this.twilioWs ? 'disconnected' :
+       this.twilioWs.readyState === WebSocket.CONNECTING ? 'connecting' :
+       this.twilioWs.readyState === WebSocket.OPEN ? 'connected' :
+       this.twilioWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
+     
+     return `OpenAI: ${openAiStatus}, Twilio: ${twilioStatus}, State: AI=${this.state.isAiReady}, Twilio=${this.state.isTwilioReady}`;
+   }
 
   /**
    * Gets the call SID associated with this service instance
