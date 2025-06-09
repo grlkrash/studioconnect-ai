@@ -91,11 +91,11 @@ export class RealtimeAgentService {
       if (msg.event === "connected") {
         console.log(`[RealtimeAgent] Twilio stream connected for call ${this.callSid}`);
       } else if (msg.event === "start") {
-        // Extract CallSid from start message parameters (robust method)
-        this.callSid = msg.start.parameters?.callSid;
+        // Extract CallSid from start message (correct location)
+        this.callSid = msg.start.callSid;
         
         if (!this.callSid) {
-          console.error('[RealtimeAgent] CallSid not found in start message parameters');
+          console.error('[RealtimeAgent] CallSid not found in start message');
           this.cleanup('Twilio');
           return;
         }
