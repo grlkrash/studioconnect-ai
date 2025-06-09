@@ -1,6 +1,8 @@
 import WebSocket from 'ws';
 import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
+import { IncomingMessage } from 'http';
+import url from 'url';
 
 const prisma = new PrismaClient();
 
@@ -29,8 +31,16 @@ export class RealtimeAgentService {
   private state: ConnectionState;
   private readonly openaiApiKey: string;
 
-  constructor(callSid: string) {
-    this.callSid = callSid;
+  constructor(twilioWs: WebSocket, req: IncomingMessage) {
+    // Parse CallSid from request URL
+    const parameters = url.parse(req.url!, true).query;
+    this.callSid = parameters.CallSid as string;
+    
+    if (!this.callSid) {
+      throw new Error('CallSid is required in request URL');
+    }
+    
+    this.twilioWs = twilioWs;
     this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
     if (!this.openaiApiKey) {
@@ -43,6 +53,11 @@ export class RealtimeAgentService {
       streamSid: null,
       audioQueue: [],
     };
+
+    // Set up Twilio WebSocket listeners immediately
+    this.setupTwilioListeners();
+    
+    console.log(`[RealtimeAgent] Service initialized for call ${this.callSid}`);
   }
 
   /**
@@ -337,7 +352,7 @@ export class RealtimeAgentService {
     }
   }
 
-     private cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
+     public cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
      console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
      
      if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {

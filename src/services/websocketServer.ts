@@ -31,7 +31,7 @@ export class TwilioWebSocketServer {
       }
 
       console.log(`[WebSocket Server] CallSid identified: ${callSid}`);
-      const agent = new RealtimeAgentService(ws, callSid);
+      const agent = new RealtimeAgentService(ws, req);
       this.activeConnections.set(callSid, agent);
       console.log(`[WebSocket Server] Audio bridge established for call: ${callSid}. Active connections: ${this.activeConnections.size}`);
 
