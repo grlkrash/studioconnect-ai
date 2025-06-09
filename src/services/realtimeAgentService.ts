@@ -364,6 +364,7 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
         const toPhoneNumber = callDetails.to;
         
         let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
+        let businessName = '';
         
         if (toPhoneNumber) {
           const business = await prisma.business.findFirst({
@@ -371,6 +372,7 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
           });
           
           if (business) {
+            businessName = business.name;
             const agentConfig = await prisma.agentConfig.findUnique({
               where: { businessId: business.id }
             });
@@ -380,6 +382,9 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
             } else if (agentConfig?.welcomeMessage?.trim()) {
               welcomeMessage = agentConfig.welcomeMessage;
             }
+            
+            // Replace {businessName} template variable if present
+            welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, businessName);
           }
         }
         

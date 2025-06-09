@@ -191,8 +191,11 @@
                     id="welcomeMessage" 
                     name="welcomeMessage" 
                     rows="3"
-                    placeholder="Enter the welcome message for your chat widget"
+                    placeholder="Enter the welcome message for your chat widget and voice fallback"
                 ><%= (agentConfig && agentConfig.welcomeMessage) ? agentConfig.welcomeMessage : 'Hello! How can I help you today?' %></textarea>
+                <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                    Used for both chat widget and as fallback for voice calls. Use <strong>{businessName}</strong> to automatically include your business name.
+                </small>
             </div>
             
             <div class="form-group">
@@ -201,10 +204,10 @@
                     id="leadCaptureCompletionMessage" 
                     name="leadCaptureCompletionMessage" 
                     rows="3"
-                    placeholder="Enter the message shown after lead capture completion (e.g., 'Our team will call you within 24 hours', 'An agent will email you to schedule a consultation')"
+                    placeholder="Enter the message shown after lead capture completion (e.g., 'Our {businessName} team will call you within 24 hours', 'A {businessName} agent will email you to schedule a consultation')"
                 ><%= (agentConfig && agentConfig.leadCaptureCompletionMessage) ? agentConfig.leadCaptureCompletionMessage : '' %></textarea>
                 <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                    If left empty, a default message will be used. Customize this to set proper expectations for your customers.
+                    If left empty, a default message will be used. Customize this to set proper expectations for your customers. Use <strong>{businessName}</strong> to automatically include your business name.
                 </small>
             </div>
             
@@ -222,10 +225,10 @@
                         id="voiceGreetingMessage" 
                         name="voiceGreetingMessage" 
                         rows="3"
-                        placeholder="Enter the greeting message for voice calls (e.g., 'Hello! I'm your AI assistant from [Business Name]. How can I help you today?')"
+                        placeholder="Enter the greeting message for voice calls (e.g., 'Hello! I'm your AI assistant from {businessName}. How can I help you today?')"
                     ><%= (agentConfig && agentConfig.voiceGreetingMessage) ? agentConfig.voiceGreetingMessage : '' %></textarea>
                     <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        This message will be spoken when someone calls your voice agent.
+                        This message will be spoken when someone calls your voice agent. Use <strong>{businessName}</strong> to automatically include your business name.
                     </small>
                 </div>
                 
@@ -235,10 +238,10 @@
                         id="voiceCompletionMessage" 
                         name="voiceCompletionMessage" 
                         rows="3"
-                        placeholder="Enter the message spoken after collecting lead information via voice (e.g., 'Thank you for providing your information. Our team will contact you within 2 hours.')"
+                        placeholder="Enter the message spoken after collecting lead information via voice (e.g., 'Thank you for providing your information. Our {businessName} team will contact you within 2 hours.')"
                     ><%= (agentConfig && agentConfig.voiceCompletionMessage) ? agentConfig.voiceCompletionMessage : '' %></textarea>
                     <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        This message is spoken after successfully capturing a lead through voice.
+                        This message is spoken after successfully capturing a lead through voice. Use <strong>{businessName}</strong> to automatically include your business name.
                     </small>
                 </div>
                 
@@ -248,10 +251,10 @@
                         id="voiceEmergencyMessage" 
                         name="voiceEmergencyMessage" 
                         rows="3"
-                        placeholder="Enter the message for emergency situations (e.g., 'I understand this is urgent. I'm immediately notifying our emergency response team. Someone will call you back within 5 minutes.')"
+                        placeholder="Enter the message for emergency situations (e.g., 'I understand this is urgent. I'm immediately notifying our {businessName} emergency response team. Someone will call you back within 5 minutes.')"
                     ><%= (agentConfig && agentConfig.voiceEmergencyMessage) ? agentConfig.voiceEmergencyMessage : '' %></textarea>
                     <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        This message is spoken when an emergency situation is detected during a voice call.
+                        This message is spoken when an emergency situation is detected during a voice call. Use <strong>{businessName}</strong> to automatically include your business name.
                     </small>
                 </div>
                 
@@ -261,10 +264,10 @@
                         id="voiceEndCallMessage" 
                         name="voiceEndCallMessage" 
                         rows="3"
-                        placeholder="Enter the goodbye message for voice calls (e.g., 'Thank you for calling [Business Name]. Have a great day and don't hesitate to call back if you need anything else.')"
+                        placeholder="Enter the goodbye message for voice calls (e.g., 'Thank you for calling {businessName}. Have a great day and don't hesitate to call back if you need anything else.')"
                     ><%= (agentConfig && agentConfig.voiceEndCallMessage) ? agentConfig.voiceEndCallMessage : '' %></textarea>
                     <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        This message is spoken when ending a voice call.
+                        This message is spoken when ending a voice call. Use <strong>{businessName}</strong> to automatically include your business name.
                     </small>
                 </div>
                 

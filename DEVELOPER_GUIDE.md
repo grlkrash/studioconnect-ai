@@ -1585,4 +1585,88 @@ server {
 
 ---
 
+## Emergency Handling System
+
+### Emergency Detection and Response Flow
+
+1. **Initial Detection**
+   - AI-powered emergency detection
+   - Severity assessment (1-10 scale)
+   - Keywords and context analysis
+
+2. **Customer Experience**
+   ```
+   Emergency Detection
+   ↓
+   Severity Assessment
+   ↓
+   High Severity (8+):
+     → Offer Options:
+       1. Immediate Connection (30s)
+       2. Quick Info Gathering
+   ↓
+   Based on Choice:
+     A. Immediate Connection
+        → Emergency Team Transfer
+        → Confirmation Message
+     
+     B. Info Gathering
+        → Essential Questions:
+           - Address/Location
+           - Name
+           - Phone
+           - Emergency Details
+        → Lead Processing
+        → Business Notification
+   ```
+
+3. **Business Notification**
+   - Email Alert:
+     - Emergency flag
+     - Priority status
+     - Lead details
+     - Contact information
+   
+   - Voice Call Alert:
+     - Urgent alert tone
+     - Business identification
+     - Emergency summary
+     - Action instructions
+     - Message repetition
+
+4. **Lead Processing**
+   - Emergency flag set
+   - Priority status assigned
+   - Essential information captured
+   - Immediate notification dispatch
+
+### Configuration Options
+
+Businesses can customize:
+- Emergency detection sensitivity
+- Notification preferences
+- Voice message templates
+- Essential questions for emergencies
+
+### Technical Implementation
+
+```typescript
+// Emergency detection and handling
+const emergencyFlow = {
+  detect: async (message: string) => {
+    // AI-powered detection
+    // Severity assessment
+    // Response determination
+  },
+  
+  handle: async (emergency: Emergency) => {
+    // Offer options
+    // Process choice
+    // Initiate notifications
+  }
+}
+```
+
+---
+
 This comprehensive developer guide now accurately reflects the current OpenAI Realtime API implementation with WebSocket architecture, providing technical implementation details and architectural reference for the advanced voice-enabled platform. 

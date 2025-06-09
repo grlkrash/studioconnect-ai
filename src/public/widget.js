@@ -633,6 +633,70 @@
     }
   }
 
+  async function showWelcomeMessage() {
+    try {
+      // Make a minimal API call to get welcome message
+      const relativePath = '/api/chat';
+      const chatEndpoint = new URL(relativePath, API_BASE_URL).href;
+      
+      const response = await fetch(chatEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: '', // Empty message to trigger welcome
+          conversationHistory: [],
+          businessId: businessId
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Use configured welcome message if available, otherwise use default
+        let welcomeMessage = "Hey! How can I help you today?";
+        if (data.configuredWelcomeMessage) {
+          welcomeMessage = data.configuredWelcomeMessage;
+          console.log('[Widget] Using configured welcome message:', welcomeMessage);
+        }
+        
+        // Update agent name if provided
+        if (data.agentName) {
+          updateAgentName(data.agentName);
+        }
+        
+        // Handle branding visibility
+        const shouldShowBranding = data.showBranding;
+        const brandingDiv = document.getElementById('smb-chat-branding');
+        if (brandingDiv) {
+          if (shouldShowBranding === true) {
+            brandingDiv.style.display = 'block';
+          } else {
+            brandingDiv.style.display = 'none';
+          }
+        }
+        
+        addMessageToChat(welcomeMessage, 'ai');
+        // SAFEGUARD: Ensure content is always a string
+        conversationHistory.push({ role: 'assistant', content: String(welcomeMessage) });
+        
+      } else {
+        // Fallback to default welcome message
+        const defaultWelcome = "Hey! How can I help you today?";
+        addMessageToChat(defaultWelcome, 'ai');
+        conversationHistory.push({ role: 'assistant', content: String(defaultWelcome) });
+      }
+      
+    } catch (error) {
+      console.error('[Widget] Error loading welcome message:', error);
+      // Fallback to default welcome message
+      const defaultWelcome = "Hey! How can I help you today?";
+      addMessageToChat(defaultWelcome, 'ai');
+      conversationHistory.push({ role: 'assistant', content: String(defaultWelcome) });
+    }
+  }
+
   function toggleChat() {
     isOpen = !isOpen;
     if (isOpen) {
@@ -642,10 +706,7 @@
       // Show welcome message if first time
       if (conversationHistory.length === 0) {
         currentFlowState = null; // Reset flow state on new conversation
-        const welcomeMessage = "Hey! How can I help you today?";
-        addMessageToChat(welcomeMessage, 'ai');
-        // SAFEGUARD: Ensure content is always a string
-        conversationHistory.push({ role: 'assistant', content: String(welcomeMessage) });
+        showWelcomeMessage();
         
         // Ensure welcome message is visible
         setTimeout(() => {

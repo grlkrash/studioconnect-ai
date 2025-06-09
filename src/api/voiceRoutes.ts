@@ -1027,6 +1027,9 @@ router.post('/start-conversation', customValidateTwilioRequest, async (req, res)
               welcomeMessage = agentConfig.welcomeMessage
               console.log('[GREETING GENERATION] Using general welcome message')
             }
+            
+            // Replace {businessName} template variable if present
+            welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name)
           }
         }
         

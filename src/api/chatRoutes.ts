@@ -15,8 +15,52 @@ router.post('/', async (req, res) => {
     console.log(`[Chat API] Conversation History Length: ${conversationHistory?.length || 0}`)
 
     // Basic validation
-    if (!message || !businessId) {
-      return res.status(400).json({ error: 'Missing required fields: message and businessId' })
+    if (!businessId) {
+      return res.status(400).json({ error: 'Missing required field: businessId' })
+    }
+
+    // Handle empty message as welcome message request
+    if (!message || message.trim() === '') {
+      console.log('[Chat API] Empty message detected, treating as welcome message request')
+      
+      const { PrismaClient } = await import('@prisma/client')
+      const prisma = new PrismaClient()
+      
+      try {
+        const business = await prisma.business.findUnique({
+          where: { id: businessId },
+          include: {
+            agentConfig: true
+          }
+        })
+        
+        if (!business) {
+          return res.status(404).json({ error: 'Business not found' })
+        }
+
+        // Determine if branding should be shown
+        const showBranding = business.planTier === 'FREE' || business.planTier === 'BASIC'
+        
+        // Get configured welcome message with business name replacement
+        let welcomeMessage = "Hey! How can I help you today?"
+        if (business.agentConfig?.welcomeMessage) {
+          welcomeMessage = business.agentConfig.welcomeMessage.replace(/\{businessName\}/gi, business.name)
+        }
+        
+        return res.status(200).json({
+          reply: welcomeMessage,
+          configuredWelcomeMessage: welcomeMessage,
+          agentName: business.agentConfig?.agentName || 'AI Assistant',
+          showBranding: showBranding,
+          currentFlow: null
+        })
+        
+      } catch (error) {
+        console.error('[Chat API] Error fetching welcome configuration:', error)
+        return res.status(500).json({ error: 'Error loading welcome message' })
+      } finally {
+        await prisma.$disconnect()
+      }
     }
 
     // Call the AI handler with currentFlow parameter
@@ -29,6 +73,34 @@ router.post('/', async (req, res) => {
 
     console.log(`[Chat API] AI Response currentFlow: ${aiResponse.currentFlow}`)
     console.log(`[Chat API] AI Response reply: "${aiResponse.reply}"`)
+
+    // For first message (empty conversation history), include welcome message with business name template replacement
+    if (!conversationHistory || conversationHistory.length === 0) {
+      const { PrismaClient } = await import('@prisma/client')
+      const prisma = new PrismaClient()
+      
+      try {
+        const business = await prisma.business.findUnique({
+          where: { id: businessId }
+        })
+        
+        if (business) {
+          const agentConfig = await prisma.agentConfig.findUnique({
+            where: { businessId: businessId }
+          })
+          
+          // Add configured welcome message with business name replacement
+          if (agentConfig?.welcomeMessage) {
+            const welcomeMessageWithBusinessName = agentConfig.welcomeMessage.replace(/\{businessName\}/gi, business.name)
+            aiResponse.configuredWelcomeMessage = welcomeMessageWithBusinessName
+          }
+        }
+      } catch (error) {
+        console.error('[Chat API] Error fetching welcome message:', error)
+      } finally {
+        await prisma.$disconnect()
+      }
+    }
 
     res.status(200).json(aiResponse)
 
