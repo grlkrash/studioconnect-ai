@@ -223,7 +223,23 @@ export async function initiateEmergencyVoiceCall(
   businessId: string
 ): Promise<void> {
   try {
-    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER
+    // Validate required environment variables
+    const requiredEnvVars = {
+      TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+      TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+      TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER
+    };
+
+    const missingVars = Object.entries(requiredEnvVars)
+      .filter(([_, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingVars.length > 0) {
+      console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+      return;
+    }
+
+    const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
     if (!twilioPhoneNumber) {
       console.error('TWILIO_PHONE_NUMBER environment variable is not set')
       return
@@ -283,16 +299,55 @@ export async function initiateEmergencyVoiceCall(
     const twiml = new twilio.twiml.VoiceResponse()
     twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay)
 
-    await twilioClient.calls.create({
-      twiml: twiml.toString(),
-      to: toPhoneNumber,
-      from: twilioPhoneNumber
-    })
+    try {
+      // Validate Twilio client
+      if (!twilioClient) {
+        console.error('Twilio client not initialized');
+        return;
+      }
 
-    console.log(`Emergency voice call initiated to ${toPhoneNumber} for business ${businessName} using voice: ${voiceToUse}, language: ${languageToUse}`)
+      // Log emergency call attempt
+      console.log('[Emergency Call] Initiating call with details:', {
+        to: toPhoneNumber,
+        from: twilioPhoneNumber,
+        businessId,
+        businessName,
+        timestamp: new Date().toISOString()
+      });
+
+      // Create the call with error handling
+      const call = await twilioClient.calls.create({
+        twiml: twiml.toString(),
+        to: toPhoneNumber,
+        from: twilioPhoneNumber
+      });
+
+      // Log successful call creation
+      console.log('[Emergency Call] Call created successfully:', {
+        callSid: call.sid,
+        status: call.status,
+        timestamp: new Date().toISOString()
+      });
+
+      // Add call status monitoring
+      const callStatus = await call.fetch();
+      console.log('[Emergency Call] Initial call status:', {
+        callSid: call.sid,
+        status: callStatus.status,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (twilioError: any) {
+      console.error('[Emergency Call] Twilio API error:', {
+        code: twilioError.code,
+        message: twilioError.message,
+        status: twilioError.status,
+        moreInfo: twilioError.moreInfo,
+        timestamp: new Date().toISOString()
+      });
+    }
   } catch (error) {
-    console.error('Failed to initiate emergency voice call:', error)
-    // Don't throw the error - we don't want call failures to break the lead capture flow
+    console.error('[Emergency Call] Failed to initiate emergency voice call:', error);
   }
 }
 
@@ -391,58 +446,3 @@ export async function sendLeadConfirmationToCustomer(
       </body>
       </html>
     `
-
-    // Construct the email options
-    const mailOptions: Mail.Options = {
-      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
-      to: customerEmail,
-      subject: `Your inquiry with ${businessName} has been received!`,
-      html: htmlContent,
-      text: `
-Hi ${customerName},
-
-Thank you for contacting ${businessName}. We've received your details regarding your service request and our team will be in touch with you shortly.
-
-${isEmergency ? 'We\'ve noted your request as urgent and will prioritize it accordingly.\n\n' : ''}
-For your records, here's a summary of the information you provided:
-
-${Object.entries(leadDetails.capturedData || {})
-  .filter(([key]) => key !== 'emergency_notes')
-  .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value}`)
-  .join('\n')}
-
-Sincerely,
-The Team at ${businessName}
-
----
-This is an automated message. Please do not reply to this email.
-      `.trim()
-    }
-
-    // Send the email
-    try {
-      console.log('About to send email using transporter type:', transporter.transporter?.name || 'unknown')
-      console.log('Transporter options:', JSON.stringify(transporter.options, null, 2))
-      
-      const info = await transporter.sendMail(mailOptions)
-      console.log('Email sent. Full info object:', JSON.stringify(info, null, 2))
-      
-      if (info && info.messageId) {
-        console.log(`Email Message ID: ${info.messageId}`)
-      } else {
-        console.warn('Email sent, but no messageId found in info object.')
-        console.warn('This suggests Ethereal or jsonTransport is being used instead of SendGrid')
-      }
-      
-      // If using Ethereal (i.e., if NODE_ENV !== 'production' or SendGrid key is missing)
-      if (process.env.NODE_ENV !== 'production' && nodemailer.getTestMessageUrl(info)) {
-        console.log('Preview URL (Ethereal): %s', nodemailer.getTestMessageUrl(info))
-      }
-    } catch (error) {
-      console.error(`Error sending email to ${mailOptions.to}:`, error)
-    }
-
-  } catch (error) {
-    console.error('Failed to send customer confirmation email:', error)
-  }
-}

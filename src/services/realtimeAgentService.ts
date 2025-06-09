@@ -303,13 +303,20 @@ export class RealtimeAgentService {
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
           
-                    businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
+          businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
 
 🚨 EMERGENCY DETECTION PROTOCOL:
 FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water damage):
 - If EMERGENCY detected: Immediately say "I understand this is an emergency situation. I can connect you directly to our team right now, or quickly gather your details so they can respond immediately. What would you prefer?"
 - If they choose "connect now": Say "Absolutely! I'm connecting you to our emergency line right now. Please hold while I transfer your call."
-- If they choose "gather details": Ask these EMERGENCY questions ONLY: 1) "What's your exact address or location?" 2) "What's your name?" 3) "What's your phone number?" 4) "Can you describe the emergency situation in detail?"
+- If they choose "gather details": Ask these EMERGENCY questions ONLY: 
+  1) "What's your exact address or location?" 
+  2) After they provide the address, ALWAYS confirm it by repeating it back and asking "Is that correct?" 
+  3) If they say no or correct it, ask them to repeat the correct address and confirm again
+  4) Only proceed to next question after address is confirmed
+  5) "What's your name?" 
+  6) "What's your phone number?" 
+  7) "Can you describe the emergency situation in detail?"
 
 🎯 NORMAL LEAD CAPTURE: For non-emergency situations, ask questions one at a time:
 ${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
@@ -642,7 +649,10 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
         where: { id: this.state.businessId! }
       });
 
-      if (!business) return;
+      if (!business) {
+        console.error(`[RealtimeAgent] Business not found for ID: ${this.state.businessId}`);
+        return;
+      }
 
       // Import notification functions
       const { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } = 
@@ -650,49 +660,72 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
 
       // Send email notification to business
       if (business.notificationEmail) {
-        await sendLeadNotificationEmail(
-          business.notificationEmail,
-          {
-            capturedData: lead.capturedData,
-            conversationTranscript: lead.conversationTranscript,
-            contactName: lead.contactName,
-            contactEmail: lead.contactEmail,
-            contactPhone: lead.contactPhone,
-            notes: lead.notes,
-            createdAt: lead.createdAt,
-            status: lead.status
-          },
-          lead.priority,
-          business.name
-        );
-        console.log(`[RealtimeAgent] Lead notification email sent for call ${this.callSid}`);
+        try {
+          await sendLeadNotificationEmail(
+            business.notificationEmail,
+            {
+              capturedData: lead.capturedData,
+              conversationTranscript: lead.conversationTranscript,
+              contactName: lead.contactName,
+              contactEmail: lead.contactEmail,
+              contactPhone: lead.contactPhone,
+              notes: lead.notes,
+              createdAt: lead.createdAt,
+              status: lead.status
+            },
+            lead.priority,
+            business.name
+          );
+          console.log(`[RealtimeAgent] Lead notification email sent for call ${this.callSid}`);
+        } catch (emailError) {
+          console.error(`[RealtimeAgent] Failed to send notification email:`, emailError);
+        }
+      } else {
+        console.warn(`[RealtimeAgent] No notification email configured for business ${business.id}`);
       }
 
       // Send emergency call if urgent
-      if (lead.priority === 'URGENT' && business.notificationPhoneNumber) {
-        const emergencyDetails = lead.capturedData?.conversation_summary || 'Voice call emergency';
-        await initiateEmergencyVoiceCall(
-          business.notificationPhoneNumber,
-          business.name,
-          emergencyDetails,
-          business.id
-        );
-        console.log(`[RealtimeAgent] Emergency call initiated for call ${this.callSid}`);
+      if (lead.priority === 'URGENT') {
+        if (!business.notificationPhoneNumber) {
+          console.warn(`[RealtimeAgent] No notification phone number configured for emergency calls for business ${business.id}`);
+          return;
+        }
+
+        if (!process.env.TWILIO_PHONE_NUMBER) {
+          console.error('[RealtimeAgent] TWILIO_PHONE_NUMBER environment variable is not set');
+          return;
+        }
+
+        try {
+          const emergencyDetails = lead.capturedData?.conversation_summary || 'Voice call emergency';
+          await initiateEmergencyVoiceCall(
+            business.notificationPhoneNumber,
+            business.name,
+            emergencyDetails,
+            business.id
+          );
+          console.log(`[RealtimeAgent] Emergency call initiated for call ${this.callSid}`);
+        } catch (callError) {
+          console.error(`[RealtimeAgent] Failed to initiate emergency call:`, callError);
+        }
       }
 
       // Send customer confirmation if email available
       if (lead.contactEmail) {
-        await sendLeadConfirmationToCustomer(
-          lead.contactEmail,
-          business.name,
-          lead,
-          lead.priority === 'URGENT'
-        );
-        console.log(`[RealtimeAgent] Customer confirmation sent for call ${this.callSid}`);
+        try {
+          await sendLeadConfirmationToCustomer(
+            lead.contactEmail,
+            business.name,
+            lead,
+            lead.priority === 'URGENT'
+          );
+          console.log(`[RealtimeAgent] Customer confirmation sent for call ${this.callSid}`);
+        } catch (confirmationError) {
+          console.error(`[RealtimeAgent] Failed to send customer confirmation:`, confirmationError);
+        }
       }
-
     } catch (error) {
-      console.error(`[RealtimeAgent] Error sending notifications for call ${this.callSid}:`, error);
+      console.error(`[RealtimeAgent] Error in sendLeadNotifications for call ${this.callSid}:`, error);
     }
   }
 
