@@ -1,8 +1,6 @@
 import WebSocket from 'ws';
 import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
-import { IncomingMessage } from 'http';
-import url from 'url';
 
 const prisma = new PrismaClient();
 
@@ -27,19 +25,13 @@ interface ConnectionState {
 export class RealtimeAgentService {
   private twilioWs: WebSocket | null = null;
   private openAiWs: WebSocket | null = null;
-  private callSid: string;
+  private callSid: string = '';
   private state: ConnectionState;
   private readonly openaiApiKey: string;
+  public onCallSidReceived?: (callSid: string) => void;
 
-  constructor(twilioWs: WebSocket, req: IncomingMessage) {
-    // Parse CallSid from request URL
-    const parameters = url.parse(req.url!, true).query;
-    this.callSid = parameters.CallSid as string;
-    
-    if (!this.callSid) {
-      throw new Error('CallSid is required in request URL');
-    }
-    
+  constructor(twilioWs: WebSocket) {
+    // CallSid will be extracted from Twilio start message parameters (more reliable than URL)
     this.twilioWs = twilioWs;
     this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
@@ -57,7 +49,7 @@ export class RealtimeAgentService {
     // Set up Twilio WebSocket listeners immediately
     this.setupTwilioListeners();
     
-    console.log(`[RealtimeAgent] Service initialized for call ${this.callSid}`);
+    console.log('[RealtimeAgent] Service initialized - waiting for CallSid from start message');
   }
 
   /**
@@ -99,9 +91,25 @@ export class RealtimeAgentService {
       if (msg.event === "connected") {
         console.log(`[RealtimeAgent] Twilio stream connected for call ${this.callSid}`);
       } else if (msg.event === "start") {
+        // Extract CallSid from start message parameters (robust method)
+        this.callSid = msg.start.parameters?.callSid;
+        
+        if (!this.callSid) {
+          console.error('[RealtimeAgent] CallSid not found in start message parameters');
+          this.cleanup('Twilio');
+          return;
+        }
+        
+        console.log(`[RealtimeAgent] CallSid received from start message: ${this.callSid}`);
+        
+        // Notify WebSocket server that we have the CallSid
+        if (this.onCallSidReceived) {
+          this.onCallSidReceived(this.callSid);
+        }
+        
         this.state.streamSid = msg.start.streamSid;
         this.state.isTwilioReady = true;
-        console.log(`[RealtimeAgent] Twilio stream started. streamSid: ${this.state.streamSid}`);
+        console.log(`[RealtimeAgent] Twilio stream started for call ${this.callSid}. streamSid: ${this.state.streamSid}`);
         // Now that we have streamSid, we can safely connect to OpenAI
         this.connectToOpenAI();
       } else if (msg.event === "media") {

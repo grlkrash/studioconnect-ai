@@ -948,16 +948,23 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     const response = new VoiceResponse()
     const connect = response.connect()
     
-    // Create stream connection to WebSocket server with CallSid as query parameter
-    const streamUrl = `wss://${process.env.HOSTNAME}/?CallSid=${callSid}`
-    connect.stream({
+    // Create stream connection to WebSocket server - use Parameter for CallSid (robust method)
+    const streamUrl = `wss://${process.env.HOSTNAME}/`
+    const stream = connect.stream({
       url: streamUrl
+    })
+    
+    // Add the CallSid as a parameter - this is the robust way that survives network proxies
+    stream.parameter({
+      name: 'callSid',
+      value: callSid
     })
     
     // Add pause to keep the call active - this is crucial for WebSocket handling
     response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
     
     console.log('[VOICE STREAM] Connecting to WebSocket URL:', streamUrl)
+    console.log('[VOICE STREAM] CallSid will be passed as parameter:', callSid)
     
     // Debug: Log the generated TwiML
     const twimlString = response.toString()
