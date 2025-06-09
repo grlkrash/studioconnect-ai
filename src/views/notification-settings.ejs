@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Settings</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .success-message {
+            color: #10b981;
+            background-color: #d1fae5;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .info-box {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .info-box h3 {
+            color: #1e40af;
+            margin: 0 0 8px 0;
+            font-size: 16px;
+        }
+        
+        .info-box p {
+            color: #1e3a8a;
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        label {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+        
+        input[type="email"],
+        input[type="tel"] {
+            padding: 10px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: border-color 0.15s ease-in-out;
+        }
+        
+        input[type="email"]:focus,
+        input[type="tel"]:focus {
+            outline: none;
+            border-color: #0ea5e9;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        .help-text {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        
+        button[type="submit"] {
+            background-color: #0ea5e9;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out;
+            align-self: flex-start;
+        }
+        
+        button[type="submit"]:hover {
+            background-color: #0284c7;
+        }
+        
+        button[type="submit"]:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        #formFeedback {
+            margin-top: 20px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        #formFeedback.success {
+            background-color: #d1fae5;
+            color: #065f46;
+            display: block;
+        }
+        
+        #formFeedback.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+            display: block;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0ea5e9;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .test-section {
+            border-top: 2px solid #e5e7eb;
+            margin-top: 30px;
+            padding-top: 30px;
+        }
+
+        .test-button {
+            background-color: #059669;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .test-button:hover {
+            background-color: #047857;
+        }
+
+        .test-button:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/admin/dashboard" class="back-link">← Back to Dashboard</a>
+        
+        <h1>Notification Settings</h1>
+        
+        <% if (successMessage) { %>
+            <div class="success-message">
+                <%= successMessage %>
+            </div>
+        <% } %>
+
+        <div class="info-box">
+            <h3>📧 About Notification Settings</h3>
+            <p>
+                Configure where you want to receive notifications when new leads are captured by your AI agent. 
+                Email notifications are sent for all leads, while phone calls are reserved for urgent/emergency situations.
+            </p>
+        </div>
+        
+        <form id="notificationSettingsForm">
+            <div class="form-group">
+                <label for="notificationEmail">📧 Notification Email Address:</label>
+                <input 
+                    type="email" 
+                    id="notificationEmail" 
+                    name="notificationEmail" 
+                    value="<%= business.notificationEmail || '' %>"
+                    placeholder="your-email@example.com"
+                >
+                <div class="help-text">
+                    This email address will receive notifications for all new leads captured by your AI agent.
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="notificationPhoneNumber">📞 Emergency Notification Phone Number:</label>
+                <input 
+                    type="tel" 
+                    id="notificationPhoneNumber" 
+                    name="notificationPhoneNumber" 
+                    value="<%= business.notificationPhoneNumber || '' %>"
+                    placeholder="+1-555-123-4567"
+                >
+                <div class="help-text">
+                    This phone number will receive voice calls for urgent/emergency leads only. Include country code (e.g., +1 for US).
+                </div>
+            </div>
+            
+            <button type="submit" id="saveButton">Save Notification Settings</button>
+        </form>
+
+        <div class="test-section">
+            <h3>🧪 Test Your Notification Settings</h3>
+            <p>Send test notifications to verify your settings are working correctly.</p>
+            
+            <div class="form-group">
+                <label for="testEmail">Test Email Address:</label>
+                <input 
+                    type="email" 
+                    id="testEmail" 
+                    name="testEmail" 
+                    value="<%= business.notificationEmail || '' %>"
+                    placeholder="test-email@example.com"
+                >
+                <button type="button" class="test-button" id="testEmailButton">Send Test Email</button>
+            </div>
+        </div>
+        
+        <div id="formFeedback"></div>
+    </div>
+
+    <script>
+        // Get form and feedback elements
+        const notificationSettingsForm = document.getElementById('notificationSettingsForm');
+        const formFeedback = document.getElementById('formFeedback');
+        const saveButton = document.getElementById('saveButton');
+        const testEmailButton = document.getElementById('testEmailButton');
+        
+        // Function to show feedback messages
+        function showFeedback(message, type = 'success') {
+            formFeedback.textContent = message;
+            formFeedback.className = type;
+            formFeedback.style.display = 'block';
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    formFeedback.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        // Add event listener for form submission
+        notificationSettingsForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            // Clear any previous messages
+            formFeedback.style.display = 'none';
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
+            
+            // Get values from input fields
+            const notificationEmail = document.getElementById('notificationEmail').value.trim();
+            const notificationPhoneNumber = document.getElementById('notificationPhoneNumber').value.trim();
+            
+            // Construct form data object
+            const formData = {
+                notificationEmail: notificationEmail || null,
+                notificationPhoneNumber: notificationPhoneNumber || null
+            };
+            
+            try {
+                // Send PUT request to update notification settings
+                const response = await fetch('/api/admin/business/notifications', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData),
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to save notification settings');
+                }
+                
+                const result = await response.json();
+                showFeedback('✅ Notification settings saved successfully!', 'success');
+                
+                // Update test email field with saved email
+                if (result.notificationEmail) {
+                    document.getElementById('testEmail').value = result.notificationEmail;
+                }
+                
+            } catch (error) {
+                console.error('Error saving notification settings:', error);
+                showFeedback(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Notification Settings';
+            }
+        });
+
+        // Add event listener for test email button
+        testEmailButton.addEventListener('click', async function() {
+            const testEmail = document.getElementById('testEmail').value.trim();
+            
+            if (!testEmail) {
+                showFeedback('❌ Please enter a test email address', 'error');
+                return;
+            }
+            
+            testEmailButton.disabled = true;
+            testEmailButton.textContent = 'Sending...';
+            
+            try {
+                const response = await fetch('/api/admin/test-sendgrid', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ testEmail }),
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to send test email');
+                }
+                
+                const result = await response.json();
+                showFeedback('✅ Test email sent successfully! Check your inbox.', 'success');
+                
+            } catch (error) {
+                console.error('Error sending test email:', error);
+                showFeedback(`❌ Test email failed: ${error.message}`, 'error');
+            } finally {
+                testEmailButton.disabled = false;
+                testEmailButton.textContent = 'Send Test Email';
+            }
+        });
+    </script>
+</body>
+</html> 

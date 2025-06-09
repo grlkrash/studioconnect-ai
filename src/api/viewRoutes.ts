@@ -181,4 +181,49 @@ router.get('/leads', authMiddleware, async (req, res) => {
   }
 })
 
+// Protected notification settings route
+router.get('/notifications', authMiddleware, async (req, res) => {
+  try {
+    // authMiddleware ensures req.user exists, but TypeScript needs assurance
+    if (!req.user) {
+      return res.status(401).redirect('/admin/login')
+    }
+    
+    // Get businessId from authenticated user
+    const businessId = req.user.businessId
+    
+    // Fetch business notification settings
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: {
+        id: true,
+        name: true,
+        notificationEmail: true,
+        notificationPhoneNumber: true,
+        planTier: true
+      }
+    })
+    
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
+    // Render the notification settings page
+    res.render('notification-settings', { 
+      business, 
+      user: req.user,
+      successMessage: req.query.success
+    })
+  } catch (error) {
+    console.error('Error fetching notification settings:', error)
+    res.status(500).render('error', { 
+      message: 'Failed to load notification settings',
+      user: req.user 
+    })
+  }
+})
+
 export default router 

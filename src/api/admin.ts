@@ -837,4 +837,96 @@ router.delete('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
   }
 })
 
+// Get Business Notification Settings
+router.get('/business/notifications', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+
+    // Fetch business notification settings
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: {
+        id: true,
+        name: true,
+        notificationEmail: true,
+        notificationPhoneNumber: true,
+        planTier: true
+      }
+    })
+
+    if (!business) {
+      return res.status(404).json({ 
+        error: 'Business not found' 
+      })
+    }
+
+    // Send back the business notification settings
+    res.status(200).json(business)
+
+  } catch (error) {
+    console.error('Error fetching business notification settings:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while fetching notification settings' 
+    })
+  }
+})
+
+// Update Business Notification Settings
+router.put('/business/notifications', authMiddleware, async (req, res) => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+
+    // Extract notification settings from request body
+    const { notificationEmail, notificationPhoneNumber } = req.body
+
+    // Basic validation for email format
+    if (notificationEmail && notificationEmail.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(notificationEmail.trim())) {
+        return res.status(400).json({ 
+          error: 'Invalid email format' 
+        })
+      }
+    }
+
+    // Basic validation for phone number format (allow various formats)
+    if (notificationPhoneNumber && notificationPhoneNumber.trim() !== '') {
+      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
+      const cleanedPhone = notificationPhoneNumber.replace(/[\s\-\(\)\.]/g, '')
+      if (!phoneRegex.test(cleanedPhone)) {
+        return res.status(400).json({ 
+          error: 'Invalid phone number format. Please use digits only with optional country code.' 
+        })
+      }
+    }
+
+    // Update the business notification settings
+    const updatedBusiness = await prisma.business.update({
+      where: { id: businessId },
+      data: {
+        notificationEmail: notificationEmail?.trim() || null,
+        notificationPhoneNumber: notificationPhoneNumber?.trim() || null
+      },
+      select: {
+        id: true,
+        name: true,
+        notificationEmail: true,
+        notificationPhoneNumber: true,
+        planTier: true
+      }
+    })
+
+    // Send back the updated business settings
+    res.status(200).json(updatedBusiness)
+
+  } catch (error) {
+    console.error('Error updating business notification settings:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while updating notification settings' 
+    })
+  }
+})
+
 export default router 
