@@ -175,12 +175,22 @@ router.post('/config', authMiddleware_1.authMiddleware, async (req, res) => {
             });
         }
         // Extract configuration details from request body
-        const { agentName, personaPrompt, welcomeMessage, leadCaptureCompletionMessage, colorTheme, voiceGreetingMessage, voiceCompletionMessage, voiceEmergencyMessage, voiceEndCallMessage, twilioVoice, twilioLanguage } = req.body;
+        const { agentName, personaPrompt, welcomeMessage, leadCaptureCompletionMessage, colorTheme, voiceGreetingMessage, voiceCompletionMessage, voiceEmergencyMessage, voiceEndCallMessage, useOpenaiTts, openaiVoice, openaiModel } = req.body;
         // Basic validation
         if (!agentName || !personaPrompt || !welcomeMessage) {
             return res.status(400).json({
                 error: 'Missing required fields: agentName, personaPrompt, and welcomeMessage are required'
             });
+        }
+        // Validate OpenAI voice for PRO plan businesses
+        if (business.planTier === 'PRO' && openaiVoice) {
+            const validVoices = ['ALLOY', 'ECHO', 'FABLE', 'ONYX', 'NOVA', 'SHIMMER'];
+            const normalizedVoice = openaiVoice.toUpperCase();
+            if (!validVoices.includes(normalizedVoice)) {
+                return res.status(400).json({
+                    error: `Invalid OpenAI voice. Must be one of: ${validVoices.join(', ')}`
+                });
+            }
         }
         // Prepare base config data
         const baseConfigData = {
@@ -198,8 +208,9 @@ router.post('/config', authMiddleware_1.authMiddleware, async (req, res) => {
                 voiceCompletionMessage: voiceCompletionMessage || null,
                 voiceEmergencyMessage: voiceEmergencyMessage || null,
                 voiceEndCallMessage: voiceEndCallMessage || null,
-                twilioVoice: twilioVoice || 'alice',
-                twilioLanguage: twilioLanguage || 'en-US'
+                useOpenaiTts: useOpenaiTts !== undefined ? Boolean(useOpenaiTts) : true,
+                openaiVoice: openaiVoice ? openaiVoice.toUpperCase() : 'NOVA',
+                openaiModel: openaiModel || 'tts-1'
             }
             : baseConfigData;
         // Upsert the configuration

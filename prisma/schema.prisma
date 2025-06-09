@@ -39,6 +39,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assignedLeads Lead[]
 
   @@map("users")
 }
@@ -98,19 +99,25 @@ model KnowledgeBase {
 }
 
 model Lead {
-  id                     String       @id @default(cuid())
-  businessId             String
-  capturedData           Json         @default("{}")
-  conversationTranscript String
-  status                 LeadStatus   @default(NEW)
-  contactEmail           String?
-  contactPhone           String?
-  contactName            String?
-  notes                  String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
-  priority               LeadPriority @default(NORMAL)
-  business               Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                      String               @id @default(cuid())
+  businessId              String
+  capturedData            Json                 // Stores all Q&A pairs
+  conversationTranscript  String?              // Full conversation JSON
+  status                  LeadStatus           @default(NEW)
+  priority                LeadPriority         @default(NORMAL)
+  assignedToUserId        String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  
+  // Contact information fields (mapped from specific questions)
+  contactName             String?
+  contactEmail            String?
+  contactPhone            String?
+  address                 String?              // New field for emergency location info
+  notes                   String?
+  
+  business                Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assignedTo              User?                @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
 
   @@map("leads")
 }

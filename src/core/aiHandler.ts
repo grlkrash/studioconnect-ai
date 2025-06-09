@@ -10,6 +10,42 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
   isEssentialForEmergency: boolean
 }
 
+// Default emergency questions when none are configured
+const DEFAULT_EMERGENCY_QUESTIONS: Omit<ExtendedLeadCaptureQuestion, 'id' | 'configId' | 'createdAt' | 'updatedAt'>[] = [
+  {
+    questionText: "Can you describe this situation in as much detail as possible?",
+    expectedFormat: 'TEXT' as any,
+    order: 1,
+    isRequired: true,
+    mapsToLeadField: 'notes',
+    isEssentialForEmergency: true
+  },
+  {
+    questionText: "What's your exact address or location?",
+    expectedFormat: 'TEXT' as any,
+    order: 2,
+    isRequired: true,
+    mapsToLeadField: 'address',
+    isEssentialForEmergency: true
+  },
+  {
+    questionText: "What's your name?",
+    expectedFormat: 'TEXT' as any,
+    order: 3,
+    isRequired: true,
+    mapsToLeadField: 'contactName',
+    isEssentialForEmergency: true
+  },
+  {
+    questionText: "What's your phone number?",
+    expectedFormat: 'PHONE' as any,
+    order: 4,
+    isRequired: true,
+    mapsToLeadField: 'contactPhone',
+    isEssentialForEmergency: true
+  }
+]
+
 /**
  * Creates a refined system prompt for natural voice interactions with strict business rules
  */
@@ -331,6 +367,115 @@ Generate only the clarifying question text:`
 }
 
 /**
+ * Smart question selection for emergency situations using AI
+ */
+const selectSmartEmergencyQuestions = async (
+  emergencyMessage: string,
+  availableQuestions: ExtendedLeadCaptureQuestion[],
+  businessName?: string
+): Promise<ExtendedLeadCaptureQuestion[]> => {
+  try {
+    // If we have configured emergency questions, use them
+    const configuredEmergencyQuestions = availableQuestions.filter(q => q.isEssentialForEmergency)
+    if (configuredEmergencyQuestions.length > 0) {
+      console.log('Using configured emergency questions:', configuredEmergencyQuestions.length)
+      return configuredEmergencyQuestions
+    }
+
+    console.log('No configured emergency questions found, using smart selection...')
+
+    // Use AI to determine which questions are most relevant for this emergency
+    const questionSelectionPrompt = `Emergency situation: "${emergencyMessage}"
+
+Available questions:
+${availableQuestions.map((q, index) => `${index + 1}. ${q.questionText} (maps to: ${q.mapsToLeadField || 'none'})`).join('\n')}
+
+Default emergency questions:
+${DEFAULT_EMERGENCY_QUESTIONS.map((q, index) => `${index + 1}. ${q.questionText} (maps to: ${q.mapsToLeadField})`).join('\n')}
+
+For this emergency situation, select the 3-4 most essential questions that would help ${businessName || 'the business'} respond quickly and effectively. 
+
+Prioritize:
+1. Understanding the emergency details
+2. Getting contact information
+3. Getting location/address if relevant
+4. Any service-specific details needed
+
+Respond with ONLY the question numbers from the available questions list, separated by commas (e.g., "1,3,4"). If none of the available questions are suitable for emergencies, respond with "DEFAULT" to use the default emergency questions.`
+
+    const aiResponse = await getChatCompletion(
+      questionSelectionPrompt,
+      "You are an emergency response expert who selects the most critical questions for urgent situations."
+    )
+
+    const cleanedResponse = cleanVoiceResponse(aiResponse || 'DEFAULT').trim()
+
+    if (cleanedResponse === 'DEFAULT') {
+      console.log('AI recommends using default emergency questions')
+      return DEFAULT_EMERGENCY_QUESTIONS as ExtendedLeadCaptureQuestion[]
+    }
+
+    // Parse the AI response to get question indices
+    const selectedIndices = cleanedResponse.split(',').map(num => parseInt(num.trim()) - 1).filter(index => !isNaN(index))
+    
+    if (selectedIndices.length === 0) {
+      console.log('Could not parse AI response, falling back to default emergency questions')
+      return DEFAULT_EMERGENCY_QUESTIONS as ExtendedLeadCaptureQuestion[]
+    }
+
+    const selectedQuestions = selectedIndices
+      .map(index => availableQuestions[index])
+      .filter(q => q !== undefined)
+
+    if (selectedQuestions.length === 0) {
+      console.log('No valid questions selected, falling back to default emergency questions')
+      return DEFAULT_EMERGENCY_QUESTIONS as ExtendedLeadCaptureQuestion[]
+    }
+
+    console.log(`AI selected ${selectedQuestions.length} emergency questions:`, selectedQuestions.map(q => q.questionText))
+    return selectedQuestions
+
+  } catch (error) {
+    console.error('Error in smart emergency question selection:', error)
+    // Fallback to default emergency questions
+    return DEFAULT_EMERGENCY_QUESTIONS as ExtendedLeadCaptureQuestion[]
+  }
+}
+
+/**
+ * Instant emergency escalation option
+ */
+const offerEmergencyEscalation = async (
+  emergencyMessage: string,
+  businessName?: string
+): Promise<string> => {
+  try {
+    const escalationPrompt = `Emergency situation: "${emergencyMessage}"
+
+This appears to be a serious emergency. Generate a brief, empathetic response that:
+1. Acknowledges the urgency of their situation
+2. Offers immediate escalation to a live person
+3. Provides assurance that help is coming
+4. Asks if they want immediate escalation or to continue with quick questions
+
+Keep it conversational and under 30 seconds when spoken. Use natural speech patterns.
+
+Business name: ${businessName || 'our team'}`
+
+    const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined)
+    const aiResponse = await getChatCompletion(escalationPrompt, voiceSystemPrompt)
+    
+    return cleanVoiceResponse(aiResponse || 
+      `I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?`
+    )
+
+  } catch (error) {
+    console.error('Error generating emergency escalation offer:', error)
+    return `I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?`
+  }
+}
+
+/**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
@@ -473,10 +618,58 @@ export const processMessage = async (
       // Set flow back to LEAD_CAPTURE to continue the process
       currentActiveFlow = 'LEAD_CAPTURE'
     }
+    
+    // Handle emergency escalation response
+    if (currentActiveFlow === 'EMERGENCY_ESCALATION_OFFER') {
+      console.log('Handling emergency escalation response...')
+      
+      // Use AI to detect user's preference
+      const escalationChoicePrompt = `The user was offered emergency escalation with this message:
+      "I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?"
+
+      User's response: "${message}"
+
+      Does the user want IMMEDIATE ESCALATION (connect now) or QUICK QUESTIONS (gather details first)?
+
+      Consider responses like:
+      - IMMEDIATE: "connect me now", "yes connect me", "I need help now", "get someone on the line"
+      - QUESTIONS: "quick questions", "gather details", "ask me questions", "collect my info", "that's fine"
+
+      Respond with only: IMMEDIATE or QUESTIONS`
+      
+      const choiceResponse = await getChatCompletion(
+        escalationChoicePrompt,
+        "You are an escalation preference detection expert."
+      )
+      
+      const userChoice = cleanVoiceResponse(choiceResponse || 'QUESTIONS').trim().toUpperCase()
+      
+      if (userChoice === 'IMMEDIATE') {
+        console.log('User chose immediate escalation')
+        
+        return {
+          reply: "Absolutely! I'm connecting you to our emergency line right now. Please hold while I transfer your call. Help is on the way!",
+          currentFlow: null,
+          showBranding,
+          nextVoiceAction: 'TRANSFER' // This would need to be implemented in the voice system
+        }
+             } else {
+         console.log('User chose to answer quick questions first')
+         
+         // Continue with emergency lead capture flow - we'll handle this in the lead capture section
+         // by forcing the shouldForceLeadCapture flag
+         console.log('Setting shouldForceLeadCapture to true for emergency escalation choice')
+       }
+    }
 
     // DEFENSIVE LOGIC: Detect if we should continue lead capture based on conversation history
     let shouldForceLeadCapture = false
-    if (!currentActiveFlow && conversationHistory.length > 0) {
+    
+    // Check if user just chose quick questions from emergency escalation
+    if (currentActiveFlow === 'EMERGENCY_ESCALATION_OFFER') {
+      shouldForceLeadCapture = true
+      console.log('User chose quick questions from emergency escalation, forcing lead capture')
+    } else if (!currentActiveFlow && conversationHistory.length > 0) {
       console.log('No currentActiveFlow provided, analyzing conversation history...')
       
       // Check if the last assistant message was a lead capture question
@@ -746,25 +939,60 @@ User's Question: ${message}`
       // Determine which questions to ask based on emergency status
       let questionsToAsk = agentConfig.questions as ExtendedLeadCaptureQuestion[]
       if (isEmergency) {
-        console.log("EMERGENCY DETECTED: Filtering for essential questions...")
-        // Filter for questions marked as essential for emergencies
-        const essentialQuestions = questionsToAsk.filter(
-          q => q.isEssentialForEmergency === true
+        console.log("EMERGENCY DETECTED: Using smart question selection...")
+        
+        // Use smart question selection for emergencies
+        questionsToAsk = await selectSmartEmergencyQuestions(
+          firstUserMessage,
+          agentConfig.questions as ExtendedLeadCaptureQuestion[],
+          business.name
         )
-
-        if (essentialQuestions.length > 0) {
-          questionsToAsk = essentialQuestions
-          console.log('Essential emergency questions:', questionsToAsk.map(q => q.questionText))
-        } else {
-          // Fallback if no questions are marked as essential for emergency:
-          // Ask just the very first configured question as a bare minimum
-          if (agentConfig.questions && agentConfig.questions.length > 0) {
-            console.log("No essential questions marked for emergency, asking only the first configured question.")
-            questionsToAsk = agentConfig.questions.slice(0, 1) as ExtendedLeadCaptureQuestion[]
-          } else {
-            questionsToAsk = [] // No questions configured at all
+        
+        console.log(`Selected ${questionsToAsk.length} emergency questions:`, questionsToAsk.map(q => q.questionText))
+        
+        // Check if this is the first turn and it's an emergency - offer escalation for severe cases
+        if (conversationHistory.length <= 2) { // First user message + potentially a greeting
+          console.log('First emergency message detected, checking severity for escalation option...')
+          
+          // Check if user might want immediate escalation based on severity
+          const severityCheckPrompt = `Emergency message: "${firstUserMessage}"
+          
+          Rate the severity of this emergency on a scale of 1-10:
+          - 10: Life-threatening (fire, gas leak, electrical hazard)
+          - 8-9: Property damage in progress (flooding, burst pipes)
+          - 6-7: Urgent but contained (no heat, hot water, major appliance failure)
+          - 4-5: Inconvenient but not urgent (minor leaks, clogs)
+          - 1-3: Regular service requests
+          
+          Respond with only the number (1-10).`
+          
+          try {
+            const severityResponse = await getChatCompletion(
+              severityCheckPrompt,
+              "You are an emergency severity assessment expert."
+            )
+            
+            const severityScore = parseInt(cleanVoiceResponse(severityResponse || '5'))
+            
+            // For severe emergencies (8+), offer immediate escalation
+            if (severityScore >= 8) {
+              console.log(`High severity emergency detected (${severityScore}/10), offering immediate escalation`)
+              
+              const escalationOffer = await offerEmergencyEscalation(firstUserMessage, business.name)
+              
+              return {
+                reply: escalationOffer,
+                currentFlow: 'EMERGENCY_ESCALATION_OFFER',
+                showBranding,
+                nextVoiceAction: 'CONTINUE'
+              }
+            } else {
+              console.log(`Moderate emergency (${severityScore}/10), proceeding with streamlined questions`)
+            }
+          } catch (error) {
+            console.error('Error assessing emergency severity:', error)
+            // Continue with normal emergency flow if assessment fails
           }
-          console.log('Fallback emergency questions:', questionsToAsk.map(q => q.questionText))
         }
       }
       
@@ -949,6 +1177,7 @@ Generate a natural way to ask this question that flows well in the conversation.
         let contactName: string | undefined = undefined
         let contactEmail: string | undefined = undefined
         let contactPhone: string | undefined = undefined
+        let address: string | undefined = undefined
         let notes: string | undefined = undefined
         
         // Iterate through questions to find field mappings
@@ -973,6 +1202,9 @@ Generate a natural way to ask this question that flows well in the conversation.
               case 'contactPhone':
                 contactPhone = answer
                 break
+              case 'address':
+                address = answer
+                break
               case 'notes':
                 notes = answer
                 break
@@ -987,6 +1219,7 @@ Generate a natural way to ask this question that flows well in the conversation.
           contactName,
           contactEmail,
           contactPhone,
+          address,
           notes
         })
         
@@ -1001,6 +1234,7 @@ Generate a natural way to ask this question that flows well in the conversation.
             contactName,
             contactEmail,
             contactPhone,
+            // address, // TODO: Uncomment after running Prisma migration and generating client
             notes
           }
         })
@@ -1189,16 +1423,16 @@ Respond with only YES or NO.`
         )
         
         const cleanedDeclineResponse = cleanVoiceResponse(isDeclineResponse || 'NO')
-        if (cleanedDeclineResponse.trim().toUpperCase() === 'YES') {
-          console.log('User declined FAQ fallback offer, providing alternative assistance')
-          return {
-            reply: "No problem at all! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
-            currentFlow: null,
-            showBranding,
-            nextVoiceAction: determineNextVoiceAction('OTHER', null)
-          }
-        }
-      }
+               if (cleanedDeclineResponse.trim().toUpperCase() === 'YES') {
+         console.log('User declined FAQ fallback offer, providing alternative assistance')
+         return {
+           reply: "No problem at all! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
+           currentFlow: null,
+           showBranding,
+           nextVoiceAction: determineNextVoiceAction('OTHER', null)
+         }
+       }
+     }
       
       // Check if this is the start of a conversation
       if (conversationHistory.length === 0 && agentConfig?.welcomeMessage) {

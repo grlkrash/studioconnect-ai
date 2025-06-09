@@ -9,11 +9,13 @@ const cors_1 = __importDefault(require("cors"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const http_1 = __importDefault(require("http"));
 // Load environment variables
 dotenv_1.default.config();
 // Import Redis and session service
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
+const websocketServer_1 = require("./services/websocketServer");
 // Import route handlers
 const chatRoutes_1 = __importDefault(require("./api/chatRoutes"));
 const admin_1 = __importDefault(require("./api/admin"));
@@ -88,6 +90,44 @@ app.use((0, cors_1.default)(corsOptions));
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use((0, cookie_parser_1.default)());
+// Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
+app.post('/test-voice', (req, res) => {
+    console.log('[VOICE TEST] The /test-voice endpoint was successfully reached.');
+    const VoiceResponse = require('twilio').twiml.VoiceResponse;
+    const twiml = new VoiceResponse();
+    twiml.say('Test successful. The server is responding correctly.');
+    twiml.hangup();
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+// Test route for WebSocket server status
+app.get('/test-realtime', async (req, res) => {
+    try {
+        console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
+        const connectionCount = twilioWsServer ? twilioWsServer.getActiveConnectionCount() : 0;
+        // Return success response
+        res.json({
+            message: "Twilio WebSocket server status check",
+            timestamp: new Date().toISOString(),
+            websocketServer: {
+                initialized: !!twilioWsServer,
+                activeConnections: connectionCount
+            },
+            environment: {
+                hostname: process.env.HOSTNAME || 'Not configured',
+                openaiApiKey: !!process.env.OPENAI_API_KEY
+            }
+        });
+    }
+    catch (error) {
+        console.error('[REALTIME TEST] Error:', error);
+        res.status(500).json({
+            error: "Failed to check WebSocket server status",
+            message: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs');
 app.set('views', path_1.default.join(__dirname, '../views'));
@@ -134,63 +174,11 @@ app.get('/widget.js', (req, res) => {
     }
 });
 // 4. Health check endpoint
-app.get('/health', async (req, res) => {
-    try {
-        const redisManager = redis_1.default.getInstance();
-        const sessionService = voiceSessionService_1.default.getInstance();
-        // Check Redis connection status
-        const redisStatus = redisManager.isClientConnected() ? 'connected' : 'disconnected';
-        // Get session statistics
-        let sessionStats = {
-            activeRedisSessions: 0,
-            activeFallbackSessions: 0,
-            totalActiveSessions: 0
-        };
-        let activeSessions = [];
-        try {
-            sessionStats = await sessionService.getSessionStats();
-            activeSessions = await sessionService.getAllActiveSessions();
-        }
-        catch (error) {
-            console.error('[Health Check] Error getting session stats:', error);
-        }
-        // Get sample session analytics if there are active sessions
-        let sampleAnalytics = null;
-        if (activeSessions.length > 0) {
-            try {
-                const sampleCallSid = activeSessions[0];
-                sampleAnalytics = await sessionService.getSessionAnalytics(sampleCallSid);
-            }
-            catch (error) {
-                console.error('[Health Check] Error getting sample analytics:', error);
-            }
-        }
-        res.status(200).json({
-            status: 'healthy',
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
-            version: process.env.npm_package_version || '1.0.0',
-            services: {
-                redis: {
-                    status: redisStatus,
-                    configured: !!process.env.REDIS_URL || !!process.env.REDIS_HOST
-                },
-                voiceSessions: {
-                    ...sessionStats,
-                    activeSessionIds: activeSessions.slice(0, 5), // Show first 5 for debugging
-                    sampleAnalytics
-                }
-            }
-        });
-    }
-    catch (error) {
-        console.error('[Health Check] Error:', error);
-        res.status(500).json({
-            status: 'unhealthy',
-            timestamp: new Date().toISOString(),
-            error: 'Health check failed'
-        });
-    }
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString()
+    });
 });
 // 5. Debug route to test routing
 app.get('/admin-test', (req, res) => {
@@ -236,7 +224,6 @@ async function initializeRedis() {
         const redisManager = redis_1.default.getInstance();
         await redisManager.connect();
         console.log('✅ Redis connection established');
-        // Set up cleanup interval for expired sessions
         const sessionService = voiceSessionService_1.default.getInstance();
         setInterval(async () => {
             await sessionService.cleanupExpiredSessions();
@@ -247,12 +234,23 @@ async function initializeRedis() {
     }
 }
 // Start server
-const server = app.listen(PORT, async () => {
+const httpServer = http_1.default.createServer(app);
+// Create Twilio WebSocket server for real-time audio streaming
+let twilioWsServer = null;
+const server = httpServer.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
+    // Initialize Twilio WebSocket server for real-time audio streaming
+    try {
+        twilioWsServer = new websocketServer_1.TwilioWebSocketServer(httpServer);
+        console.log(`🔌 Twilio WebSocket server ready for real-time audio streaming`);
+    }
+    catch (error) {
+        console.error('❌ Failed to initialize Twilio WebSocket server:', error);
+    }
     // Initialize Redis after server starts
     await initializeRedis();
 });
@@ -260,12 +258,17 @@ const server = app.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
     try {
+        // Close Twilio WebSocket server
+        if (twilioWsServer) {
+            await twilioWsServer.close();
+            console.log('✅ Twilio WebSocket server closed');
+        }
         const redisManager = redis_1.default.getInstance();
         await redisManager.disconnect();
         console.log('✅ Redis disconnected');
     }
     catch (error) {
-        console.error('Error disconnecting Redis:', error);
+        console.error('Error during graceful shutdown:', error);
     }
     server.close(() => {
         console.log('Process terminated');
@@ -274,12 +277,17 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
     console.log('SIGINT received, shutting down gracefully');
     try {
+        // Close Twilio WebSocket server
+        if (twilioWsServer) {
+            await twilioWsServer.close();
+            console.log('✅ Twilio WebSocket server closed');
+        }
         const redisManager = redis_1.default.getInstance();
         await redisManager.disconnect();
         console.log('✅ Redis disconnected');
     }
     catch (error) {
-        console.error('Error disconnecting Redis:', error);
+        console.error('Error during graceful shutdown:', error);
     }
     server.close(() => {
         console.log('Process terminated');
