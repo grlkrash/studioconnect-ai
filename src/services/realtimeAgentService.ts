@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
+import { processMessage } from '../core/aiHandler';
 
 const prisma = new PrismaClient();
 
@@ -16,11 +17,15 @@ interface ConnectionState {
   isAiReady: boolean;
   streamSid: string | null;
   audioQueue: string[];
+  conversationHistory: Array<{ role: 'user' | 'assistant', content: string, timestamp: Date }>;
+  businessId: string | null;
+  leadCaptureTriggered: boolean;
+  hasCollectedLeadInfo: boolean;
 }
 
 /**
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
- * Handles real-time bidirectional voice conversations
+ * Handles real-time bidirectional voice conversations with lead capture integration
  */
 export class RealtimeAgentService {
   private twilioWs: WebSocket | null = null;
@@ -29,6 +34,9 @@ export class RealtimeAgentService {
   private state: ConnectionState;
   private readonly openaiApiKey: string;
   public onCallSidReceived?: (callSid: string) => void;
+  private conversationSummary: string = '';
+  private currentQuestionIndex: number = 0;
+  private leadCaptureQuestions: any[] = [];
 
   constructor(twilioWs: WebSocket) {
     // CallSid will be extracted from Twilio start message parameters (more reliable than URL)
@@ -44,6 +52,10 @@ export class RealtimeAgentService {
       isAiReady: false,
       streamSid: null,
       audioQueue: [],
+      conversationHistory: [],
+      businessId: null,
+      leadCaptureTriggered: false,
+      hasCollectedLeadInfo: false,
     };
 
     // Set up Twilio WebSocket listeners immediately
@@ -184,6 +196,27 @@ export class RealtimeAgentService {
           case 'response.audio.done':
             console.log(`[RealtimeAgent] OpenAI audio response completed for call ${this.callSid}`);
             break;
+
+          case 'response.audio_transcript.done':
+            // Track AI's response transcript
+            if (response.transcript) {
+              this.addToConversationHistory('assistant', response.transcript);
+              console.log(`[RealtimeAgent] AI response transcript: ${response.transcript}`);
+            }
+            break;
+
+          case 'conversation.item.input_audio_transcription.completed':
+            // Track user's input transcript
+            if (response.transcript) {
+              this.addToConversationHistory('user', response.transcript);
+              console.log(`[RealtimeAgent] User input transcript: ${response.transcript}`);
+              
+              // Analyze for lead capture opportunity
+              this.analyzeForLeadCapture().catch(error => {
+                console.error(`[RealtimeAgent] Error analyzing for lead capture:`, error);
+              });
+            }
+            break;
             
           case 'input_audio_buffer.speech_started':
             console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
@@ -262,6 +295,10 @@ export class RealtimeAgentService {
         });
         
         if (business) {
+          // Store business ID for lead creation
+          this.state.businessId = business.id;
+          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
+          
           // Build comprehensive business-specific instructions
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
@@ -304,9 +341,9 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
         },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.5,           // Less sensitive (0.5 instead of 0.6)
-          prefix_padding_ms: 500,   // More padding before speech starts
-          silence_duration_ms: 2500 // Wait 2.5 seconds of silence before processing (was 1.2s)
+          threshold: 0.6,           // Slightly more sensitive to reduce double responses
+          prefix_padding_ms: 300,   // Reduced padding
+          silence_duration_ms: 1800 // Shorter silence duration to be more responsive
         }
       }
     };
@@ -425,27 +462,268 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
     }
   }
 
-     public cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
-     console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
-     
-     if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {
-       this.openAiWs.close();
-       this.openAiWs = null;
-     }
-     
-     if (this.twilioWs && this.twilioWs.readyState !== WebSocket.CLOSED) {
-       this.twilioWs.close();
-       this.twilioWs = null;
-     }
-     
-     // Reset state
-     this.state = {
-       isTwilioReady: false,
-       isAiReady: false,
-       streamSid: null,
-       audioQueue: [],
-     };
-   }
+  /**
+   * Adds conversation entry to history
+   */
+  private addToConversationHistory(role: 'user' | 'assistant', content: string): void {
+    this.state.conversationHistory.push({
+      role,
+      content,
+      timestamp: new Date()
+    });
+    
+    console.log(`[RealtimeAgent] Added to conversation history [${role}]: ${content.substring(0, 100)}...`);
+  }
+
+  /**
+   * Analyzes conversation for lead capture opportunities
+   */
+  private async analyzeForLeadCapture(): Promise<boolean> {
+    if (this.state.leadCaptureTriggered || !this.state.businessId) {
+      return false;
+    }
+
+    const recentMessages = this.state.conversationHistory.slice(-6); // Last 6 messages
+    const conversationText = recentMessages.map(m => `${m.role}: ${m.content}`).join('\n');
+
+    // Use simplified intent detection
+    const leadIndicators = [
+      'price', 'cost', 'quote', 'estimate', 'service', 'repair', 'fix', 'install', 
+      'problem', 'issue', 'help', 'need', 'appointment', 'schedule', 'emergency',
+      'urgent', 'how much', 'do you', 'can you'
+    ];
+
+    const hasLeadIntent = leadIndicators.some(indicator => 
+      conversationText.toLowerCase().includes(indicator)
+    );
+
+    if (hasLeadIntent && recentMessages.length >= 4) {
+      console.log(`[RealtimeAgent] Lead capture triggered for call ${this.callSid}`);
+      this.state.leadCaptureTriggered = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Processes lead creation at end of call
+   */
+  private async processLeadCreation(): Promise<void> {
+    if (!this.state.businessId || this.state.conversationHistory.length < 4) {
+      console.log(`[RealtimeAgent] Skipping lead creation - insufficient conversation data`);
+      return;
+    }
+
+    try {
+      console.log(`[RealtimeAgent] Creating lead for call ${this.callSid}...`);
+
+      // Convert conversation history to format expected by processMessage
+      const conversationForAI = this.state.conversationHistory.map(entry => ({
+        role: entry.role,
+        content: entry.content
+      }));
+
+      // Get the user's main message (usually the first substantial user message)
+      const userMessages = this.state.conversationHistory.filter(entry => entry.role === 'user');
+      const mainUserMessage = userMessages.find(msg => msg.content.length > 10) || userMessages[0];
+
+      if (!mainUserMessage) {
+        console.log(`[RealtimeAgent] No substantial user message found for lead creation`);
+        return;
+      }
+
+      // Process through the lead capture system
+      const result = await processMessage(
+        mainUserMessage.content,
+        conversationForAI,
+        this.state.businessId,
+        'LEAD_CAPTURE', // Force lead capture mode
+        this.callSid
+      );
+
+      console.log(`[RealtimeAgent] Lead processing result:`, result);
+
+      // Create conversation summary for lead
+      const conversationSummary = this.state.conversationHistory
+        .map(entry => `${entry.role}: ${entry.content}`)
+        .join('\n');
+
+      // Try to extract key information from conversation
+      const extractedInfo = this.extractLeadInformation();
+
+      // Create lead record
+      const newLead = await prisma.lead.create({
+        data: {
+          businessId: this.state.businessId,
+          status: 'NEW',
+          priority: this.detectEmergency() ? 'URGENT' : 'NORMAL',
+          conversationTranscript: JSON.stringify(conversationForAI),
+          capturedData: extractedInfo,
+          contactName: extractedInfo.name || null,
+          contactEmail: extractedInfo.email || null,
+          contactPhone: extractedInfo.phone || null,
+          notes: `Voice call lead - CallSid: ${this.callSid}`
+        }
+      });
+
+      console.log(`[RealtimeAgent] Lead created successfully:`, newLead.id);
+
+      // Send notifications
+      await this.sendLeadNotifications(newLead);
+
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error creating lead for call ${this.callSid}:`, error);
+    }
+  }
+
+  /**
+   * Extracts lead information from conversation
+   */
+  private extractLeadInformation(): Record<string, any> {
+    const conversationText = this.state.conversationHistory
+      .map(entry => entry.content)
+      .join(' ');
+
+    const extractedInfo: Record<string, any> = {};
+
+    // Simple extraction patterns
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
+    const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
+    const nameRegex = /(?:my name is|i'm|i am)\s+([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i;
+
+    const emailMatch = conversationText.match(emailRegex);
+    if (emailMatch) extractedInfo.email = emailMatch[0];
+
+    const phoneMatch = conversationText.match(phoneRegex);
+    if (phoneMatch) extractedInfo.phone = phoneMatch[0];
+
+    const nameMatch = conversationText.match(nameRegex);
+    if (nameMatch) extractedInfo.name = nameMatch[1];
+
+    // Add conversation summary
+    extractedInfo.conversation_summary = this.state.conversationHistory
+      .filter(entry => entry.role === 'user')
+      .map(entry => entry.content)
+      .join(' | ');
+
+    return extractedInfo;
+  }
+
+  /**
+   * Detects if conversation indicates emergency
+   */
+  private detectEmergency(): boolean {
+    const conversationText = this.state.conversationHistory
+      .map(entry => entry.content)
+      .join(' ')
+      .toLowerCase();
+
+    const emergencyKeywords = [
+      'emergency', 'urgent', 'burst', 'flooding', 'leak', 'no heat', 
+      'no hot water', 'electrical issue', 'gas smell', 'water damage',
+      'basement flooding', 'pipe burst', 'toilet overflowing'
+    ];
+
+    return emergencyKeywords.some(keyword => conversationText.includes(keyword));
+  }
+
+  /**
+   * Sends lead notifications
+   */
+  private async sendLeadNotifications(lead: any): Promise<void> {
+    try {
+      const business = await prisma.business.findUnique({
+        where: { id: this.state.businessId! }
+      });
+
+      if (!business) return;
+
+      // Import notification functions
+      const { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } = 
+        await import('../services/notificationService');
+
+      // Send email notification to business
+      if (business.notificationEmail) {
+        await sendLeadNotificationEmail(
+          business.notificationEmail,
+          {
+            capturedData: lead.capturedData,
+            conversationTranscript: lead.conversationTranscript,
+            contactName: lead.contactName,
+            contactEmail: lead.contactEmail,
+            contactPhone: lead.contactPhone,
+            notes: lead.notes,
+            createdAt: lead.createdAt,
+            status: lead.status
+          },
+          lead.priority,
+          business.name
+        );
+        console.log(`[RealtimeAgent] Lead notification email sent for call ${this.callSid}`);
+      }
+
+      // Send emergency call if urgent
+      if (lead.priority === 'URGENT' && business.notificationPhoneNumber) {
+        const emergencyDetails = lead.capturedData?.conversation_summary || 'Voice call emergency';
+        await initiateEmergencyVoiceCall(
+          business.notificationPhoneNumber,
+          business.name,
+          emergencyDetails,
+          business.id
+        );
+        console.log(`[RealtimeAgent] Emergency call initiated for call ${this.callSid}`);
+      }
+
+      // Send customer confirmation if email available
+      if (lead.contactEmail) {
+        await sendLeadConfirmationToCustomer(
+          lead.contactEmail,
+          business.name,
+          lead,
+          lead.priority === 'URGENT'
+        );
+        console.log(`[RealtimeAgent] Customer confirmation sent for call ${this.callSid}`);
+      }
+
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error sending notifications for call ${this.callSid}:`, error);
+    }
+  }
+
+  public cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
+    console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
+    
+    // Process lead creation before cleanup if we have conversation data
+    if (this.state.conversationHistory.length > 0 && this.state.businessId) {
+      console.log(`[RealtimeAgent] Processing lead creation before cleanup for call ${this.callSid}`);
+      this.processLeadCreation().catch(error => {
+        console.error(`[RealtimeAgent] Error processing lead creation during cleanup:`, error);
+      });
+    }
+    
+    if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {
+      this.openAiWs.close();
+      this.openAiWs = null;
+    }
+    
+    if (this.twilioWs && this.twilioWs.readyState !== WebSocket.CLOSED) {
+      this.twilioWs.close();
+      this.twilioWs = null;
+    }
+    
+    // Reset state
+    this.state = {
+      isTwilioReady: false,
+      isAiReady: false,
+      streamSid: null,
+      audioQueue: [],
+      conversationHistory: [],
+      businessId: null,
+      leadCaptureTriggered: false,
+      hasCollectedLeadInfo: false,
+    };
+  }
 
   /**
    * Public disconnect method for compatibility
