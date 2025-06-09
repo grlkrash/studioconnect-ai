@@ -20,6 +20,8 @@ export class RealtimeAgentService {
   private callSid: string;
   private streamSid: string | null = null;
   private readonly openaiApiKey: string;
+  private isSessionReady = false;
+  private pendingAudioChunks: any[] = [];
 
   constructor(callSid: string) {
     this.callSid = callSid;
@@ -40,27 +42,35 @@ export class RealtimeAgentService {
       // Set up Twilio WebSocket listeners first
       this.setupTwilioListeners();
       
-      // Define the WebSocket URL with specified model (use supported realtime model)
-      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
-      
-      // Define headers for authentication and API version
-      const headers = {
-        'Authorization': `Bearer ${this.openaiApiKey}`,
-        'OpenAI-Beta': 'realtime=v1'
-      };
-
-      console.log(`[RealtimeAgent] Connecting to OpenAI Realtime API for call: ${this.callSid}`);
-
-      // Instantiate the OpenAI WebSocket client
-      this.openAiWs = new WebSocket(url, { headers });
-
-      // Set up OpenAI WebSocket event listeners
-      this.setupOpenAiListeners();
+      // Connect to OpenAI but don't trigger greeting yet
+      await this.connectToOpenAI();
 
     } catch (error) {
       console.error(`[RealtimeAgent] Failed to connect for call ${this.callSid}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Connects to OpenAI Realtime API
+   */
+  private async connectToOpenAI(): Promise<void> {
+    // Define the WebSocket URL with specified model (use supported realtime model)
+    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+    
+    // Define headers for authentication and API version
+    const headers = {
+      'Authorization': `Bearer ${this.openaiApiKey}`,
+      'OpenAI-Beta': 'realtime=v1'
+    };
+
+    console.log(`[RealtimeAgent] Connecting to OpenAI Realtime API for call: ${this.callSid}`);
+
+    // Instantiate the OpenAI WebSocket client
+    this.openAiWs = new WebSocket(url, { headers });
+
+    // Set up OpenAI WebSocket event listeners
+    this.setupOpenAiListeners();
   }
 
   /**
@@ -106,13 +116,6 @@ export class RealtimeAgentService {
       
       // Send initial session configuration
       this.configureOpenAiSession();
-      
-      // Trigger the greeting after session is configured
-      setTimeout(() => {
-        this.triggerGreeting().catch(error => {
-          console.error(`[RealtimeAgent] Failed to trigger greeting for call ${this.callSid}:`, error);
-        });
-      }, 500);
     });
 
     // Message received from OpenAI with enhanced logging
@@ -126,44 +129,23 @@ export class RealtimeAgentService {
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
+            this.isSessionReady = true;
+            // Check if we can trigger greeting now (need both session and streamSid)
+            this.maybeStartConversation();
             break;
             
           case 'response.audio.delta':
             console.log(`[RealtimeAgent] Received audio chunk from OpenAI for call ${this.callSid}. Audio length: ${response.delta ? response.delta.length : 'undefined'}`);
             
-            // Detailed pre-forwarding checks
+            // Store audio if streamSid not ready yet
             if (!this.streamSid) {
-              console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: streamSid is not set for call ${this.callSid}.`);
+              console.log(`[RealtimeAgent] Storing audio chunk - streamSid not ready yet for call ${this.callSid}`);
+              this.pendingAudioChunks.push(response);
               return;
             }
             
-            if (!this.twilioWs) {
-              console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: Twilio WebSocket is null for call ${this.callSid}.`);
-              return;
-            }
-            
-            if (this.twilioWs.readyState !== WebSocket.OPEN) {
-              console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: WebSocket state is ${this.twilioWs.readyState} (expected ${WebSocket.OPEN}) for call ${this.callSid}.`);
-              return;
-            }
-            
-            if (!response.delta) {
-              console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: OpenAI delta is empty for call ${this.callSid}.`);
-              return;
-            }
-            
-            // Forward audio from OpenAI back to Twilio with detailed logging
-            const twilioMessage = {
-              event: 'media',
-              streamSid: this.streamSid,
-              media: {
-                payload: response.delta
-              }
-            };
-            
-            console.log(`[RealtimeAgent] Forwarding audio to Twilio for stream ${this.streamSid}. Payload length: ${response.delta.length}`);
-            this.twilioWs.send(JSON.stringify(twilioMessage));
-            console.log(`[RealtimeAgent] Audio successfully sent to Twilio for call ${this.callSid}`);
+            // Forward audio from OpenAI back to Twilio
+            this.forwardAudioToTwilio(response.delta);
             break;
             
           case 'response.audio.done':
@@ -239,6 +221,12 @@ export class RealtimeAgentService {
           console.log(`[RealtimeAgent] Twilio stream started for call ${this.callSid}`);
           this.streamSid = msg.start.streamSid;
           console.log(`[RealtimeAgent] Stream SID: ${this.streamSid}`);
+          
+          // Process any pending audio chunks now that we have streamSid
+          this.processPendingAudio();
+          
+          // Check if we can start conversation now (need both session and streamSid)
+          this.maybeStartConversation();
           break;
           
         case 'media':
@@ -277,7 +265,78 @@ export class RealtimeAgentService {
     }
   }
 
+  /**
+   * Checks if both session and streamSid are ready, then starts conversation
+   */
+  private maybeStartConversation(): void {
+    if (this.isSessionReady && this.streamSid) {
+      console.log(`[RealtimeAgent] Both OpenAI session and Twilio stream ready - triggering greeting for call ${this.callSid}`);
+      // Add small delay to ensure everything is properly initialized
+      setTimeout(() => {
+        this.triggerGreeting().catch(error => {
+          console.error(`[RealtimeAgent] Failed to trigger greeting for call ${this.callSid}:`, error);
+        });
+      }, 200);
+    } else {
+      console.log(`[RealtimeAgent] Not ready to start conversation - Session ready: ${this.isSessionReady}, StreamSid ready: ${!!this.streamSid}`);
+    }
+  }
 
+  /**
+   * Processes any audio chunks that arrived before streamSid was available
+   */
+  private processPendingAudio(): void {
+    if (this.pendingAudioChunks.length > 0) {
+      console.log(`[RealtimeAgent] Processing ${this.pendingAudioChunks.length} pending audio chunks for call ${this.callSid}`);
+      
+      for (const audioChunk of this.pendingAudioChunks) {
+        if (audioChunk.delta) {
+          this.forwardAudioToTwilio(audioChunk.delta);
+        }
+      }
+      
+      // Clear pending chunks
+      this.pendingAudioChunks = [];
+    }
+  }
+
+  /**
+   * Forwards audio from OpenAI to Twilio with proper error handling
+   */
+  private forwardAudioToTwilio(audioData: string): void {
+    if (!this.streamSid) {
+      console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: streamSid is not set for call ${this.callSid}.`);
+      return;
+    }
+    
+    if (!this.twilioWs) {
+      console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: Twilio WebSocket is null for call ${this.callSid}.`);
+      return;
+    }
+    
+    if (this.twilioWs.readyState !== WebSocket.OPEN) {
+      console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: WebSocket state is ${this.twilioWs.readyState} (expected ${WebSocket.OPEN}) for call ${this.callSid}.`);
+      return;
+    }
+    
+    if (!audioData) {
+      console.warn(`[RealtimeAgent] Cannot forward audio to Twilio: audio data is empty for call ${this.callSid}.`);
+      return;
+    }
+    
+    // Forward audio from OpenAI back to Twilio
+    const twilioMessage = {
+      event: 'media',
+      streamSid: this.streamSid,
+      media: {
+        payload: audioData
+      }
+    };
+    
+    console.log(`[RealtimeAgent] Forwarding audio to Twilio for stream ${this.streamSid}. Payload length: ${audioData.length}`);
+    this.twilioWs.send(JSON.stringify(twilioMessage));
+    console.log(`[RealtimeAgent] Audio successfully sent to Twilio for call ${this.callSid}`);
+  }
 
   /**
    * Configures the OpenAI session for voice conversation
@@ -446,6 +505,8 @@ export class RealtimeAgentService {
     }
     
     this.streamSid = null;
+    this.isSessionReady = false;
+    this.pendingAudioChunks = [];
   }
 
   /**
