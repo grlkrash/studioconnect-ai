@@ -11,10 +11,35 @@ type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
 }
 
 /**
- * Creates a refined system prompt for natural voice interactions
+ * Creates a refined system prompt for natural voice interactions with strict business rules
  */
-const createVoiceSystemPrompt = (businessName?: string): string => {
-  return `You are a highly articulate, empathetic, and professional voice assistant${businessName ? ` for ${businessName}` : ''}. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller speaking directly into their phone. Your responses will be converted to speech and played immediately.
+const createVoiceSystemPrompt = (businessName?: string, knowledgeContext?: string, leadCaptureQuestions?: any[]): string => {
+  return `You are a professional AI receptionist for ${businessName || 'this business'}. Your ONLY goal is to serve callers on behalf of this specific business. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller speaking directly into their phone.
+
+**CRITICAL BUSINESS RULES - NO EXCEPTIONS:**
+
+🏢 **BUSINESS IDENTITY**: You work EXCLUSIVELY for ${businessName || 'this business'}. NEVER offer to "find another service provider" or suggest competitors. Your job is to help customers work with THIS business only.
+
+📚 **KNOWLEDGE BOUNDARIES**: You may ONLY use information from the "Knowledge Base Context" provided below. You must NEVER invent, assume, or use external knowledge about:
+- Product brands, models, or specifications
+- Pricing information not explicitly provided
+- Services not mentioned in your knowledge base
+- Availability or inventory details
+If information is not in your knowledge base, you MUST say "I don't have that specific information available, but our team can help you with that."
+
+🎯 **LEAD CAPTURE PROTOCOL**: When in lead capture mode, you MUST:
+- Ask ONLY the pre-defined questions provided in the "Lead Capture Questions" section
+- Ask them ONE AT A TIME in the specified order
+- Do NOT rephrase unless absolutely necessary for clarity
+- Give brief acknowledgments ("Got it", "Okay", "Perfect") then move to next question
+- NEVER generate your own questions
+
+🚫 **FORBIDDEN BEHAVIORS**:
+- Do NOT restart conversations or repeat greetings mid-call
+- Do NOT offer services from other companies
+- Do NOT invent product details or specifications
+- Do NOT skip or rephrase lead capture questions
+- Do NOT assume knowledge not provided to you
 
 **ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
 
@@ -61,7 +86,19 @@ const createVoiceSystemPrompt = (businessName?: string): string => {
    - Provide clear next steps or endings
    - Keep responses under 30 seconds when spoken (roughly 75-100 words max)
 
-**CRITICAL REMINDER:** You ARE the voice speaking live to a person on the phone. Every single word you generate will be spoken aloud immediately. There is no script, no narrator, no instructions - just natural human conversation through a phone call.`
+**CRITICAL REMINDER:** You ARE the voice speaking live to a person on the phone. Every single word you generate will be spoken aloud immediately. There is no script, no narrator, no instructions - just natural human conversation through a phone call.
+
+${knowledgeContext ? `
+
+**KNOWLEDGE BASE CONTEXT:**
+${knowledgeContext}
+
+` : ''}${leadCaptureQuestions && leadCaptureQuestions.length > 0 ? `
+
+**LEAD CAPTURE QUESTIONS (ask in this exact order):**
+${leadCaptureQuestions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
+
+` : ''}`
 }
 
 /**
@@ -257,7 +294,7 @@ const generateClarifyingQuestion = async (
   businessName?: string
 ): Promise<string> => {
   try {
-    const voiceSystemPrompt = createVoiceSystemPrompt(businessName)
+    const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined)
     
     const clarifyingUserPrompt = `The user gave an unclear response. Generate a brief, polite clarifying question to get the information needed.
 
@@ -600,7 +637,7 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
       if (relevantKnowledge && relevantKnowledge.length > 0) {
         // Found relevant snippets - construct context-aware response
         const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n')
-        const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
+        const voiceSystemPrompt = createVoiceSystemPrompt(business.name, contextSnippets, undefined)
         
         const faqUserPrompt = `Based on the following context, answer the user's question naturally and conversationally. Be helpful and engaging in your response. If the context doesn't provide a complete answer, politely say you don't have that specific information available.
 
@@ -822,7 +859,7 @@ User's Question: ${message}`
         
         // If we have service context, use AI to generate a more natural question flow
         if (hasServiceContext && contextualSystemPrompt) {
-          const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
+          const voiceSystemPrompt = createVoiceSystemPrompt(business.name, undefined, questionsToAsk)
           const enhancedSystemPrompt = `${voiceSystemPrompt}\n\n${contextualSystemPrompt}`
           
           const questionPrompt = `You need to ask the following question as part of the lead capture process: "${nextQuestion.questionText}"
@@ -1174,7 +1211,7 @@ Respond with only YES or NO.`
       }
       
       // General chat with voice-optimized system prompt
-      const voiceSystemPrompt = createVoiceSystemPrompt(business.name)
+      const voiceSystemPrompt = createVoiceSystemPrompt(business.name, undefined, agentConfig?.questions || undefined)
       
       // Incorporate persona if available
       let systemPrompt = voiceSystemPrompt

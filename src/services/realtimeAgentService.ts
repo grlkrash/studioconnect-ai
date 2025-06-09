@@ -156,9 +156,9 @@ export class RealtimeAgentService {
   private setupOpenAIListeners() {
     if (!this.openAiWs) return;
 
-    this.openAiWs.on('open', () => {
+    this.openAiWs.on('open', async () => {
       console.log(`[RealtimeAgent] OpenAI connection opened for ${this.callSid}. Configuring session.`);
-      this.configureOpenAiSession();
+      await this.configureOpenAiSession();
     });
 
     this.openAiWs.on('message', (message: WebSocket.RawData) => {
@@ -187,23 +187,41 @@ export class RealtimeAgentService {
             
           case 'input_audio_buffer.speech_started':
             console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
-            // Interrupt any ongoing AI speech
+            // Only interrupt if there's actually an active response
             if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-              this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+              try {
+                this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+              } catch (error) {
+                // Ignore cancel errors - they're expected if no response is active
+                console.log(`[RealtimeAgent] Response cancel ignored (expected if no active response) for call ${this.callSid}`);
+              }
             }
             break;
             
           case 'input_audio_buffer.speech_stopped':
             console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
-            // Commit the audio buffer and request a response
-            if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-              this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-              this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-            }
+            // Add a small delay before committing to ensure we have sufficient audio
+            setTimeout(() => {
+              if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+                try {
+                  this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                  this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+                } catch (error) {
+                  console.log(`[RealtimeAgent] Audio commit ignored (buffer may be empty) for call ${this.callSid}`);
+                }
+              }
+            }, 100); // Small delay to ensure audio buffer has content
             break;
             
           case 'error':
-            console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}:`, response.error);
+            // Filter out expected errors that are part of normal operation
+            if (response.error?.code === 'input_audio_buffer_commit_empty' || 
+                response.error?.code === 'response_cancel_not_active' ||
+                response.error?.code === 'conversation_already_has_active_response') {
+              console.log(`[RealtimeAgent] Expected OpenAI operational message for call ${this.callSid}: ${response.error.code}`);
+            } else {
+              console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}:`, response.error);
+            }
             break;
             
           default:
@@ -223,14 +241,55 @@ export class RealtimeAgentService {
     });
   }
 
-  private configureOpenAiSession(): void {
+  private async configureOpenAiSession(): Promise<void> {
     if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) return;
+
+    let businessInstructions = 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.';
+    
+    // Try to get business-specific instructions
+    try {
+      const callDetails = await twilioClient.calls(this.callSid).fetch();
+      const toPhoneNumber = callDetails.to;
+      
+      if (toPhoneNumber) {
+        const business = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: toPhoneNumber },
+          include: {
+            agentConfig: {
+              include: { questions: { orderBy: { order: 'asc' } } }
+            }
+          }
+        });
+        
+        if (business) {
+          // Build comprehensive business-specific instructions
+          const businessName = business.name;
+          const questions = business.agentConfig?.questions || [];
+          
+          businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
+
+CRITICAL RULES:
+🏢 BUSINESS IDENTITY: You work EXCLUSIVELY for ${businessName}. NEVER offer to find other service providers or suggest competitors. Help customers work with THIS business only.
+
+📚 KNOWLEDGE BOUNDARIES: Only use information explicitly provided to you. NEVER invent product details, pricing, or service information. If you don't have specific information, say "I don't have that information available, but our team can help you with that."
+
+🎯 LEAD CAPTURE: When collecting customer information, ask questions one at a time. Use these exact questions in order:
+${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
+
+🚫 FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, invent product specifications, or offer services from other companies.
+
+Keep responses natural, conversational, and under 30 seconds when spoken.`;
+        }
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error fetching business config for session setup:`, error);
+    }
 
     const sessionConfig = {
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+        instructions: businessInstructions,
         voice: 'alloy',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
@@ -239,15 +298,15 @@ export class RealtimeAgentService {
         },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.5,
+          threshold: 0.6,
           prefix_padding_ms: 300,
-          silence_duration_ms: 500
+          silence_duration_ms: 1200
         }
       }
     };
 
     this.openAiWs.send(JSON.stringify(sessionConfig));
-    console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid}`);
+    console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
   }
 
   private async triggerGreeting() {
