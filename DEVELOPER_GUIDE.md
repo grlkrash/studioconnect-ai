@@ -17,16 +17,17 @@
 6. [Health Monitoring & Analytics](#6-health-monitoring--analytics)
 7. [Plan Tier Architecture](#7-plan-tier-architecture)
 8. [Enhanced Emergency System](#8-enhanced-emergency-system)
-9. [Data Flows & User Journeys](#9-data-flows--user-journeys)
-10. [Project Structure](#10-project-structure)
-11. [Core Components](#11-core-components)
-12. [Database Schema](#12-database-schema)
-13. [API Documentation](#13-api-documentation)
-14. [Development Setup](#14-development-setup)
-15. [Deployment Guide](#15-deployment-guide)
-16. [Security Considerations](#16-security-considerations)
-17. [Testing Strategy](#17-testing-strategy)
-18. [Troubleshooting](#18-troubleshooting)
+9. [Notification Management System](#9-notification-management-system)
+10. [Data Flows & User Journeys](#10-data-flows--user-journeys)
+11. [Project Structure](#11-project-structure)
+12. [Core Components](#12-core-components)
+13. [Database Schema](#13-database-schema)
+14. [API Documentation](#14-api-documentation)
+15. [Development Setup](#15-development-setup)
+16. [Deployment Guide](#16-deployment-guide)
+17. [Security Considerations](#17-security-considerations)
+18. [Testing Strategy](#18-testing-strategy)
+19. [Troubleshooting](#19-troubleshooting)
 
 ---
 
@@ -774,9 +775,345 @@ async function sendRealtimeEmergencyNotification(lead: EmergencyLead): Promise<v
 
 ---
 
-## 9. Data Flows & User Journeys
+## 9. Notification Management System
 
-### 9.1. Realtime Voice Call Journey
+### 9.1. Architecture Overview
+
+The notification management system provides a comprehensive solution for configuring and delivering alerts when leads are captured through the AI agent. The system supports both email notifications for all leads and emergency phone calls for urgent situations.
+
+```typescript
+// Notification Settings Model
+interface NotificationSettings {
+  businessId: string;
+  notificationEmail?: string;      // For all lead alerts
+  notificationPhoneNumber?: string; // For emergency situations only
+}
+
+// Lead Priority Levels
+type LeadPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+```
+
+### 9.2. Admin Panel Implementation
+
+```typescript
+// Admin API Endpoints for Notification Management
+GET /api/admin/business/notifications
+  - Retrieves current notification settings for authenticated business
+  - Returns: NotificationSettings object
+
+PUT /api/admin/business/notifications
+  - Updates notification settings with validation
+  - Validates email format and phone number format
+  - Supports international phone numbers with country codes
+
+POST /api/admin/test-sendgrid
+  - Tests email configuration using SendGrid
+  - Sends test email to verify setup
+  - Returns success/failure status with detailed error information
+```
+
+### 9.3. UI Components
+
+**Notification Settings Page (`/admin/notifications`):**
+```typescript
+// Frontend Implementation
+interface NotificationFormData {
+  notificationEmail: string;
+  notificationPhoneNumber: string;
+}
+
+// Validation Rules
+const emailValidation = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const phoneValidation = /^[\+]?[1-9][\d]{0,15}$/; // International format support
+
+// Form submission with validation
+async function updateNotificationSettings(formData: NotificationFormData) {
+  const response = await fetch('/api/admin/business/notifications', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData),
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error);
+  }
+  
+  return response.json();
+}
+```
+
+### 9.4. Notification Service Integration
+
+```typescript
+// Enhanced Notification Service
+export class NotificationService {
+  private transporter: nodemailer.Transporter;
+  private twilioClient: twilio.Twilio;
+
+  /**
+   * Sends email notification for all captured leads
+   */
+  async sendLeadNotificationEmail(
+    toEmail: string,
+    leadDetails: LeadDetails,
+    leadPriority: LeadPriority,
+    businessName: string
+  ): Promise<void> {
+    const subject = `New ${leadPriority} Priority Lead for ${businessName}`;
+    
+    // Enhanced HTML email template with emergency alerts
+    let htmlBody = this.buildEmailTemplate(leadDetails, leadPriority, businessName);
+    
+    await this.transporter.sendMail({
+      from: process.env.FROM_EMAIL,
+      to: toEmail,
+      subject,
+      html: htmlBody
+    });
+  }
+
+  /**
+   * Initiates emergency voice call for urgent situations
+   */
+  async initiateEmergencyVoiceCall(
+    toPhoneNumber: string,
+    businessName: string,
+    emergencyDetails: string,
+    businessId: string
+  ): Promise<void> {
+    // Fetch business-specific voice configuration
+    const agentConfig = await prisma.agentConfig.findUnique({
+      where: { businessId }
+    });
+
+    // Create emergency TwiML with business-specific voice settings
+    const twiml = new twilio.twiml.VoiceResponse();
+    const emergencyMessage = this.buildEmergencyMessage(
+      businessName, 
+      emergencyDetails, 
+      agentConfig
+    );
+    
+    twiml.say({ 
+      voice: agentConfig?.twilioVoice || 'alice',
+      language: agentConfig?.twilioLanguage || 'en-US'
+    }, emergencyMessage);
+
+    await this.twilioClient.calls.create({
+      twiml: twiml.toString(),
+      to: toPhoneNumber,
+      from: process.env.TWILIO_PHONE_NUMBER
+    });
+  }
+
+  /**
+   * Builds emergency voice message with SSML enhancement
+   */
+  private buildEmergencyMessage(
+    businessName: string, 
+    emergencyDetails: string,
+    agentConfig?: AgentConfig
+  ): string {
+    const safeBusinessName = this.escapeXml(businessName);
+    const safeEmergencyDetails = this.escapeXml(emergencyDetails);
+
+    return `<prosody rate="fast"><emphasis level="strong">Urgent Alert!</emphasis></prosody>` +
+           `<break strength="medium"/>` +
+           `This is an emergency lead notification for ${safeBusinessName}.` +
+           `<break strength="medium"/>` +
+           `A customer has reported an emergency. Issue stated: ` +
+           `<prosody rate="medium"><emphasis level="moderate">${safeEmergencyDetails}</emphasis></prosody>.` +
+           `<break strength="medium"/>` +
+           `Please check your email or dashboard immediately for full details and contact information.`;
+  }
+}
+```
+
+### 9.5. Automatic Notification Triggers
+
+```typescript
+// Lead Creation with Automatic Notifications
+async function processLeadCapture(
+  leadData: LeadCaptureData,
+  businessId: string,
+  priority: LeadPriority = 'NORMAL'
+): Promise<Lead> {
+  // Create lead record
+  const newLead = await prisma.lead.create({
+    data: {
+      businessId,
+      capturedData: leadData,
+      status: 'NEW',
+      priority,
+      contactName: leadData.name,
+      contactEmail: leadData.email,
+      contactPhone: leadData.phone
+    }
+  });
+
+  // Get business notification settings
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: {
+      name: true,
+      notificationEmail: true,
+      notificationPhoneNumber: true
+    }
+  });
+
+  if (!business) return newLead;
+
+  // Send email notification for all leads
+  if (business.notificationEmail) {
+    await notificationService.sendLeadNotificationEmail(
+      business.notificationEmail,
+      newLead,
+      priority,
+      business.name
+    );
+  }
+
+  // Send emergency phone call for urgent leads only
+  if (priority === 'URGENT' && business.notificationPhoneNumber) {
+    const emergencyDetails = leadData.emergency_notes || 'Emergency situation reported';
+    await notificationService.initiateEmergencyVoiceCall(
+      business.notificationPhoneNumber,
+      business.name,
+      emergencyDetails,
+      businessId
+    );
+  }
+
+  // Send customer confirmation if email provided
+  if (leadData.email) {
+    await notificationService.sendLeadConfirmationToCustomer(
+      leadData.email,
+      business.name,
+      newLead,
+      priority === 'URGENT'
+    );
+  }
+
+  return newLead;
+}
+```
+
+### 9.6. Emergency Detection Integration
+
+```typescript
+// Emergency Detection in Voice and Chat
+class EmergencyDetectionService {
+  private static emergencyKeywords = [
+    'emergency', 'urgent', 'burst', 'flooding', 'leak', 
+    'no heat', 'no hot water', 'electrical issue', 
+    'gas smell', 'water damage', 'basement flooding',
+    'pipe burst', 'toilet overflowing'
+  ];
+
+  static detectEmergency(message: string): boolean {
+    const lowerMessage = message.toLowerCase();
+    return this.emergencyKeywords.some(keyword => 
+      lowerMessage.includes(keyword)
+    );
+  }
+
+  static classifyPriority(
+    message: string, 
+    conversationHistory: ConversationMessage[]
+  ): LeadPriority {
+    if (this.detectEmergency(message)) {
+      return 'URGENT';
+    }
+
+    // Additional priority classification logic
+    const urgentIndicators = ['asap', 'immediately', 'right now', 'emergency'];
+    const highIndicators = ['today', 'soon', 'important'];
+
+    const lowerMessage = message.toLowerCase();
+    
+    if (urgentIndicators.some(indicator => lowerMessage.includes(indicator))) {
+      return 'HIGH';
+    }
+
+    if (highIndicators.some(indicator => lowerMessage.includes(indicator))) {
+      return 'HIGH';
+    }
+
+    return 'NORMAL';
+  }
+}
+```
+
+### 9.7. Configuration Validation
+
+```typescript
+// Business Notification Settings Validation
+export class NotificationValidator {
+  static validateEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email.trim());
+  }
+
+  static validatePhoneNumber(phone: string): boolean {
+    // Support international format with country codes
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    const cleanedPhone = phone.replace(/[\s\-\(\)\.]/g, '');
+    return phoneRegex.test(cleanedPhone);
+  }
+
+  static validateNotificationSettings(settings: NotificationSettings): ValidationResult {
+    const errors: string[] = [];
+
+    if (settings.notificationEmail && !this.validateEmail(settings.notificationEmail)) {
+      errors.push('Invalid email format');
+    }
+
+    if (settings.notificationPhoneNumber && !this.validatePhoneNumber(settings.notificationPhoneNumber)) {
+      errors.push('Invalid phone number format. Please use digits only with optional country code.');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+}
+```
+
+### 9.8. Dashboard Integration
+
+```typescript
+// Dashboard Card for Notification Settings
+const NotificationSettingsCard = {
+  title: "🔔 Notification Settings",
+  description: "Configure where you receive notifications when new leads are captured.",
+  route: "/admin/notifications",
+  features: [
+    "Email alerts for all leads",
+    "Emergency phone calls for urgent situations", 
+    "Test email functionality",
+    "International phone number support"
+  ]
+};
+
+// Navigation integration
+const adminNavigation = [
+  { name: "Dashboard", href: "/admin/dashboard" },
+  { name: "Agent Settings", href: "/admin/settings" },
+  { name: "Lead Questions", href: "/admin/lead-questions" },
+  { name: "Knowledge Base", href: "/admin/knowledge-base" },
+  { name: "Captured Leads", href: "/admin/leads" },
+  { name: "Notifications", href: "/admin/notifications" }, // New addition
+];
+```
+
+---
+
+## 10. Data Flows & User Journeys
+
+### 10.1. Realtime Voice Call Journey
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

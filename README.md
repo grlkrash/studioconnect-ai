@@ -33,6 +33,13 @@ The AI Agent Assistant for SMBs is a comprehensive **Advanced Voice-Enabled Mult
 - **⚡ Essential Question Flagging**: Streamlined emergency flows with `isEssentialForEmergency` question filtering
 - **🎯 Priority Routing**: Automatic priority assignment and intelligent routing based on urgency
 
+### 🔔 Advanced Notification Management
+- **📧 Email Notifications**: Configurable email alerts for all captured leads with detailed information
+- **📞 Emergency Phone Calls**: Automated voice calls for urgent/emergency situations
+- **⚙️ Easy Configuration**: User-friendly admin panel to set notification preferences
+- **🧪 Test Functionality**: Built-in email testing to verify SendGrid configuration
+- **✅ Smart Validation**: Email format and phone number validation with international support
+
 ### 📈 Production-Ready Infrastructure
 - **📊 Health Monitoring Dashboard**: Comprehensive system health tracking with detailed component metrics
 - **🧹 Automated Cleanup**: Memory optimization with configurable limits and automated resource management
@@ -135,6 +142,10 @@ TWILIO_ACCOUNT_SID="AC_your_account_sid"
 TWILIO_AUTH_TOKEN="your_auth_token"
 TWILIO_WEBHOOK_BASE_URL="https://your-domain.com"
 
+# Email Notifications (SendGrid)
+SENDGRID_API_KEY="SG.your-sendgrid-api-key"
+FROM_EMAIL="noreply@your-domain.com"
+
 # JWT Configuration
 JWT_SECRET="your-super-secret-jwt-key"
 ```
@@ -156,6 +167,7 @@ npm run dev
 
 ### 4. Access the Application
 - **Admin Dashboard**: http://localhost:3000/admin
+- **Notification Settings**: http://localhost:3000/admin/notifications
 - **Chat Widget Demo**: http://localhost:3000/demo
 - **Health Monitoring**: http://localhost:3000/health
 - **WebSocket Server**: ws://localhost:3000/ (for Twilio Media Streams)
@@ -206,6 +218,38 @@ const session = await voiceSessionService.getVoiceSession(callSid);
 // Comprehensive session analytics
 const analytics = await voiceSessionService.getSessionAnalytics(sessionId);
 // Returns: duration, intents, entities, voice actions, completion status
+```
+
+### 🔔 Notification Configuration
+
+**Admin Panel Setup:**
+```bash
+# Navigate to notification settings
+http://localhost:3000/admin/notifications
+```
+
+**Configure Notifications:**
+1. Set **Notification Email** for all lead alerts
+2. Set **Emergency Phone Number** for urgent situations only
+3. Test your configuration with the built-in test functionality
+
+**API Endpoints:**
+```typescript
+// Get current notification settings
+GET /api/admin/business/notifications
+
+// Update notification settings
+PUT /api/admin/business/notifications
+{
+  "notificationEmail": "alerts@business.com",
+  "notificationPhoneNumber": "+1-555-123-4567"
+}
+
+// Test email configuration
+POST /api/admin/test-sendgrid
+{
+  "testEmail": "test@example.com"
+}
 ```
 
 ### ❤️ Health Monitoring
@@ -385,6 +429,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **🎯 Voice Activity Detection**: Server-side VAD with intelligent interruption handling
 - **📊 Enhanced Session Management**: Real-time session tracking with WebSocket monitoring
 - **🧠 Dynamic Greetings**: Context-aware business greetings with automatic AI delivery
+- **🔔 Notification Management System**: Complete admin panel for email and phone notification configuration
 
 ### 🚀 Performance Improvements
 - **Latency**: 70% reduction in voice response time with WebSocket streaming
