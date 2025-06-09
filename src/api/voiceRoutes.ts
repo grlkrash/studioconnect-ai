@@ -947,6 +947,9 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
       url: streamUrl
     })
     
+    // Add pause to keep the call alive indefinitely while WebSocket handles conversation
+    response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
+    
     res.type('text/xml')
     res.send(response.toString())
     
