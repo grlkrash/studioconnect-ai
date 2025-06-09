@@ -941,19 +941,23 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
       throw new Error('HOSTNAME environment variable is required for WebSocket streaming')
     }
     
+    // Extract CallSid from request body
+    const callSid = req.body.CallSid
+    
     // Create VoiceResponse for bidirectional media streaming
     const response = new VoiceResponse()
     const connect = response.connect()
     
-    // Create stream connection to WebSocket server
+    // Create stream connection to WebSocket server with CallSid as query parameter
+    const streamUrl = `wss://${process.env.HOSTNAME}/?CallSid=${callSid}`
     connect.stream({
-      url: `wss://${process.env.HOSTNAME}/`
+      url: streamUrl
     })
     
     // Add pause to keep the call active - this is crucial for WebSocket handling
     response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
     
-    console.log('[VOICE STREAM] Connecting to WebSocket URL:', `wss://${process.env.HOSTNAME}/`)
+    console.log('[VOICE STREAM] Connecting to WebSocket URL:', streamUrl)
     
     // Debug: Log the generated TwiML
     const twimlString = response.toString()
