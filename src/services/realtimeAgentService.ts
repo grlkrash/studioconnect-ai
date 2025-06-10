@@ -446,6 +446,13 @@ export class RealtimeAgentService {
         return;
       }
 
+      // Define supported voices and validate
+      const supportedVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
+      const configuredVoice = (business.agentConfig.openaiVoice || 'alloy').toLowerCase();
+      const voice = supportedVoices.includes(configuredVoice) ? configuredVoice : 'alloy';
+
+      console.log(`[DEBUG] Using OpenAI voice: ${voice}`);
+
       const sessionConfig = {
         type: 'session.update',
         session: {
@@ -453,7 +460,7 @@ export class RealtimeAgentService {
           temperature: 0.7,
           modalities: ['text', 'audio'],
           instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
-          voice: business.agentConfig.openaiVoice || 'alloy',
+          voice: voice,
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: {
