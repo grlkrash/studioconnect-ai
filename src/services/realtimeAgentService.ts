@@ -429,10 +429,12 @@ export class RealtimeAgentService {
     const sessionConfig = {
       type: 'session.update',
       session: {
+        model: 'gpt-4o-realtime-preview-2024-10-01',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: {
-          model: 'whisper-1'
+          model: 'whisper-1',
+          language: 'en'
         },
         turn_detection: {
           type: 'server_vad',
@@ -444,7 +446,8 @@ export class RealtimeAgentService {
           audio: {
             enabled: true,
             format: 'g711_ulaw',
-            voice: 'alloy'
+            voice: 'alloy',
+            model: 'tts-1'
           }
         },
         instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.'
