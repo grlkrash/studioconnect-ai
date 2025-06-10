@@ -21,6 +21,7 @@ interface ConnectionState {
   businessId: string | null;
   leadCaptureTriggered: boolean;
   hasCollectedLeadInfo: boolean;
+  isCallActive: boolean;
 }
 
 /**
@@ -56,6 +57,7 @@ export class RealtimeAgentService {
       businessId: null,
       leadCaptureTriggered: false,
       hasCollectedLeadInfo: false,
+      isCallActive: false,
     };
 
     // Set up Twilio WebSocket listeners immediately
@@ -165,121 +167,96 @@ export class RealtimeAgentService {
     this.setupOpenAIListeners();
   }
 
-  private setupOpenAIListeners() {
+  private setupOpenAIListeners(): void {
     if (!this.openAiWs) return;
 
-    this.openAiWs.on('open', async () => {
-      console.log(`[RealtimeAgent] OpenAI connection opened for ${this.callSid}. Configuring session.`);
-      await this.configureOpenAiSession();
-    });
-
-    this.openAiWs.on('message', (message: WebSocket.RawData) => {
+    this.openAiWs.on('message', (data: Buffer) => {
+      const message = data.toString();
       try {
-        const response = JSON.parse(message.toString());
-        
-        console.log(`[RealtimeAgent] Received OpenAI event: ${response.type} for call ${this.callSid}`);
-        
+        const response = JSON.parse(message);
+
+        // Uncomment the line below for verbose, real-time event logging
+        // console.log(`[RealtimeAgent] Received OpenAI event: ${response.type} for call ${this.callSid}`);
+
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
             this.state.isAiReady = true;
-            this.triggerGreeting();
+            this.state.isCallActive = true;
+            break;
+
+          case 'session.error':
+            console.error(`[RealtimeAgent] OpenAI Session Error for call ${this.callSid}:`, response.error);
+            this.cleanup('OpenAI');
             break;
             
           case 'response.audio.delta':
-            console.log(`[RealtimeAgent] Received audio chunk from OpenAI for call ${this.callSid}`);
-            if (response.delta) {
-              this.handleOpenAiAudio(response.delta);
-            }
-            break;
-            
-          case 'response.audio.done':
-            console.log(`[RealtimeAgent] OpenAI audio response completed for call ${this.callSid}`);
+            this.handleOpenAiAudio(response.delta);
             break;
 
-          case 'response.audio_transcript.done':
-            // Track AI's response transcript
-            if (response.transcript) {
-              this.addToConversationHistory('assistant', response.transcript);
-              console.log(`[RealtimeAgent] AI response transcript: ${response.transcript}`);
+          case 'conversation.item.created':
+            // Log assistant responses to the console for monitoring
+            if (response.item?.role === 'assistant' && response.item?.content?.[0]?.text) {
+              const transcript = response.item.content[0].text;
+              console.log(`[RealtimeAgent] AI says: "${transcript}" (Call: ${this.callSid})`);
+              this.addToConversationHistory('assistant', transcript);
             }
             break;
 
           case 'conversation.item.input_audio_transcription.completed':
-            // Track user's input transcript
-            if (response.transcript) {
-              this.addToConversationHistory('user', response.transcript);
-              console.log(`[RealtimeAgent] User input transcript: ${response.transcript}`);
-              
-              // Analyze for lead capture opportunity
-              this.analyzeForLeadCapture().catch(error => {
-                console.error(`[RealtimeAgent] Error analyzing for lead capture:`, error);
-              });
-            }
-            break;
-            
-          case 'input_audio_buffer.speech_started':
-            console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
-            // Only interrupt if there's actually an active response
-            if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-              try {
-                this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
-              } catch (error) {
-                // Ignore cancel errors - they're expected if no response is active
-                console.log(`[RealtimeAgent] Response cancel ignored (expected if no active response) for call ${this.callSid}`);
-              }
+            if (response.item?.transcript) {
+                const userTranscript = response.item.transcript;
+                console.log(`[RealtimeAgent] User says: "${userTranscript}" (Call: ${this.callSid})`);
+                this.addToConversationHistory('user', userTranscript);
             }
             break;
             
           case 'input_audio_buffer.speech_stopped':
             console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
-            // Add a small delay before committing to ensure we have sufficient audio
+            // With auto response creation, we only need to commit the audio buffer.
             setTimeout(() => {
               if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
                 try {
                   this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                  this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
                 } catch (error) {
                   console.log(`[RealtimeAgent] Audio commit ignored (buffer may be empty) for call ${this.callSid}`);
                 }
               }
-            }, 100); // Small delay to ensure audio buffer has content
+            }, 100);
             break;
             
           case 'error':
-            // Filter out expected errors that are part of normal operation
-            if (response.error?.code === 'input_audio_buffer_commit_empty' || 
-                response.error?.code === 'response_cancel_not_active' ||
-                response.error?.code === 'conversation_already_has_active_response') {
-              console.log(`[RealtimeAgent] Expected OpenAI operational message for call ${this.callSid}: ${response.error.code}`);
-            } else {
-              console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}:`, response.error);
-            }
+            // Log operational errors from OpenAI that don't terminate the session
+            console.log(`[RealtimeAgent] Expected OpenAI operational message for call ${this.callSid}: ${response.message}`);
             break;
-            
-          default:
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`[RealtimeAgent] Unhandled OpenAI event for call ${this.callSid}: ${response.type}`);
-            }
         }
       } catch (error) {
         console.error(`[RealtimeAgent] Error parsing OpenAI message for call ${this.callSid}:`, error);
       }
     });
 
-    this.openAiWs.on('close', () => this.cleanup('OpenAI'));
-    this.openAiWs.on('error', (error) => {
-      console.error(`[RealtimeAgent] OpenAI WebSocket error for ${this.callSid}:`, error);
-      this.cleanup('OpenAI');
+    this.openAiWs.on('close', (code: number, reason: Buffer) => {
+      console.log(`[RealtimeAgent] OpenAI WebSocket closed for call ${this.callSid}. Code: ${code}, Reason: ${reason.toString()}`);
+      this.cleanup();
+    });
+
+    this.openAiWs.on('error', (error: Error) => {
+      console.error(`[RealtimeAgent] OpenAI WebSocket error for call ${this.callSid}:`, error);
+      this.cleanup();
     });
   }
 
   private async configureOpenAiSession(): Promise<void> {
-    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) return;
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
+      console.log('[RealtimeAgent] OpenAI WebSocket not ready for session configuration.');
+      return;
+    }
 
-    let businessInstructions = 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.';
-    
-    // Try to get business-specific instructions
+    console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
+
+    let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
+    let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?'; // Default welcome
+
     try {
       const callDetails = await twilioClient.calls(this.callSid).fetch();
       const toPhoneNumber = callDetails.to;
@@ -295,15 +272,24 @@ export class RealtimeAgentService {
         });
         
         if (business) {
-          // Store business ID for lead creation
           this.state.businessId = business.id;
           console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
+
+          if (business.agentConfig?.voiceGreetingMessage?.trim()) {
+            welcomeMessage = business.agentConfig.voiceGreetingMessage;
+          } else if (business.agentConfig?.welcomeMessage?.trim()) {
+            welcomeMessage = business.agentConfig.welcomeMessage;
+          }
+          welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
           
-          // Build comprehensive business-specific instructions
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
           
           businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
+
+START THE CONVERSATION BY SAYING: "${welcomeMessage}"
+
+AFTER the greeting, listen to the user and respond accordingly.
 
 🚨 EMERGENCY DETECTION PROTOCOL:
 FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water damage):
@@ -326,9 +312,7 @@ CRITICAL RULES:
 📚 KNOWLEDGE BOUNDARIES: Only use information explicitly provided. NEVER invent details.
 🚫 FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
 💬 VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
-🔄 CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for clear user input. Do NOT continue asking questions or making statements if the user hasn't responded clearly to your previous question.
-
-EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat, no hot water, electrical issue, gas smell, water damage, basement flooding, pipe burst, toilet overflowing.`;
+🔄 CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for a clear user input. Do NOT continue asking questions if the user hasn't responded clearly.`;
         }
       }
     } catch (error) {
@@ -343,14 +327,15 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
         voice: 'alloy',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
-        input_audio_transcription: {
-          model: 'whisper-1'
-        },
+        input_audio_transcription: { model: 'whisper-1' },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.6,           // Slightly more sensitive to reduce double responses
-          prefix_padding_ms: 300,   // Reduced padding
-          silence_duration_ms: 1800 // Shorter silence duration to be more responsive
+          threshold: 0.8,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 2200
+        },
+        response_creation: {
+          type: 'auto'
         }
       }
     };
@@ -359,76 +344,6 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
     console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
   }
 
-  private async triggerGreeting() {
-    console.log(`[RealtimeAgent] Checking readiness to trigger greeting for ${this.callSid}.`);
-    
-    if (this.state.isAiReady && this.state.isTwilioReady) {
-      console.log(`[RealtimeAgent] System is ready. Triggering greeting.`);
-      
-      try {
-        // Fetch call details and business configuration
-        const callDetails = await twilioClient.calls(this.callSid).fetch();
-        const toPhoneNumber = callDetails.to;
-        
-        let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
-        let businessName = '';
-        
-        if (toPhoneNumber) {
-          const business = await prisma.business.findFirst({
-            where: { twilioPhoneNumber: toPhoneNumber }
-          });
-          
-          if (business) {
-            businessName = business.name;
-            const agentConfig = await prisma.agentConfig.findUnique({
-              where: { businessId: business.id }
-            });
-            
-            if (agentConfig?.voiceGreetingMessage?.trim()) {
-              welcomeMessage = agentConfig.voiceGreetingMessage;
-            } else if (agentConfig?.welcomeMessage?.trim()) {
-              welcomeMessage = agentConfig.welcomeMessage;
-            }
-            
-            // Replace {businessName} template variable if present
-            welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, businessName);
-          }
-        }
-        
-        // Send text event to OpenAI to make the agent speak the welcome message
-        if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-          const textEvent = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'assistant',
-              content: [
-                {
-                  type: 'text',
-                  text: welcomeMessage
-                }
-              ]
-            }
-          };
-          
-          this.openAiWs.send(JSON.stringify(textEvent));
-          
-          setTimeout(() => {
-            if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-              this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-            }
-          }, 100);
-          
-          console.log(`[RealtimeAgent] Greeting triggered for call ${this.callSid}: "${welcomeMessage}"`);
-        }
-      } catch (error) {
-        console.error(`[RealtimeAgent] Error triggering greeting for call ${this.callSid}:`, error);
-      }
-    } else {
-      console.log(`[RealtimeAgent] Not ready to trigger greeting. AI: ${this.state.isAiReady}, Twilio: ${this.state.isTwilioReady}`);
-    }
-  }
-  
   private handleOpenAiAudio(audioB64: string) {
     // Add audio to queue for processing
     this.state.audioQueue.push(audioB64);
@@ -760,6 +675,7 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
       businessId: null,
       leadCaptureTriggered: false,
       hasCollectedLeadInfo: false,
+      isCallActive: false,
     };
   }
 
