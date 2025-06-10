@@ -446,3 +446,18 @@ export async function sendLeadConfirmationToCustomer(
       </body>
       </html>
     `
+
+    // Send the email
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: customerEmail,
+      subject: `Thank You for Contacting ${businessName}`,
+      html: htmlContent
+    })
+
+    console.log(`Confirmation email sent successfully to ${customerEmail}`)
+  } catch (error) {
+    console.error('Failed to send customer confirmation email:', error)
+    throw error
+  }
+}
