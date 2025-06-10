@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
+import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from './notificationService';
 
 const prisma = new PrismaClient();
 
@@ -263,7 +264,6 @@ export class RealtimeAgentService {
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
-            // Don't set isAiReady or trigger greeting here - wait for session.updated
             break;
 
           case 'session.updated':
@@ -298,17 +298,40 @@ export class RealtimeAgentService {
             }
             break;
             
+          case 'input_audio_buffer.speech_started':
+            console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
+            // Add a small delay to check if it's just noise
+            setTimeout(() => {
+              if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+                // Only cancel if we're still receiving speech
+                if (response.is_speaking) {
+                  console.log(`[RealtimeAgent] User is clearly speaking - canceling AI response for call ${this.callSid}`);
+                  this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+                } else {
+                  console.log(`[RealtimeAgent] Brief noise detected - continuing AI response for call ${this.callSid}`);
+                }
+              }
+            }, 300); // 300ms delay to check if it's just noise
+            break;
+            
           case 'input_audio_buffer.speech_stopped':
             console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
+            // Add a small delay before committing to ensure the user has truly finished
             setTimeout(() => {
               if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
                 try {
                   this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                  // Add a small delay before creating response to ensure smooth transition
+                  setTimeout(() => {
+                    if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+                      this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+                    }
+                  }, 100);
                 } catch (error) {
                   console.log(`[RealtimeAgent] Audio commit ignored (buffer may be empty) for call ${this.callSid}`);
                 }
               }
-            }, 100);
+            }, 500); // 500ms delay to ensure user has finished speaking
             break;
             
           case 'error':
@@ -345,7 +368,34 @@ export class RealtimeAgentService {
 
     console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
 
-    let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
+    let businessInstructions = `You are a voice AI receptionist for ${businessName}. Your single most important goal is to follow the script and rules below precisely. The conversation is happening live on a phone call.
+
+**--- SCRIPT & FLOW CONTROL ---**
+
+Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
+
+**LEAD CAPTURE SCRIPT:**
+${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
+
+**COMPLETION MESSAGE (Say this only after the last question is answered):**
+"Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
+
+**--- CRITICAL CONVERSATION RULES ---**
+
+1.  **EMERGENCY DETECTION:** This is your top priority. If the user mentions words like **"flooding," "burst pipe," "gas leak," "no heat," "fire,"** or any other urgent situation, you must immediately acknowledge the specific emergency. For example, if they say "my basement is flooding," you must respond with, "I understand this is an emergency with a flooding basement," before continuing the script.
+
+2.  **MANDATORY CONFIRMATION:** To ensure accuracy, you MUST repeat back critical information after the user provides it. This includes names, phone numbers, and email addresses. For example: "Okay, I have the name as Jane. Is that correct?"
+
+3.  **TURN-TAKING & INTERRUPTIONS:** You are speaking with a human on a potentially noisy line.
+    * **Do Not Interrupt:** Wait for the user to completely finish their thought before you speak.
+    * **Handling Self-Interruption:** If you think you hear the user start to speak while you are talking, pause for a fraction of a second. If it's just a brief noise, continue and finish your sentence. Do not cut yourself off unless the user is clearly and intentionally speaking over you.
+
+4.  **SOUNDING NATURAL (SSML):** To avoid sounding robotic, you must use SSML \`<break>\` tags to add pauses to your speech.
+    * Use \`<break time="300ms"/>\` after short acknowledgments.
+    * Use \`<break time="600ms"/>\` after asking a question, to give the user a moment to think.
+    * Example: "Okay, got it.<break time="300ms"/> And what is the best phone number for you?<break time="600ms"/>"
+
+5.  **STICK TO THE SCRIPT:** Do not add personal opinions, chit-chat, or ask questions that are not on the script. Your only job is to execute the lead capture script flawlessly.`;
     let openaiVoice = 'alloy'; // Default voice - lowercase as per API spec
     let openaiModel = 'tts-1'; // Default TTS model
 
@@ -384,33 +434,34 @@ export class RealtimeAgentService {
           const questions = business.agentConfig?.questions || [];
           const welcomeMessage = await this.getWelcomeMessage(business.id);
           
-          businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
+          businessInstructions = `You are a voice AI receptionist for ${businessName}. Your single most important goal is to follow the script and rules below precisely. The conversation is happening live on a phone call.
 
-AFTER the initial greeting, listen to the user and respond accordingly.
+**--- SCRIPT & FLOW CONTROL ---**
 
-EMERGENCY DETECTION PROTOCOL:
-FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water damage):
-- If EMERGENCY detected: Immediately say "I understand this is an emergency situation. I can connect you directly to our team right now, or quickly gather your details so they can respond immediately. What would you prefer?"
-- If they choose "connect now": Say "Absolutely! I'm connecting you to our emergency line right now. Please hold while I transfer your call."
-- If they choose "gather details": Ask these EMERGENCY questions ONLY: 
-  1) "What's your exact address or location?" 
-  2) After they provide the address, ALWAYS confirm it by repeating it back and asking "Is that correct?" 
-  3) If they say no or correct it, ask them to repeat the correct address and confirm again
-  4) Only proceed to next question after address is confirmed
-  5) "What's your name?" 
-  6) "What's your phone number?" 
-  7) "Can you describe the emergency situation in detail?"
+Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
 
-NORMAL LEAD CAPTURE: For non-emergency situations, ask questions one at a time:
+**LEAD CAPTURE SCRIPT:**
 ${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
 
-CRITICAL RULES:
-BUSINESS IDENTITY: You work EXCLUSIVELY for ${businessName}. NEVER suggest competitors.
-CONFIRMATION: After capturing critical information (like a name, phone number, or email), ALWAYS repeat it back to the user to confirm accuracy. For example: "Okay, I have the name as James. Is that correct?" or "So that's an email of J-A-M-E-S at example dot com. Did I get that right?"
-KNOWLEDGE BOUNDARIES: Only use information explicitly provided. NEVER invent details.
-FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
-VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
-CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for a clear user input. Do NOT continue asking questions if the user hasn't responded clearly.`;
+**COMPLETION MESSAGE (Say this only after the last question is answered):**
+"Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
+
+**--- CRITICAL CONVERSATION RULES ---**
+
+1.  **EMERGENCY DETECTION:** This is your top priority. If the user mentions words like **"flooding," "burst pipe," "gas leak," "no heat," "fire,"** or any other urgent situation, you must immediately acknowledge the specific emergency. For example, if they say "my basement is flooding," you must respond with, "I understand this is an emergency with a flooding basement," before continuing the script.
+
+2.  **MANDATORY CONFIRMATION:** To ensure accuracy, you MUST repeat back critical information after the user provides it. This includes names, phone numbers, and email addresses. For example: "Okay, I have the name as Jane. Is that correct?"
+
+3.  **TURN-TAKING & INTERRUPTIONS:** You are speaking with a human on a potentially noisy line.
+    * **Do Not Interrupt:** Wait for the user to completely finish their thought before you speak.
+    * **Handling Self-Interruption:** If you think you hear the user start to speak while you are talking, pause for a fraction of a second. If it's just a brief noise, continue and finish your sentence. Do not cut yourself off unless the user is clearly and intentionally speaking over you.
+
+4.  **SOUNDING NATURAL (SSML):** To avoid sounding robotic, you must use SSML \`<break>\` tags to add pauses to your speech.
+    * Use \`<break time="300ms"/>\` after short acknowledgments.
+    * Use \`<break time="600ms"/>\` after asking a question, to give the user a moment to think.
+    * Example: "Okay, got it.<break time="300ms"/> And what is the best phone number for you?<break time="600ms"/>"
+
+5.  **STICK TO THE SCRIPT:** Do not add personal opinions, chit-chat, or ask questions that are not on the script. Your only job is to execute the lead capture script flawlessly.`;
         }
       }
     } catch (error) {
@@ -431,9 +482,10 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 800
+          threshold: 0.6,
+          prefix_padding_ms: 500,
+          silence_duration_ms: 1000,
+          min_speech_duration_ms: 300
         }
       }
     };
@@ -771,10 +823,6 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         console.error(`[RealtimeAgent] Business not found for ID: ${this.state.businessId}`);
         return;
       }
-
-      // Import notification functions
-      const { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } = 
-        await import('../services/notificationService');
 
       // Send email notification to business
       if (business.notificationEmail) {
