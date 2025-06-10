@@ -100,4 +100,8 @@ export class TwilioWebSocketServer {
     this.wss.close();
     this.log('Server closed.');
   }
+
+  public getActiveConnectionCount(): number {
+    return this.activeConnections.size;
+  }
 } 
