@@ -1,12 +1,18 @@
-import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocket } from 'ws';
 import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from './notificationService';
+import OpenAI from 'openai';
+import { generateSpeechFromText } from './openai';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
 const prisma = new PrismaClient();
+const openai = new OpenAI();
 
 // Initialize Twilio REST client for fetching call details
 const twilioClient = twilio(
@@ -43,27 +49,113 @@ interface Question {
   order: number;
 }
 
+// Types
+interface AgentState {
+  callSid: string;
+  businessId: string;
+  conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>;
+  currentFlow: string | null;
+  isProcessing: boolean;
+  lastActivity: number;
+  metadata: {
+    callerNumber: string;
+    twilioCallSid: string;
+    voiceSettings: {
+      voice: string;
+      language: string;
+    };
+  };
+}
+
+interface AgentConfig {
+  useOpenaiTts: boolean;
+  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+  openaiModel: 'tts-1' | 'tts-1-hd';
+  welcomeMessage: string;
+  voiceGreetingMessage: string;
+}
+
+// Constants
+const MAX_CONVERSATION_HISTORY = 50;
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
+
+// State management
+const activeAgents = new Map<string, AgentState>();
+let cleanupInterval: NodeJS.Timeout;
+
+// Initialize cleanup interval
+function startCleanupInterval() {
+  if (cleanupInterval) clearInterval(cleanupInterval);
+  
+  cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    for (const [callSid, state] of activeAgents.entries()) {
+      if (now - state.lastActivity > SESSION_TIMEOUT_MS) {
+        activeAgents.delete(callSid);
+        cleanedCount++;
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`[Agent Cleanup] Removed ${cleanedCount} inactive sessions`);
+    }
+    
+    // Memory check
+    const memoryUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+    
+    if (heapUsedMB > MAX_MEMORY_USAGE_MB) {
+      console.warn(`[Memory Alert] High memory usage: ${heapUsedMB}MB > ${MAX_MEMORY_USAGE_MB}MB threshold`);
+    }
+  }, CLEANUP_INTERVAL_MS);
+}
+
+// Start cleanup on module load
+startCleanupInterval();
+
+// Helper functions
+function logMemoryUsage(context: string) {
+  const usage = process.memoryUsage();
+  const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
+  
+  console.log(`[Memory ${context}] RSS: ${formatBytes(usage.rss)}MB, Heap Used: ${formatBytes(usage.heapUsed)}MB`);
+}
+
+async function cleanupTempFile(filePath: string) {
+  try {
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+      console.log(`[File Cleanup] Deleted temp file: ${filePath}`);
+    }
+  } catch (error) {
+    console.error(`[File Cleanup] Error deleting temp file ${filePath}:`, error);
+  }
+}
+
 /**
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
  * Handles real-time bidirectional voice conversations with lead capture integration
  */
 export class RealtimeAgentService {
-  private twilioWs: WebSocket | null = null;
-  private openAiWs: WebSocket | null = null;
-  private callSid: string = '';
+  private static instance: RealtimeAgentService;
+  private ws: WebSocket | null = null;
   private state: ConnectionState;
   private readonly openaiApiKey: string;
   public onCallSidReceived?: (callSid: string) => void;
   private conversationSummary: string = '';
   private currentQuestionIndex: number = 0;
-  private leadCaptureQuestions: any[] = [];
+  private leadCaptureQuestions: Question[] = [];
 
-  constructor(twilioWs: WebSocket) {
-    // CallSid will be extracted from Twilio start message parameters (more reliable than URL)
-    this.twilioWs = twilioWs;
+  private constructor() {
+    console.log('[DEBUG] 0. Initializing RealtimeAgentService...');
     this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
     if (!this.openaiApiKey) {
+      console.error('[DEBUG] FATAL: OPENAI_API_KEY is missing');
       throw new Error('OPENAI_API_KEY is required for RealtimeAgentService');
     }
 
@@ -82,1064 +174,478 @@ export class RealtimeAgentService {
       isCleaningUp: false,
     };
 
-    // Set up Twilio WebSocket listeners immediately
     this.setupTwilioListeners();
-    
-    console.log('[RealtimeAgent] Service initialized - waiting for CallSid from start message');
+    console.log('[DEBUG] 0a. RealtimeAgentService initialization complete.');
+  }
+
+  static getInstance(): RealtimeAgentService {
+    if (!RealtimeAgentService.instance) {
+      RealtimeAgentService.instance = new RealtimeAgentService();
+    }
+    return RealtimeAgentService.instance;
   }
 
   /**
    * Establishes bidirectional audio bridge between Twilio and OpenAI
    */
-  public async connect(twilioWs: WebSocket): Promise<void> {
-    try {
-      this.twilioWs = twilioWs;
-      console.log(`[RealtimeAgent] Connection initiated for call ${this.callSid}`);
-      
-      // Set up Twilio WebSocket listeners - connection to OpenAI will be triggered by 'start' event
-      this.setupTwilioListeners();
-    } catch (error) {
-      console.error('[RealtimeAgent] Error in connect:', error);
-      throw error;
-    }
+  public async connect(ws: WebSocket): Promise<void> {
+    console.log('[DEBUG] 1. Connecting to Twilio WebSocket...');
+    this.ws = ws;
+    this.setupTwilioListeners();
+    console.log('[DEBUG] 1a. Twilio WebSocket connection setup complete.');
   }
 
-  private setupTwilioListeners() {
-    if (!this.twilioWs) {
-      console.error(`[RealtimeAgent] Cannot setup Twilio listeners: WebSocket is null for call ${this.callSid}`);
+  private setupTwilioListeners(): void {
+    console.log('[DEBUG] 2. Setting up Twilio listeners...');
+    if (!this.ws) {
+      console.error('[DEBUG] Twilio WebSocket not initialized');
       return;
     }
 
-    console.log(`[RealtimeAgent] Setting up Twilio listeners for call ${this.callSid}. Current WebSocket state: ${this.twilioWs.readyState}`);
-
-    // Add ping interval to keep connection alive
     const pingInterval = setInterval(() => {
-      if (this.twilioWs?.readyState === WebSocket.OPEN) {
-        this.twilioWs.ping();
-      } else {
-        clearInterval(pingInterval);
+      if (this.ws?.readyState === 1) {
+        this.ws.ping();
       }
     }, 30000);
 
-    this.twilioWs.on('message', async (message: Buffer) => {
-      await this.handleTwilioMessage(message);
-    });
-
-    this.twilioWs.on('close', (code: number, reason: Buffer) => {
+    this.ws.on('close', (code: number, reason: Buffer) => {
+      console.log(`[DEBUG] Twilio WebSocket closed. Code: ${code}, Reason: ${reason.toString()}`);
       clearInterval(pingInterval);
-      console.log(`[RealtimeAgent] Twilio WebSocket closed for call ${this.callSid}. Code: ${code}, Reason: ${reason.toString()}`);
       this.cleanup('Twilio');
     });
 
-    this.twilioWs.on('error', (error: Error) => {
+    this.ws.on('error', (error: Error) => {
+      console.error('[DEBUG] Twilio WebSocket error:', error);
       clearInterval(pingInterval);
-      console.error(`[RealtimeAgent] Twilio WebSocket error for call ${this.callSid}:`, error);
       this.cleanup('Twilio');
     });
 
-    this.twilioWs.on('pong', () => {
-      console.log(`[RealtimeAgent] Received pong from Twilio for call ${this.callSid}`);
+    this.ws.on('pong', () => {
+      console.log('[DEBUG] Received pong from Twilio');
     });
-  }
 
-  private async handleTwilioMessage(message: Buffer) {
-    try {
-      const msg = JSON.parse(message.toString());
-      console.log(`[RealtimeAgent] Received Twilio message:`, msg);
-      
-      if (msg.event === "connected") {
-        console.log(`[RealtimeAgent] Twilio stream connected for call ${this.callSid}`);
-      } else if (msg.event === "start") {
-        // Extract CallSid from start message (correct location)
-        this.callSid = msg.start.callSid;
-        
-        if (!this.callSid) {
-          console.error('[RealtimeAgent] CallSid not found in start message');
-          this.cleanup('Twilio');
-          return;
-        }
-        
-        console.log(`[RealtimeAgent] CallSid received from start message: ${this.callSid}`);
-        
-        // Notify WebSocket server that we have the CallSid
-        if (this.onCallSidReceived) {
-          this.onCallSidReceived(this.callSid);
-        }
-        
-        this.state.streamSid = msg.start.streamSid;
-        this.state.isTwilioReady = true;
-        console.log(`[RealtimeAgent] Twilio stream started for call ${this.callSid}. streamSid: ${this.state.streamSid}`);
+    this.ws.on('message', async (message: Buffer) => {
+      try {
+        const data = JSON.parse(message.toString());
+        console.log('[DEBUG] 3. Received Twilio message:', data.event);
 
-        // Fetch call details from Twilio API
-        try {
-          const call = await twilioClient.calls(this.callSid).fetch();
-          console.log(`[RealtimeAgent] Fetched call details via Twilio API for ${this.callSid}. To: ${call.to}, From: ${call.from}`);
-          
-          // Look up business by phone number
-          const business = await prisma.business.findFirst({
-            where: { twilioPhoneNumber: call.to },
-            include: {
-              agentConfig: {
-                include: { questions: { orderBy: { order: 'asc' } } }
-              }
-            }
-          });
-          
-          if (business) {
-            this.state.businessId = business.id;
-            console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
-          } else {
-            console.warn(`[RealtimeAgent] No business found for phone number ${call.to}`);
+        if (data.event === 'start') {
+          console.log('[DEBUG] 3a. Processing start event...');
+          const callSid = data.start?.callSid;
+          this.state.streamSid = data.start?.streamSid;
+          this.state.isTwilioReady = true;
+
+          if (this.onCallSidReceived) {
+            this.onCallSidReceived(callSid);
           }
-        } catch (error) {
-          console.error(`[RealtimeAgent] Failed to fetch call details from Twilio API for ${this.callSid}:`, error);
-          this.cleanup('Other');
-          return;
-        }
 
-        // Now that we have streamSid and business info, we can safely connect to OpenAI
-        this.connectToOpenAI();
-      } else if (msg.event === "media") {
-        // Forward audio from Twilio to OpenAI
-        if (this.openAiWs?.readyState === WebSocket.OPEN) {
-          const audioAppend = {
-            type: 'input_audio_buffer.append',
-            audio: msg.media.payload
-          };
-          this.openAiWs.send(JSON.stringify(audioAppend));
+          if (!callSid) {
+            console.error('[RealtimeAgent] CallSid not found in start message');
+            this.cleanup('Twilio');
+            return;
+          }
+
+          try {
+            const callDetails = await twilioClient.calls(callSid).fetch();
+            const toPhoneNumber = callDetails.to;
+            console.log('[DEBUG] 3b. Call details fetched:', { toPhoneNumber });
+
+            const business = await prisma.business.findUnique({
+              where: { twilioPhoneNumber: toPhoneNumber }
+            });
+
+            if (business) {
+              console.log('[DEBUG] 3c. Business found:', business.id);
+              this.state.businessId = business.id;
+              this.state.isCallActive = true;
+              this.connectToOpenAI();
+            } else {
+              console.error('[DEBUG] Business not found for phone number:', toPhoneNumber);
+              this.cleanup('Other');
+            }
+          } catch (error) {
+            console.error(`[RealtimeAgent] Failed to fetch call details from Twilio API for ${callSid}:`, error);
+            this.cleanup('Other');
+            return;
+          }
+        } else if (data.event === 'media') {
+          console.log('[DEBUG] 3d. Processing media event...');
+          if (this.ws?.readyState === 1) {
+            const audioAppend = {
+              type: 'input_audio_buffer.append',
+              audio: data.media.payload
+            };
+            this.ws.send(JSON.stringify(audioAppend));
+            console.log('[DEBUG] 3e. Audio forwarded to OpenAI');
+          }
+
+          if (this.ws?.readyState === 1 && this.state.streamSid) {
+            const markMessage = {
+              event: 'mark',
+              streamSid: this.state.streamSid,
+              mark: { name: `audio_processed_${Date.now()}` }
+            };
+            this.ws.send(JSON.stringify(markMessage));
+          }
         }
-        
-        // Send mark message back to Twilio to keep audio stream alive
-        if (this.state.streamSid && this.twilioWs) {
-          const markMsg = {
-            event: "mark", 
-            streamSid: this.state.streamSid,
-            mark: { name: `forwarded_to_openai_${Date.now()}` }
-          };
-          this.twilioWs.send(JSON.stringify(markMsg));
-        }
-      } else if (msg.event === "stop") {
-        console.log(`[RealtimeAgent] Twilio stream stopped for call: ${this.callSid}`);
-        this.cleanup('Twilio');
+      } catch (error) {
+        console.error('[DEBUG] Error processing Twilio message:', error);
       }
-    } catch (error) {
-      console.error('[RealtimeAgent] Error handling Twilio message:', error);
-    }
+    });
+
+    console.log('[DEBUG] 2a. Twilio listeners setup complete.');
   }
 
-  private connectToOpenAI() {
-    console.log(`[RealtimeAgent] Connecting to OpenAI Realtime API for call: ${this.callSid}`);
-    
+  private connectToOpenAI(): void {
+    console.log('[DEBUG] 4. Connecting to OpenAI...');
     const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
     const headers = {
       'Authorization': `Bearer ${this.openaiApiKey}`,
       'OpenAI-Beta': 'realtime=v1'
     };
 
-    console.log(`[RealtimeAgent] OpenAI WebSocket URL: ${url}`);
-    console.log(`[RealtimeAgent] OpenAI WebSocket headers:`, headers);
-
-    this.openAiWs = new WebSocket(url, { headers });
+    this.ws = new WebSocket(url, { headers });
     this.setupOpenAIListeners();
+    console.log('[DEBUG] 4a. OpenAI WebSocket connection initiated.');
   }
 
   private setupOpenAIListeners(): void {
-    if (!this.openAiWs) return;
-
-    this.openAiWs.on('open', async () => {
-      console.log(`[RealtimeAgent] OpenAI connection opened for ${this.callSid}. Configuring session.`);
-      await this.configureOpenAiSession();
-    });
-
-    // Add ping interval to keep connection alive
-    const pingInterval = setInterval(() => {
-      if (this.openAiWs?.readyState === WebSocket.OPEN) {
-        this.openAiWs.ping();
-      } else {
-        clearInterval(pingInterval);
-      }
-    }, 30000);
-
-    this.openAiWs.on('message', (data: Buffer) => {
-      const message = data.toString();
-      try {
-        const response = JSON.parse(message);
-        console.log(`[RealtimeAgent] Received message from OpenAI:`, response);
-
-        switch (response.type) {
-          case 'session.created':
-            console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
-            break;
-
-          case 'session.updated':
-            console.log(`[RealtimeAgent] OpenAI session updated successfully for call ${this.callSid}`);
-            this.state.isAiReady = true;
-            this.state.isCallActive = true;
-            this.triggerGreeting();
-            break;
-
-          case 'session.error':
-            console.error(`[RealtimeAgent] OpenAI Session Error for call ${this.callSid}:`, response.error);
-            this.cleanup('OpenAI');
-            break;
-            
-          case 'response.audio.delta':
-            this.handleOpenAiAudio(response.delta);
-            break;
-
-          case 'conversation.item.created':
-            if (response.item?.role === 'assistant' && response.item?.content?.[0]?.text) {
-              const transcript = response.item.content[0].text;
-              console.log(`[RealtimeAgent] AI says: "${transcript}" (Call: ${this.callSid})`);
-              this.addToConversationHistory('assistant', transcript);
-            }
-            break;
-
-          case 'conversation.item.input_audio_transcription.completed':
-            if (response.item?.transcript) {
-              const userTranscript = response.item.transcript;
-              console.log(`[RealtimeAgent] User says: "${userTranscript}" (Call: ${this.callSid})`);
-              this.addToConversationHistory('user', userTranscript);
-            }
-            break;
-            
-          case 'input_audio_buffer.speech_started':
-            console.log(`[RealtimeAgent] User started speaking for call ${this.callSid}`);
-            // Add a small delay to check if it's just noise
-            setTimeout(() => {
-              if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-                // Only cancel if we're still receiving speech
-                if (response.is_speaking) {
-                  console.log(`[RealtimeAgent] User is clearly speaking - canceling AI response for call ${this.callSid}`);
-                  this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
-                } else {
-                  console.log(`[RealtimeAgent] Brief noise detected - continuing AI response for call ${this.callSid}`);
-                }
-              }
-            }, 300); // 300ms delay to check if it's just noise
-            break;
-            
-          case 'input_audio_buffer.speech_stopped':
-            console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
-            // Add a small delay before committing to ensure the user has truly finished
-            setTimeout(() => {
-              if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-                try {
-                  this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                  // Add a small delay before creating response to ensure smooth transition
-                  setTimeout(() => {
-                    if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-                      this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-                    }
-                  }, 100);
-                } catch (error) {
-                  console.log(`[RealtimeAgent] Audio commit ignored (buffer may be empty) for call ${this.callSid}`);
-                }
-              }
-            }, 500); // 500ms delay to ensure user has finished speaking
-            break;
-            
-          case 'error':
-            console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}: ${response.message}`);
-            break;
-        }
-      } catch (error) {
-        console.error(`[RealtimeAgent] Error parsing OpenAI message for call ${this.callSid}:`, error);
-      }
-    });
-
-    this.openAiWs.on('close', (code: number, reason: Buffer) => {
-      clearInterval(pingInterval);
-      console.log(`[RealtimeAgent] OpenAI WebSocket closed for call ${this.callSid}. Code: ${code}, Reason: ${reason.toString()}`);
-      this.cleanup();
-    });
-
-    this.openAiWs.on('error', (error: Error) => {
-      clearInterval(pingInterval);
-      console.error(`[RealtimeAgent] OpenAI WebSocket error for call ${this.callSid}:`, error);
-      this.cleanup();
-    });
-
-    this.openAiWs.on('pong', () => {
-      console.log(`[RealtimeAgent] Received pong from OpenAI for call ${this.callSid}`);
-    });
-  }
-
-  private async configureOpenAiSession(): Promise<void> {
-    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
-      console.log('[RealtimeAgent] OpenAI WebSocket not ready for session configuration.');
+    console.log('[DEBUG] 5. Setting up OpenAI listeners...');
+    if (!this.ws) {
+      console.error('[DEBUG] OpenAI WebSocket not initialized');
       return;
     }
 
-    console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
+    this.ws.on('open', () => {
+      console.log('[DEBUG] 5a. OpenAI WebSocket connected');
+      this.state.isAiReady = true;
+      this.configureOpenAiSession();
+    });
 
-    let businessName = 'our business';
-    let questions: Question[] = [];
+    this.ws.on('close', () => {
+      console.log('[DEBUG] OpenAI WebSocket closed');
+      this.cleanup('OpenAI');
+    });
 
-    try {
-      const callDetails = await twilioClient.calls(this.callSid).fetch();
-      const toPhoneNumber = callDetails.to;
-      
-      if (toPhoneNumber) {
-        const business = await prisma.business.findFirst({
-          where: { twilioPhoneNumber: toPhoneNumber },
-          include: {
-            agentConfig: {
-              include: { questions: { orderBy: { order: 'asc' } } }
+    this.ws.on('error', (error: Error) => {
+      console.error('[DEBUG] OpenAI WebSocket error:', error);
+      this.cleanup('OpenAI');
+    });
+
+    this.ws.on('message', (data: any) => {
+      try {
+        const response = JSON.parse(data.toString());
+        console.log('[DEBUG] 6. Received OpenAI message:', response.type);
+
+        switch (response.type) {
+          case 'response.audio.delta':
+            if (this.ws?.readyState === 1 && this.state.streamSid) {
+              const twilioMessage = {
+                event: 'media',
+                streamSid: this.state.streamSid,
+                media: { payload: response.delta }
+              };
+              this.ws.send(JSON.stringify(twilioMessage));
+              console.log('[DEBUG] 6a. Audio forwarded to Twilio');
             }
-          }
-        });
-        
-        if (business) {
-          this.state.businessId = business.id;
-          businessName = business.name;
-          questions = business.agentConfig?.questions || [];
-          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
-        }
-      }
-    } catch (error) {
-      console.error(`[RealtimeAgent] Error fetching business config for session setup:`, error);
-    }
+            break;
 
-    let businessInstructions = `You are a voice AI receptionist for ${businessName}. Your single most important goal is to follow the script and rules below precisely. The conversation is happening live on a phone call.
-
-**--- SCRIPT & FLOW CONTROL ---**
-
-Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
-
-**LEAD CAPTURE SCRIPT:**
-${questions.map((q: Question, index: number) => `${index + 1}. ${q.questionText}`).join('\n')}
-
-**COMPLETION MESSAGE (Say this only after the last question is answered):**
-"Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
-
-**--- CRITICAL CONVERSATION RULES ---**
-
-1.  **EMERGENCY DETECTION:** This is your top priority. If the user mentions words like **"flooding," "burst pipe," "gas leak," "no heat," "fire,"** or any other urgent situation, you must immediately acknowledge the specific emergency. For example, if they say "my basement is flooding," you must respond with, "I understand this is an emergency with a flooding basement," before continuing the script.
-
-2.  **MANDATORY CONFIRMATION:** To ensure accuracy, you MUST repeat back critical information after the user provides it. This includes names, phone numbers, and email addresses. For example: "Okay, I have the name as Jane. Is that correct?"
-
-3.  **TURN-TAKING & INTERRUPTIONS:** You are speaking with a human on a potentially noisy line.
-    * **Do Not Interrupt:** Wait for the user to completely finish their thought before you speak.
-    * **Handling Self-Interruption:** If you think you hear the user start to speak while you are talking, pause for a fraction of a second. If it's just a brief noise, continue and finish your sentence. Do not cut yourself off unless the user is clearly and intentionally speaking over you.
-
-4.  **SOUNDING NATURAL (SSML):** To avoid sounding robotic, you must use SSML \`<break>\` tags to add pauses to your speech.
-    * Use \`<break time="300ms"/>\` after short acknowledgments.
-    * Use \`<break time="600ms"/>\` after asking a question, to give the user a moment to think.
-    * Example: "Okay, got it.<break time="300ms"/> And what is the best phone number for you?<break time="600ms"/>"
-
-5.  **STICK TO THE SCRIPT:** Do not add personal opinions, chit-chat, or ask questions that are not on the script. Your only job is to execute the lead capture script flawlessly.`;
-    let openaiVoice = 'alloy'; // Default voice - lowercase as per API spec
-    let openaiModel = 'tts-1'; // Default TTS model
-
-    try {
-      const callDetails = await twilioClient.calls(this.callSid).fetch();
-      const toPhoneNumber = callDetails.to;
-      
-      if (toPhoneNumber) {
-        const business = await prisma.business.findFirst({
-          where: { twilioPhoneNumber: toPhoneNumber },
-          include: {
-            agentConfig: {
-              include: { questions: { orderBy: { order: 'asc' } } }
+          case 'input_audio_buffer.speech_started':
+            console.log('[DEBUG] 6b. Speech started');
+            if (this.ws?.readyState === 1) {
+              this.ws.send(JSON.stringify({ type: 'response.cancel' }));
             }
-          }
-        });
-        
-        if (business) {
-          this.state.businessId = business.id;
-          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
-          
-          // Get the configured voice and model
-          if (business.agentConfig?.openaiVoice) {
-            // Convert to lowercase and validate
-            const configuredVoice = business.agentConfig.openaiVoice.toLowerCase();
-            const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-            openaiVoice = validVoices.includes(configuredVoice) ? configuredVoice : 'nova';
-            console.log(`[RealtimeAgent] Using configured OpenAI voice: ${openaiVoice}`);
-          }
-          if (business.agentConfig?.openaiModel) {
-            openaiModel = business.agentConfig.openaiModel;
-            console.log(`[RealtimeAgent] Using configured OpenAI TTS model: ${openaiModel}`);
-          }
-          
-          const businessName = business.name;
-          const questions = business.agentConfig?.questions || [];
-          const welcomeMessage = await this.getWelcomeMessage(business.id);
-          
-          businessInstructions = `You are a voice AI receptionist for ${businessName}. Your single most important goal is to follow the script and rules below precisely. The conversation is happening live on a phone call.
+            break;
 
-**--- SCRIPT & FLOW CONTROL ---**
+          case 'input_audio_buffer.speech_stopped':
+            console.log('[DEBUG] 6c. Speech stopped');
+            if (this.ws?.readyState === 1) {
+              this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+              this.ws.send(JSON.stringify({ type: 'response.create' }));
+            }
+            break;
 
-Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
+          case 'response.text.delta':
+            console.log('[DEBUG] 6d. Text delta received:', response.delta);
+            break;
 
-**LEAD CAPTURE SCRIPT:**
-${questions.map((q: Question, index: number) => `${index + 1}. ${q.questionText}`).join('\n')}
-
-**COMPLETION MESSAGE (Say this only after the last question is answered):**
-"Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
-
-**--- CRITICAL CONVERSATION RULES ---**
-
-1.  **EMERGENCY DETECTION:** This is your top priority. If the user mentions words like **"flooding," "burst pipe," "gas leak," "no heat," "fire,"** or any other urgent situation, you must immediately acknowledge the specific emergency. For example, if they say "my basement is flooding," you must respond with, "I understand this is an emergency with a flooding basement," before continuing the script.
-
-2.  **MANDATORY CONFIRMATION:** To ensure accuracy, you MUST repeat back critical information after the user provides it. This includes names, phone numbers, and email addresses. For example: "Okay, I have the name as Jane. Is that correct?"
-
-3.  **TURN-TAKING & INTERRUPTIONS:** You are speaking with a human on a potentially noisy line.
-    * **Do Not Interrupt:** Wait for the user to completely finish their thought before you speak.
-    * **Handling Self-Interruption:** If you think you hear the user start to speak while you are talking, pause for a fraction of a second. If it's just a brief noise, continue and finish your sentence. Do not cut yourself off unless the user is clearly and intentionally speaking over you.
-
-4.  **SOUNDING NATURAL (SSML):** To avoid sounding robotic, you must use SSML \`<break>\` tags to add pauses to your speech.
-    * Use \`<break time="300ms"/>\` after short acknowledgments.
-    * Use \`<break time="600ms"/>\` after asking a question, to give the user a moment to think.
-    * Example: "Okay, got it.<break time="300ms"/> And what is the best phone number for you?<break time="600ms"/>"
-
-5.  **STICK TO THE SCRIPT:** Do not add personal opinions, chit-chat, or ask questions that are not on the script. Your only job is to execute the lead capture script flawlessly.`;
+          case 'response.text.done':
+            console.log('[DEBUG] 6e. Text response complete');
+            break;
         }
+      } catch (error) {
+        console.error('[DEBUG] Error processing OpenAI message:', error);
       }
-    } catch (error) {
-      console.error(`[RealtimeAgent] Error fetching business config for session setup:`, error);
+    });
+
+    console.log('[DEBUG] 5b. OpenAI listeners setup complete.');
+  }
+
+  private async configureOpenAiSession(): Promise<void> {
+    console.log('[DEBUG] 7. Configuring OpenAI session...');
+    if (!this.ws || this.ws.readyState !== 1) {
+      console.error('[DEBUG] OpenAI WebSocket not ready for configuration');
+      return;
     }
 
     const sessionConfig = {
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: businessInstructions,
-        voice: openaiVoice,
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+        voice: 'alloy',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
-        input_audio_transcription: { 
-          model: 'whisper-1',
-          language: 'en'
+        input_audio_transcription: {
+          model: 'whisper-1'
         },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.6,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 1000,
-          min_speech_duration_ms: 300
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
         }
       }
     };
 
-    console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}:`, sessionConfig);
-    try {
-      this.openAiWs.send(JSON.stringify(sessionConfig));
-      console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
-    } catch (error) {
-      console.error(`[RealtimeAgent] Failed to send session configuration:`, error);
-      this.cleanup('OpenAI');
-      return;
+    this.ws.send(JSON.stringify(sessionConfig));
+    console.log('[DEBUG] 7a. OpenAI session configuration sent');
+
+    if (!this.state.welcomeMessageDelivered && this.state.businessId) {
+      console.log('[DEBUG] 7b. Triggering welcome message...');
+      await this.triggerGreeting();
     }
+  }
 
-    // Wait for session update confirmation
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Session update timeout'));
-      }, 30000);
+  private async triggerGreeting(): Promise<void> {
+    console.log('[DEBUG] 7c. Preparing welcome message...');
+    try {
+      const welcomeMessage = await this.getWelcomeMessage(this.state.businessId!);
+      console.log('[DEBUG] 7d. Welcome message retrieved:', welcomeMessage);
 
-      const handler = (event: { data: any }) => {
-        try {
-          const response = JSON.parse(event.data.toString());
-          console.log(`[RealtimeAgent] Received response during session update:`, response);
-          if (response.type === 'session.updated') {
-            clearTimeout(timeout);
-            this.openAiWs!.removeEventListener('message', handler);
-            resolve();
-          } else if (response.type === 'session.error') {
-            clearTimeout(timeout);
-            this.openAiWs!.removeEventListener('message', handler);
-            reject(new Error(`Session error: ${response.error}`));
-          } else if (response.type === 'error') {
-            clearTimeout(timeout);
-            this.openAiWs!.removeEventListener('message', handler);
-            reject(new Error(`OpenAI error: ${response.message}`));
+      if (this.ws?.readyState === 1) {
+        const textEvent = {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{
+              type: 'input_text',
+              text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+            }]
           }
-        } catch (error) {
-          console.error(`[RealtimeAgent] Error handling session update response:`, error);
-        }
-      };
-      this.openAiWs!.addEventListener('message', handler);
-    }).catch(error => {
-      console.error(`[RealtimeAgent] Session update failed:`, error);
-      this.cleanup('OpenAI');
-      return;
-    });
-  }
+        };
 
-  private handleOpenAiAudio(audioB64: string) {
-    try {
-      console.log(`[RealtimeAgent] Handling OpenAI audio for call ${this.callSid}. Audio length: ${audioB64.length}`);
-      console.log(`[RealtimeAgent] Current WebSocket states:`, {
-        openAiWsState: this.openAiWs?.readyState,
-        twilioWsState: this.twilioWs?.readyState,
-        isTwilioReady: this.state.isTwilioReady,
-        streamSid: this.state.streamSid
-      });
+        this.ws.send(JSON.stringify(textEvent));
+        console.log('[DEBUG] 7e. Welcome message sent to OpenAI');
 
-      // Validate audio data
-      if (!audioB64 || typeof audioB64 !== 'string') {
-        console.error(`[RealtimeAgent] Invalid audio data received for call ${this.callSid}`);
-        return;
+        setTimeout(() => {
+          if (this.ws?.readyState === 1) {
+            this.ws.send(JSON.stringify({ type: 'response.create' }));
+            console.log('[DEBUG] 7f. Response creation triggered');
+          }
+        }, 100);
+
+        this.state.welcomeMessageDelivered = true;
       }
-
-      // Add audio to queue for processing
-      this.state.audioQueue.push(audioB64);
-      console.log(`[RealtimeAgent] Added audio to queue. Queue length: ${this.state.audioQueue.length}`);
-      this.processAudioQueue();
     } catch (error) {
-      console.error(`[RealtimeAgent] Error handling OpenAI audio:`, error);
+      console.error('[DEBUG] Error triggering greeting:', error);
     }
   }
 
-  private processAudioQueue() {
-    // Only process audio if both connections are ready
-    if (!this.state.isTwilioReady || !this.state.streamSid || !this.twilioWs) {
-      console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}. State:`, {
-        isTwilioReady: this.state.isTwilioReady,
+  private handleOpenAiAudio(audioB64: string): void {
+    if (this.ws?.readyState === 1 && this.state.streamSid) {
+      const twilioMessage = {
+        event: 'media',
         streamSid: this.state.streamSid,
-        twilioWsState: this.twilioWs?.readyState
-      });
-      return;
-    }
-
-    // Process all queued audio chunks
-    while (this.state.audioQueue.length > 0) {
-      try {
-        const audioChunk = this.state.audioQueue.shift();
-        if (!audioChunk) continue;
-
-        if (this.twilioWs.readyState === WebSocket.OPEN) {
-          const twilioMsg = {
-            event: "media",
-            streamSid: this.state.streamSid,
-            media: { payload: audioChunk },
-          };
-          
-          // Send mark message to keep stream alive
-          const markMsg = {
-            event: "mark",
-            streamSid: this.state.streamSid,
-            mark: { name: `audio_processed_${Date.now()}` }
-          };
-
-          // Send both messages
-          this.twilioWs.send(JSON.stringify(twilioMsg));
-          this.twilioWs.send(JSON.stringify(markMsg));
-          
-          console.log(`[RealtimeAgent] Forwarded audio chunk to Twilio for call ${this.callSid}. Chunk size: ${audioChunk.length}`);
-        } else {
-          console.error(`[RealtimeAgent] Twilio WebSocket not open for call ${this.callSid}. State: ${this.twilioWs.readyState}`);
-          this.cleanup('Twilio');
-          return;
-        }
-      } catch (error) {
-        console.error(`[RealtimeAgent] Error processing audio chunk for call ${this.callSid}:`, error);
-        // Don't break the loop, try to process remaining chunks
-      }
+        media: { payload: audioB64 }
+      };
+      this.ws.send(JSON.stringify(twilioMessage));
     }
   }
 
-  /**
-   * Sends a message to the OpenAI Realtime API
-   */
-  public sendMessage(message: any): void {
-    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
-      console.error(`[RealtimeAgent] Cannot send message for call ${this.callSid}: OpenAI WebSocket not connected`);
-      return;
-    }
-
-    try {
-      this.openAiWs.send(JSON.stringify(message));
-      console.log(`[RealtimeAgent] Message sent to OpenAI for call ${this.callSid}:`, message.type);
-    } catch (error) {
-      console.error(`[RealtimeAgent] Failed to send message to OpenAI for call ${this.callSid}:`, error);
-    }
-  }
-
-  /**
-   * Adds conversation entry to history
-   */
   private addToConversationHistory(role: 'user' | 'assistant', content: string): void {
     this.state.conversationHistory.push({
       role,
       content,
       timestamp: new Date()
     });
-    
-    console.log(`[RealtimeAgent] Added to conversation history [${role}]: ${content.substring(0, 100)}...`);
   }
 
-  /**
-   * Analyzes conversation for lead capture opportunities
-   */
-  private async analyzeForLeadCapture(): Promise<boolean> {
-    if (this.state.leadCaptureTriggered || !this.state.businessId) {
-      return false;
+  public async cleanup(source: string, error?: Error): Promise<void> {
+    if (this.state.isCleaningUp) {
+      console.log('[DEBUG] Cleanup already in progress, skipping');
+      return;
     }
 
-    const recentMessages = this.state.conversationHistory.slice(-6); // Last 6 messages
-    const conversationText = recentMessages.map(m => `${m.role}: ${m.content}`).join('\n');
+    console.log(`[DEBUG] 8. Cleanup triggered by: ${source}`);
+    if (error) console.error('[DEBUG] Cleanup reason:', error);
 
-    // Use simplified intent detection
-    const leadIndicators = [
-      'price', 'cost', 'quote', 'estimate', 'service', 'repair', 'fix', 'install', 
-      'problem', 'issue', 'help', 'need', 'appointment', 'schedule', 'emergency',
-      'urgent', 'how much', 'do you', 'can you'
-    ];
+    this.state.isCleaningUp = true;
 
-    const hasLeadIntent = leadIndicators.some(indicator => 
-      conversationText.toLowerCase().includes(indicator)
-    );
+    console.log('[DEBUG] 8a. Delaying cleanup for 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    if (hasLeadIntent && recentMessages.length >= 4) {
-      console.log(`[RealtimeAgent] Lead capture triggered for call ${this.callSid}`);
-      this.state.leadCaptureTriggered = true;
-      return true;
+    if (this.state.conversationHistory.length > 0 && this.state.businessId) {
+      console.log('[DEBUG] 8b. Processing lead creation...');
+      await this.processLeadCreation();
+    } else {
+      console.log('[DEBUG] 8b. Skipping lead creation (no history or businessId)');
     }
 
-    return false;
+    console.log('[DEBUG] 8c. Closing WebSocket connections...');
+    this.ws?.close();
+    console.log('[DEBUG] 8d. Cleanup complete');
   }
 
-  /**
-   * Processes lead creation at end of call
-   */
   private async processLeadCreation(): Promise<void> {
+    console.log('[DEBUG] 9. Processing lead creation...');
     try {
-      // Validate business configuration first
-      if (!this.state.businessId) {
-        console.error('[RealtimeAgent] No business ID available for lead creation');
-        return;
-      }
+      const leadInfo = this.extractLeadInformation();
+      console.log('[DEBUG] 9a. Extracted lead information:', leadInfo);
 
-      const hasValidConfig = await this.validateBusinessConfig(this.state.businessId);
-      if (!hasValidConfig) {
-        console.error('[RealtimeAgent] Business configuration validation failed, skipping lead creation');
-        return;
-      }
+      const conversationText = this.state.conversationHistory.map(msg => msg.content).join(' ');
+      const isEmergency = await this.detectEmergencyWithAI(conversationText);
+      console.log('[DEBUG] 9b. Emergency detection result:', isEmergency);
 
-      // Extract information from conversation
-      const extractedInfo = this.extractLeadInformation();
-      
-      // Check for emergency in the first user message
-      const firstUserMessage = this.state.conversationHistory.find(entry => entry.role === 'user')?.content;
-      const isEmergency = firstUserMessage ? await this.detectEmergencyWithAI(firstUserMessage) : false;
-      
-      // Prepare conversation for AI
-      const conversationForAI = this.state.conversationHistory.map(entry => ({
-        role: entry.role,
-        content: entry.content
-      }));
-
-      // Create lead record with emergency priority if detected
-      const newLead = await prisma.lead.create({
+      const lead = await prisma.lead.create({
         data: {
-          businessId: this.state.businessId,
+          businessId: this.state.businessId!,
+          capturedData: leadInfo,
           status: 'NEW',
           priority: isEmergency ? 'URGENT' : 'NORMAL',
-          conversationTranscript: JSON.stringify(conversationForAI),
-          capturedData: {
-            ...extractedInfo,
-            emergency_notes: isEmergency ? firstUserMessage : null
-          },
-          contactName: extractedInfo.name || null,
-          contactEmail: extractedInfo.email || null,
-          contactPhone: extractedInfo.phone || null,
-          notes: `Voice call lead - CallSid: ${this.callSid}${isEmergency ? ' - EMERGENCY DETECTED' : ''}`
+          contactName: leadInfo.name,
+          contactEmail: leadInfo.email,
+          contactPhone: leadInfo.phone
         }
       });
 
-      console.log(`[RealtimeAgent] Lead created successfully:`, {
-        leadId: newLead.id,
-        isEmergency,
-        priority: newLead.priority
-      });
-
-      // Send notifications immediately
-      await this.sendLeadNotifications(newLead);
-
+      console.log('[DEBUG] 9c. Lead created successfully:', lead.id);
+      await this.sendLeadNotifications(lead);
+      console.log('[DEBUG] 9d. Lead notifications sent');
     } catch (error) {
-      console.error(`[RealtimeAgent] Error creating lead for call ${this.callSid}:`, error);
+      console.error('[DEBUG] Error processing lead:', error);
     }
   }
 
-  /**
-   * Enhanced emergency detection using AI
-   */
-  private async detectEmergencyWithAI(message: string): Promise<boolean> {
-    try {
-      const emergencyCheckPrompt = `Does the following user message indicate an emergency situation (e.g., burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water heater leak)? Respond with only YES or NO. User message: '${message}'`;
-      
-      const isEmergencyResponse = await getChatCompletion(
-        emergencyCheckPrompt, 
-        "You are an emergency detection assistant specialized in identifying urgent home service situations."
-      );
-      
-      const isEmergency = cleanVoiceResponse(isEmergencyResponse || 'NO').trim().toUpperCase() === 'YES';
-      
-      console.log(`[RealtimeAgent] Emergency detection result:`, {
-        message,
-        isEmergency,
-        rawResponse: isEmergencyResponse
-      });
-      
-      return isEmergency;
-    } catch (error) {
-      console.error(`[RealtimeAgent] Error in AI emergency detection:`, error);
-      // Fallback to keyword-based detection if AI fails
-      return this.detectEmergency();
-    }
-  }
-
-  /**
-   * Extracts lead information from conversation
-   */
-  private extractLeadInformation(): Record<string, any> {
-    const conversationText = this.state.conversationHistory
-      .map(entry => entry.content)
-      .join(' ');
-
-    const extractedInfo: Record<string, any> = {};
-
-    // Simple extraction patterns
-    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
-    const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
-    const nameRegex = /(?:my name is|i'm|i am)\s+([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i;
-
-    const emailMatch = conversationText.match(emailRegex);
-    if (emailMatch) extractedInfo.email = emailMatch[0];
-
-    const phoneMatch = conversationText.match(phoneRegex);
-    if (phoneMatch) extractedInfo.phone = phoneMatch[0];
-
-    const nameMatch = conversationText.match(nameRegex);
-    if (nameMatch) extractedInfo.name = nameMatch[1];
-
-    // Add conversation summary
-    extractedInfo.conversation_summary = this.state.conversationHistory
-      .filter(entry => entry.role === 'user')
-      .map(entry => entry.content)
-      .join(' | ');
-
-    return extractedInfo;
-  }
-
-  /**
-   * Detects if conversation indicates emergency
-   */
-  private detectEmergency(): boolean {
-    const conversationText = this.state.conversationHistory
-      .map(entry => entry.content)
-      .join(' ')
-      .toLowerCase();
-
-    const emergencyKeywords = [
-      'emergency', 'urgent', 'burst', 'flooding', 'leak', 'no heat', 
-      'no hot water', 'electrical issue', 'gas smell', 'water damage',
-      'basement flooding', 'pipe burst', 'toilet overflowing'
-    ];
-
-    return emergencyKeywords.some(keyword => conversationText.includes(keyword));
-  }
-
-  /**
-   * Sends lead notifications
-   */
   private async sendLeadNotifications(lead: any): Promise<void> {
+    console.log('[DEBUG] 10. Sending lead notifications...');
     try {
       const business = await prisma.business.findUnique({
         where: { id: this.state.businessId! }
       });
 
       if (!business) {
-        console.error(`[RealtimeAgent] Business not found for ID: ${this.state.businessId}`);
+        console.error('[DEBUG] Business not found for notifications');
         return;
       }
 
-      // Send email notification to business
       if (business.notificationEmail) {
-        try {
-          await sendLeadNotificationEmail(
-            business.notificationEmail,
-            {
-              capturedData: lead.capturedData,
-              conversationTranscript: lead.conversationTranscript,
-              contactName: lead.contactName,
-              contactEmail: lead.contactEmail,
-              contactPhone: lead.contactPhone,
-              notes: lead.notes,
-              createdAt: lead.createdAt,
-              status: lead.status
-            },
-            lead.priority,
-            business.name
-          );
-          console.log(`[RealtimeAgent] Lead notification email sent for call ${this.callSid}`);
-        } catch (emailError) {
-          console.error(`[RealtimeAgent] Failed to send notification email:`, emailError);
-        }
-      } else {
-        console.warn(`[RealtimeAgent] No notification email configured for business ${business.id}`);
+        console.log('[DEBUG] 10a. Sending email notification...');
+        await sendLeadNotificationEmail(
+          business.notificationEmail,
+          lead,
+          lead.priority,
+          business.name
+        );
       }
 
-      // Send emergency call if urgent
-      if (lead.priority === 'URGENT') {
-        if (!business.notificationPhoneNumber) {
-          console.warn(`[RealtimeAgent] No notification phone number configured for emergency calls for business ${business.id}`);
-          return;
-        }
-
-        if (!process.env.TWILIO_PHONE_NUMBER) {
-          console.error('[RealtimeAgent] TWILIO_PHONE_NUMBER environment variable is not set');
-          return;
-        }
-
-        try {
-          const emergencyDetails = lead.capturedData?.conversation_summary || 'Voice call emergency';
-          await initiateEmergencyVoiceCall(
-            business.notificationPhoneNumber,
-            business.name,
-            emergencyDetails,
-            business.id
-          );
-          console.log(`[RealtimeAgent] Emergency call initiated for call ${this.callSid}`);
-        } catch (callError) {
-          console.error(`[RealtimeAgent] Failed to initiate emergency call:`, callError);
-        }
+      if (lead.priority === 'URGENT' && business.notificationPhoneNumber) {
+        console.log('[DEBUG] 10b. Sending emergency voice call...');
+        await initiateEmergencyVoiceCall(
+          business.notificationPhoneNumber,
+          business.name,
+          lead.capturedData.emergency_notes || 'Emergency situation reported',
+          business.id
+        );
       }
 
-      // Send customer confirmation if email available
-      if (lead.contactEmail) {
-        try {
-          await sendLeadConfirmationToCustomer(
-            lead.contactEmail,
-            business.name,
-            lead,
-            lead.priority === 'URGENT'
-          );
-          console.log(`[RealtimeAgent] Customer confirmation sent for call ${this.callSid}`);
-        } catch (confirmationError) {
-          console.error(`[RealtimeAgent] Failed to send customer confirmation:`, confirmationError);
-        }
+      if (lead.capturedData.email) {
+        console.log('[DEBUG] 10c. Sending customer confirmation...');
+        await sendLeadConfirmationToCustomer(
+          lead.capturedData.email,
+          business.name,
+          lead,
+          lead.priority === 'URGENT'
+        );
       }
+
+      console.log('[DEBUG] 10d. All notifications sent successfully');
     } catch (error) {
-      console.error(`[RealtimeAgent] Error in sendLeadNotifications for call ${this.callSid}:`, error);
+      console.error('[DEBUG] Error sending notifications:', error);
     }
   }
 
-  public async cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
-    if (this.state.isCleaningUp) return;
-    this.state.isCleaningUp = true;
-    console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
-    
-    // Wait for 2 seconds to allow any final in-flight messages to be processed
-    console.log(`[RealtimeAgent] Delaying cleanup for 2 seconds to ensure final data is processed...`);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Process lead creation before cleanup if we have conversation data
-    if (this.state.conversationHistory.length > 0 && this.state.businessId) {
-      console.log(`[RealtimeAgent] Processing lead creation before cleanup for call ${this.callSid}`);
-      await this.processLeadCreation().catch(error => {
-        console.error(`[RealtimeAgent] Error processing lead creation during cleanup:`, error);
-      });
-    }
-    
-    if (this.openAiWs && this.openAiWs.readyState !== WebSocket.CLOSED) {
-      this.openAiWs.close();
-      this.openAiWs = null;
-    }
-    
-    if (this.twilioWs && this.twilioWs.readyState !== WebSocket.CLOSED) {
-      this.twilioWs.close();
-      this.twilioWs = null;
-    }
-    
-    // Reset state
-    this.state = {
-      isTwilioReady: false,
-      isAiReady: false,
-      streamSid: null,
-      audioQueue: [],
-      conversationHistory: [],
-      businessId: null,
-      leadCaptureTriggered: false,
-      hasCollectedLeadInfo: false,
-      isCallActive: false,
-      welcomeMessageDelivered: false,
-      welcomeMessageAttempts: 0,
-      isCleaningUp: false,
-    };
-  }
-
-  /**
-   * Public disconnect method for compatibility
-   */
-  public disconnect(): void {
-    this.cleanup('Other');
-  }
-
-  /**
-   * Gets the current connection status
-   */
-     public getConnectionStatus(): string {
-     const openAiStatus = !this.openAiWs ? 'disconnected' : 
-       this.openAiWs.readyState === WebSocket.CONNECTING ? 'connecting' :
-       this.openAiWs.readyState === WebSocket.OPEN ? 'connected' :
-       this.openAiWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
-     
-     const twilioStatus = !this.twilioWs ? 'disconnected' :
-       this.twilioWs.readyState === WebSocket.CONNECTING ? 'connecting' :
-       this.twilioWs.readyState === WebSocket.OPEN ? 'connected' :
-       this.twilioWs.readyState === WebSocket.CLOSING ? 'closing' : 'closed';
-     
-     return `OpenAI: ${openAiStatus}, Twilio: ${twilioStatus}, State: AI=${this.state.isAiReady}, Twilio=${this.state.isTwilioReady}`;
-   }
-
-  /**
-   * Gets the call SID associated with this service instance
-   */
-  public getCallSid(): string {
-    return this.callSid;
-  }
-
-  /**
-   * Validates that the business has proper notification settings configured
-   * @param businessId - The ID of the business to validate
-   * @returns {Promise<boolean>} True if business has valid notification settings
-   */
-  private async validateBusinessConfig(businessId: string): Promise<boolean> {
+  private async detectEmergencyWithAI(message: string): Promise<boolean> {
+    console.log('[DEBUG] 11. Detecting emergency with AI...');
     try {
-      const business = await prisma.business.findUnique({
-        where: { id: businessId },
-        select: {
-          notificationEmail: true,
-          notificationPhoneNumber: true,
-          name: true
-        }
-      });
-      
-      if (!business) {
-        console.error(`[RealtimeAgent] Business ${businessId} not found`);
+      const response = await getChatCompletion(message);
+
+      if (!response) {
+        console.error('[DEBUG] No response from AI for emergency detection');
         return false;
       }
-      
-      if (!business.notificationEmail && !business.notificationPhoneNumber) {
-        console.warn(`[RealtimeAgent] Business ${business.name} (${businessId}) has no notification methods configured`);
-        return false;
-      }
-      
-      // Log notification configuration
-      console.log(`[RealtimeAgent] Business ${business.name} notification config:`, {
-        hasEmail: !!business.notificationEmail,
-        hasPhone: !!business.notificationPhoneNumber
-      });
-      
-      return true;
+
+      const isEmergency = response.toLowerCase().includes('true');
+      console.log('[DEBUG] 11a. Emergency detection result:', isEmergency);
+      return isEmergency;
     } catch (error) {
-      console.error(`[RealtimeAgent] Error validating business config:`, error);
+      console.error('[DEBUG] Error detecting emergency:', error);
       return false;
     }
   }
 
-  private async triggerGreeting() {
-    console.log(`[RealtimeAgent] Checking readiness to trigger greeting for ${this.callSid}.`);
-    
-    if (!this.state.isAiReady || !this.state.isTwilioReady) {
-      console.log(`[RealtimeAgent] Not ready to trigger greeting. AI: ${this.state.isAiReady}, Twilio: ${this.state.isTwilioReady}`);
-      return;
+  private extractLeadInformation(): Record<string, any> {
+    console.log('[DEBUG] 12. Extracting lead information...');
+    const leadInfo: Record<string, any> = {};
+    const conversation = this.state.conversationHistory.map(msg => msg.content).join(' ');
+
+    // Extract name
+    const nameMatch = conversation.match(/name is (\w+)/i) || conversation.match(/my name is (\w+)/i);
+    if (nameMatch) leadInfo.name = nameMatch[1];
+
+    // Extract email
+    const emailMatch = conversation.match(/[\w.-]+@[\w.-]+\.\w+/);
+    if (emailMatch) leadInfo.email = emailMatch[0];
+
+    // Extract phone
+    const phoneMatch = conversation.match(/\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/);
+    if (phoneMatch) leadInfo.phone = phoneMatch[0];
+
+    // Extract emergency notes if present
+    if (conversation.toLowerCase().includes('emergency')) {
+      leadInfo.emergency_notes = conversation;
     }
 
-    if (this.state.welcomeMessageDelivered) {
-      console.log(`[RealtimeAgent] Welcome message already delivered for call ${this.callSid}`);
-      return;
-    }
-
-    try {
-      if (!this.state.businessId) {
-        console.error(`[RealtimeAgent] No business ID available for call ${this.callSid}`);
-        return;
-      }
-
-      const welcomeMessage = await this.getWelcomeMessage(this.state.businessId);
-      
-      if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
-        throw new Error('OpenAI WebSocket not ready');
-      }
-
-      // Escape any quotes in the welcome message to prevent issues.
-      const safeWelcomeMessage = welcomeMessage.replace(/"/g, '\\"');
-
-      // Use a less rigid prompt that is less likely to trigger AI guardrails.
-      const textEvent = {
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: `Start the conversation by saying the following welcome message to the caller: "${safeWelcomeMessage}"`
-          }]
-        }
-      };
-
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Welcome message delivery timeout'));
-        }, 5000);
-
-        const handler = (event: { data: any }) => {
-          try {
-            const response = JSON.parse(event.data.toString());
-            if (response.type === 'conversation.item.created') {
-              clearTimeout(timeout);
-              this.openAiWs!.removeEventListener('message', handler);
-              resolve();
-            }
-          } catch (error) {
-            console.error(`[RealtimeAgent] Error handling welcome message response:`, error);
-          }
-        };
-
-        this.openAiWs!.addEventListener('message', handler);
-        this.openAiWs!.send(JSON.stringify(textEvent));
-      });
-
-      // Send response creation after confirmation
-      this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-      
-      this.state.welcomeMessageDelivered = true;
-      console.log(`[RealtimeAgent] Greeting delivered for call ${this.callSid}: "${welcomeMessage}"`);
-    } catch (error) {
-      this.state.welcomeMessageAttempts++;
-      console.error(`[RealtimeAgent] Failed to deliver greeting (attempt ${this.state.welcomeMessageAttempts}):`, error);
-      
-      if (this.state.welcomeMessageAttempts < 3) {
-        setTimeout(() => this.triggerGreeting(), 1000 * this.state.welcomeMessageAttempts);
-      }
-    }
+    console.log('[DEBUG] 12a. Extracted lead information:', leadInfo);
+    return leadInfo;
   }
 
   private async getWelcomeMessage(businessId: string): Promise<string> {
+    console.log('[DEBUG] 13. Getting welcome message...');
     try {
       const business = await prisma.business.findUnique({
         where: { id: businessId },
         include: { agentConfig: true }
       });
-      
+
       if (!business) {
-        console.warn(`[RealtimeAgent] Business ${businessId} not found, using default welcome message`);
+        console.error('[DEBUG] Business not found for welcome message');
         return 'Hello! Thank you for calling. How can I help you today?';
       }
-      
-      let welcomeMessage = business.agentConfig?.voiceGreetingMessage?.trim() || 
-                          business.agentConfig?.welcomeMessage?.trim() || 
-                          'Hello! Thank you for calling. How can I help you today?';
-                          
-      return welcomeMessage.replace(/\{businessName\}/gi, business.name);
+
+      const welcomeMessage = business.agentConfig?.voiceGreetingMessage || 
+                           business.agentConfig?.welcomeMessage || 
+                           'Hello! Thank you for calling. How can I help you today?';
+
+      console.log('[DEBUG] 13a. Welcome message retrieved:', welcomeMessage);
+      return welcomeMessage;
     } catch (error) {
-      console.error(`[RealtimeAgent] Error getting welcome message:`, error);
+      console.error('[DEBUG] Error getting welcome message:', error);
       return 'Hello! Thank you for calling. How can I help you today?';
     }
   }
-} 
+}
+
+// Export singleton instance
+export const realtimeAgentService = RealtimeAgentService.getInstance(); 
