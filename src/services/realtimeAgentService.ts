@@ -43,6 +43,8 @@ interface ConnectionState {
   welcomeMessageDelivered: boolean;
   welcomeMessageAttempts: number;
   isCleaningUp: boolean;
+  callSid: string | null;
+  lastActivity: number;
 }
 
 interface Question {
@@ -143,7 +145,7 @@ async function cleanupTempFile(filePath: string) {
  */
 export class RealtimeAgentService {
   private static instance: RealtimeAgentService;
-  private ws: WebSocket | null = null;
+  private twilioWs: WebSocket | null = null;
   private openAiWs: WebSocket | null = null;
   private state: ConnectionState;
   private readonly openaiApiKey: string;
@@ -152,6 +154,8 @@ export class RealtimeAgentService {
   private currentQuestionIndex: number = 0;
   private leadCaptureQuestions: Question[] = [];
   private callSid: string = '';
+  private pingInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   public constructor() {
     console.log('[DEBUG] 0. Initializing RealtimeAgentService...');
@@ -175,6 +179,8 @@ export class RealtimeAgentService {
       welcomeMessageDelivered: false,
       welcomeMessageAttempts: 0,
       isCleaningUp: false,
+      callSid: null,
+      lastActivity: Date.now()
     };
 
     this.setupTwilioListeners();
@@ -193,13 +199,13 @@ export class RealtimeAgentService {
    */
   public async connect(twilioWs: WebSocket): Promise<void> {
     console.log('[DEBUG] 1. Connecting to Twilio WebSocket...');
-    this.ws = twilioWs;
+    this.twilioWs = twilioWs;
     this.setupTwilioListeners();
     console.log('[DEBUG] 1a. Twilio WebSocket connection setup complete.');
   }
 
   private async sendWebSocketMessage(ws: WebSocket | null, message: any, context: string): Promise<void> {
-    if (!ws || ws.readyState !== 1) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       console.warn(`[DEBUG] Cannot send ${context} - WebSocket not ready`);
       return;
     }
@@ -215,34 +221,34 @@ export class RealtimeAgentService {
 
   private setupTwilioListeners(): void {
     console.log('[DEBUG] 2. Setting up Twilio listeners...');
-    if (!this.ws) {
+    if (!this.twilioWs) {
       console.error('[DEBUG] Twilio WebSocket not initialized');
       return;
     }
 
     const pingInterval = setInterval(() => {
-      if (this.ws?.readyState === 1) {
-        this.ws.ping();
+      if (this.twilioWs?.readyState === WebSocket.OPEN) {
+        this.twilioWs.ping();
       }
     }, 30000);
 
-    this.ws.on('close', (code: number, reason: Buffer) => {
+    this.twilioWs.on('close', (code: number, reason: Buffer) => {
       console.log(`[DEBUG] Twilio WebSocket closed. Code: ${code}, Reason: ${reason.toString()}`);
       clearInterval(pingInterval);
       this.cleanup('Twilio');
     });
 
-    this.ws.on('error', (error: Error) => {
+    this.twilioWs.on('error', (error: Error) => {
       console.error('[DEBUG] Twilio WebSocket error:', error);
       clearInterval(pingInterval);
       this.cleanup('Twilio');
     });
 
-    this.ws.on('pong', () => {
+    this.twilioWs.on('pong', () => {
       console.log('[DEBUG] Received pong from Twilio');
     });
 
-    this.ws.on('message', async (message: Buffer) => {
+    this.twilioWs.on('message', async (message: Buffer) => {
       try {
         const data = JSON.parse(message.toString());
         console.log('[DEBUG] 3. Received Twilio message:', data.event);
@@ -252,7 +258,7 @@ export class RealtimeAgentService {
           const callSid = data.start?.callSid;
           this.state.streamSid = data.start?.streamSid;
           this.state.isTwilioReady = true;
-          this.callSid = callSid;
+          this.state.callSid = callSid;
 
           if (this.onCallSidReceived) {
             this.onCallSidReceived(callSid);
@@ -294,7 +300,7 @@ export class RealtimeAgentService {
             audio: data.media.payload
           }, 'Audio to OpenAI');
 
-          await this.sendWebSocketMessage(this.ws, {
+          await this.sendWebSocketMessage(this.twilioWs, {
             event: 'mark',
             streamSid: this.state.streamSid,
             mark: { name: `audio_processed_${Date.now()}` }
@@ -310,11 +316,10 @@ export class RealtimeAgentService {
 
   private connectToOpenAI(): void {
     console.log('[DEBUG] 4. Connecting to OpenAI...');
-    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+    const url = 'wss://api.openai.com/v1/realtime/sessions';
     const headers = {
       'Authorization': `Bearer ${this.openaiApiKey}`,
-      'OpenAI-Beta': 'realtime=v1',
-      'Content-Type': 'application/json'
+      'OpenAI-Beta': 'realtime=v1'
     };
 
     let retryCount = 0;
@@ -390,39 +395,40 @@ export class RealtimeAgentService {
         console.log('[DEBUG] 6. Received OpenAI message:', response.type);
 
         switch (response.type) {
+          case 'session.created':
+            console.log('[DEBUG] Session created, configuring...');
+            this.configureOpenAiSession();
+            break;
+
           case 'session.updated':
-            console.log('[DEBUG] 6a. Session configuration confirmed');
+            console.log('[DEBUG] Session configured, ready for audio');
             if (!this.state.welcomeMessageDelivered && this.state.businessId) {
               this.triggerGreeting();
             }
             break;
 
           case 'response.audio.delta':
-            await this.sendWebSocketMessage(this.ws, {
-              event: 'media',
-              streamSid: this.state.streamSid,
-              media: { payload: response.delta }
-            }, 'Audio delta to Twilio');
-            break;
-
-          case 'response.audio.done':
-            console.log('[DEBUG] 6b.1. Audio response complete');
+            if (this.twilioWs?.readyState === WebSocket.OPEN && this.state.streamSid) {
+              await this.sendWebSocketMessage(this.twilioWs, {
+                event: 'media',
+                streamSid: this.state.streamSid,
+                media: { payload: response.delta }
+              }, 'Audio delta to Twilio');
+            }
             break;
 
           case 'input_audio_buffer.speech_started':
-            console.log('[DEBUG] 6b. Speech started - waiting to confirm sustained speech...');
-            
-            // Implement intelligent interruption with delay
-            setTimeout(async () => {
-              await this.sendWebSocketMessage(this.openAiWs, { type: 'response.cancel' }, 'Cancel response to OpenAI');
-              console.log('[DEBUG] 6b.1. Confirmed sustained speech - interrupting AI response');
-            }, 300); // 300ms delay to confirm sustained speech
+            console.log('[DEBUG] Speech started');
             break;
 
           case 'input_audio_buffer.speech_stopped':
-            console.log('[DEBUG] 6c. Speech stopped');
-            await this.sendWebSocketMessage(this.openAiWs, { type: 'input_audio_buffer.commit' }, 'Commit audio to OpenAI');
-            await this.sendWebSocketMessage(this.openAiWs, { type: 'response.create' }, 'Create response to OpenAI');
+            console.log('[DEBUG] Speech stopped');
+            await this.sendWebSocketMessage(this.openAiWs, {
+              type: 'input_audio_buffer.commit'
+            }, 'Commit audio to OpenAI');
+            await this.sendWebSocketMessage(this.openAiWs, {
+              type: 'response.create'
+            }, 'Create response to OpenAI');
             break;
 
           case 'response.text.delta':
@@ -448,7 +454,7 @@ export class RealtimeAgentService {
 
   private async configureOpenAiSession(): Promise<void> {
     console.log('[DEBUG] 7. Configuring OpenAI session...');
-    if (!this.openAiWs || this.openAiWs.readyState !== 1) {
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
       console.error('[DEBUG] OpenAI WebSocket not ready for configuration');
       return;
     }
@@ -476,12 +482,8 @@ export class RealtimeAgentService {
       const sessionConfig = {
         type: 'session.update',
         session: {
-          model: 'gpt-4o-realtime-preview-2024-10-01',
-          temperature: 0.7,
           modalities: ['text', 'audio'],
-          instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
           voice: openaiVoice,
-          input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: {
             model: 'whisper-1',
@@ -509,29 +511,33 @@ export class RealtimeAgentService {
   }
 
   private async triggerGreeting(): Promise<void> {
-    console.log('[DEBUG] 7c. Preparing welcome message...');
+    if (!this.state.isAiReady || !this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
+      console.log('[DEBUG] Cannot trigger greeting, system not ready');
+      return;
+    }
+
     try {
       const welcomeMessage = await this.getWelcomeMessage(this.state.businessId!);
-      console.log('[DEBUG] 7d. Welcome message retrieved:', welcomeMessage);
+      console.log('[DEBUG] Triggering greeting:', welcomeMessage);
 
-      const textEvent = {
+      // Step 1: Send the text to be spoken
+      await this.sendWebSocketMessage(this.openAiWs, {
         type: 'conversation.item.create',
         item: {
           type: 'message',
-          role: 'user',
+          role: 'assistant',
           content: [{
             type: 'input_text',
-            text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+            text: welcomeMessage
           }]
         }
-      };
+      }, 'Welcome message to OpenAI');
 
-      await this.sendWebSocketMessage(this.openAiWs, textEvent, 'Welcome message to OpenAI');
+      // Step 2: Send the command to generate a response
+      await this.sendWebSocketMessage(this.openAiWs, {
+        type: 'response.create'
+      }, 'Response creation to OpenAI');
 
-      // Wait for message to be processed before creating response
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await this.sendWebSocketMessage(this.openAiWs, { type: 'response.create' }, 'Response creation to OpenAI');
       this.state.welcomeMessageDelivered = true;
     } catch (error) {
       console.error('[DEBUG] Error triggering greeting:', error);
@@ -539,13 +545,13 @@ export class RealtimeAgentService {
   }
 
   private handleOpenAiAudio(audioB64: string): void {
-    if (this.ws?.readyState === 1 && this.state.streamSid) {
+    if (this.twilioWs?.readyState === WebSocket.OPEN && this.state.streamSid) {
       const twilioMessage = {
         event: 'media',
         streamSid: this.state.streamSid,
         media: { payload: audioB64 }
       };
-      this.ws.send(JSON.stringify(twilioMessage));
+      this.twilioWs.send(JSON.stringify(twilioMessage));
     }
   }
 
@@ -579,7 +585,7 @@ export class RealtimeAgentService {
     }
 
     console.log('[DEBUG] 8c. Closing WebSocket connections...');
-    this.ws?.close();
+    this.twilioWs?.close();
     this.openAiWs?.close();
     console.log('[DEBUG] 8d. Cleanup complete');
   }
@@ -720,8 +726,7 @@ export class RealtimeAgentService {
         return 'Hello! Thank you for calling. How can I help you today?';
       }
 
-      const welcomeMessage = business.agentConfig?.voiceGreetingMessage || 
-                           business.agentConfig?.welcomeMessage || 
+      const welcomeMessage = business.agentConfig?.welcomeMessage || 
                            'Hello! Thank you for calling. How can I help you today?';
 
       console.log('[DEBUG] 13a. Welcome message retrieved:', welcomeMessage);
@@ -733,11 +738,11 @@ export class RealtimeAgentService {
   }
 
   public getCallSid(): string {
-    return this.callSid;
+    return this.state.callSid || '';
   }
 
   public getConnectionStatus(): string {
-    const wsStatus = this.ws?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
+    const wsStatus = this.twilioWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
     return `WebSocket: ${wsStatus}, Twilio Ready: ${this.state.isTwilioReady}, AI Ready: ${this.state.isAiReady}`;
   }
 }
