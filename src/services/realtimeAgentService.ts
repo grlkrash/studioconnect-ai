@@ -311,7 +311,7 @@ export class RealtimeAgentService {
     console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
 
     let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
-    let openaiVoice = 'nova'; // Default voice - lowercase as per API spec
+    let openaiVoice = 'alloy'; // Default voice - lowercase as per API spec
     let openaiModel = 'tts-1'; // Default TTS model
 
     try {

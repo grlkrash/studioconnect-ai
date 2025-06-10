@@ -58,7 +58,7 @@ model AgentConfig {
   voiceEmergencyMessage        String?
   voiceEndCallMessage          String?
   voiceGreetingMessage         String?
-  openaiVoice                  OpenAiVoice           @default(NOVA)
+  openaiVoice                  OpenAiVoice           @default(ALLOY)
   useOpenaiTts                 Boolean               @default(true)
   openaiModel                  String                @default("tts-1")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -136,11 +136,13 @@ model Conversation {
 
 enum OpenAiVoice {
   ALLOY
+  ASH
+  BALLAD
+  CORAL
   ECHO
-  FABLE
-  ONYX
-  NOVA
+  SAGE
   SHIMMER
+  VERSE
 }
 
 enum BusinessType {
