@@ -38,6 +38,11 @@ interface ConnectionState {
   isCleaningUp: boolean;
 }
 
+interface Question {
+  questionText: string;
+  order: number;
+}
+
 /**
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
  * Handles real-time bidirectional voice conversations with lead capture integration
@@ -368,6 +373,34 @@ export class RealtimeAgentService {
 
     console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
 
+    let businessName = 'our business';
+    let questions: Question[] = [];
+
+    try {
+      const callDetails = await twilioClient.calls(this.callSid).fetch();
+      const toPhoneNumber = callDetails.to;
+      
+      if (toPhoneNumber) {
+        const business = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: toPhoneNumber },
+          include: {
+            agentConfig: {
+              include: { questions: { orderBy: { order: 'asc' } } }
+            }
+          }
+        });
+        
+        if (business) {
+          this.state.businessId = business.id;
+          businessName = business.name;
+          questions = business.agentConfig?.questions || [];
+          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
+        }
+      }
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error fetching business config for session setup:`, error);
+    }
+
     let businessInstructions = `You are a voice AI receptionist for ${businessName}. Your single most important goal is to follow the script and rules below precisely. The conversation is happening live on a phone call.
 
 **--- SCRIPT & FLOW CONTROL ---**
@@ -375,7 +408,7 @@ export class RealtimeAgentService {
 Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
 
 **LEAD CAPTURE SCRIPT:**
-${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
+${questions.map((q: Question, index: number) => `${index + 1}. ${q.questionText}`).join('\n')}
 
 **COMPLETION MESSAGE (Say this only after the last question is answered):**
 "Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
@@ -441,7 +474,7 @@ ${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
 Your current task is to complete the lead capture script. You must ask the questions below in order, one at a time. After you get an answer, you will acknowledge it ("Okay," "Got it.") and immediately ask the next unanswered question. Do not stop until all questions have been asked.
 
 **LEAD CAPTURE SCRIPT:**
-${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
+${questions.map((q: Question, index: number) => `${index + 1}. ${q.questionText}`).join('\n')}
 
 **COMPLETION MESSAGE (Say this only after the last question is answered):**
 "Thank you. I've collected all the necessary details. Our team will review this and get back to you shortly. Have a great day!"
