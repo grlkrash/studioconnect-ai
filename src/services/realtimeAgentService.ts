@@ -235,6 +235,7 @@ export class RealtimeAgentService {
           const callSid = data.start?.callSid;
           this.state.streamSid = data.start?.streamSid;
           this.state.isTwilioReady = true;
+          this.callSid = callSid;
 
           if (this.onCallSidReceived) {
             this.onCallSidReceived(callSid);
