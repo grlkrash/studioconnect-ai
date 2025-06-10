@@ -1584,7 +1584,7 @@ User's message: ${message}`
     }
     
     // Inside processMessage function, after the confirmation checks:
-    if (currentActiveFlow && currentActiveFlow.startsWith('LEAD_CAPTURE_CONFIRM_')) {
+    if (currentActiveFlow?.startsWith('LEAD_CAPTURE_CONFIRM_')) {
       // Check if user confirmed
       const isConfirmed = message.toLowerCase().includes('yes') || 
                          message.toLowerCase().includes('correct') || 
@@ -1594,12 +1594,12 @@ User's message: ${message}`
 
       if (!isConfirmed) {
         // User didn't confirm - ask for the information again
-        const questionType = currentActiveFlow.replace('LEAD_CAPTURE_CONFIRM_', '').toLowerCase()
-        const retryQuestion = agentConfig?.questions.find((q: LeadCaptureQuestion) => q.mapsToLeadField === questionType)
+        const questionType = (currentActiveFlow as string).replace('LEAD_CAPTURE_CONFIRM_', '').toLowerCase()
+        const retryQuestion = agentConfig?.questions?.find((q: LeadCaptureQuestion) => q.mapsToLeadField === questionType)
         
         if (retryQuestion?.questionText) {
           return {
-            reply: `I apologize for the confusion. Let me ask again: ${retryQuestion.questionText}`,
+            reply: `I apologize for the confusion. Let me ask again: ${retryQuestion?.questionText}`,
             currentFlow: 'LEAD_CAPTURE',
             showBranding,
             nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')

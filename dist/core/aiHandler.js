@@ -10,6 +10,7 @@ const ragService_1 = require("./ragService");
 const notificationService_1 = require("../services/notificationService");
 const client_1 = require("@prisma/client");
 const voiceSessionService_1 = __importDefault(require("../services/voiceSessionService"));
+const twilio_1 = __importDefault(require("twilio"));
 // Default emergency questions when none are configured
 const DEFAULT_EMERGENCY_QUESTIONS = [
     {
@@ -409,6 +410,33 @@ Business name: ${businessName || 'our team'}`;
     catch (error) {
         console.error('Error generating emergency escalation offer:', error);
         return `I understand this is an emergency situation. I can either connect you directly to our emergency response team right now (within 30 seconds), or quickly gather just 2-3 essential details so we can dispatch help immediately. Which would you prefer?`;
+    }
+};
+// Add confirmation rules for emergency flow
+const confirmEmergencyDetails = async (userResponse, questionType, businessName) => {
+    const confirmationPrompt = `The user has provided their ${questionType}. Generate a confirmation response that:
+1. Repeats back the ${questionType} they provided
+2. Asks "Is that correct?"
+3. Uses natural speech patterns
+4. Is brief and clear
+
+User's ${questionType}: "${userResponse}"
+
+Generate only the confirmation response:`;
+    const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined);
+    const confirmationResponse = await (0, openai_1.getChatCompletion)(confirmationPrompt, voiceSystemPrompt);
+    return cleanVoiceResponse(confirmationResponse || `I heard your ${questionType} as "${userResponse}". Is that correct?`);
+};
+// Add Twilio caller ID lookup function
+const getCallerId = async (callSid) => {
+    try {
+        const twilioClient = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        const call = await twilioClient.calls(callSid).fetch();
+        return call.from || null;
+    }
+    catch (error) {
+        console.error('Error fetching caller ID from Twilio:', error);
+        return null;
     }
 };
 /**
@@ -901,6 +929,40 @@ Generate a natural way to ask this question that flows well in the conversation.
                         };
                     }
                 }
+                // After user provides address
+                if (nextQuestion?.mapsToLeadField === 'address') {
+                    const confirmationResponse = await confirmEmergencyDetails(message, 'address', business.name);
+                    return {
+                        reply: confirmationResponse,
+                        currentFlow: 'LEAD_CAPTURE_CONFIRM_ADDRESS',
+                        showBranding,
+                        nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_ADDRESS')
+                    };
+                }
+                // After user provides phone number
+                if (nextQuestion?.mapsToLeadField === 'contactPhone') {
+                    // Get caller ID from Twilio if available
+                    const callerId = callSid ? await getCallerId(callSid) : null;
+                    if (callerId) {
+                        const confirmationResponse = await confirmEmergencyDetails(message, 'phone', business.name);
+                        return {
+                            reply: confirmationResponse,
+                            currentFlow: 'LEAD_CAPTURE_CONFIRM_PHONE',
+                            showBranding,
+                            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_PHONE')
+                        };
+                    }
+                }
+                // After user provides name
+                if (nextQuestion?.mapsToLeadField === 'contactName') {
+                    const confirmationResponse = await confirmEmergencyDetails(message, 'name', business.name);
+                    return {
+                        reply: confirmationResponse,
+                        currentFlow: 'LEAD_CAPTURE_CONFIRM_NAME',
+                        showBranding,
+                        nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_NAME')
+                    };
+                }
                 // Fallback to original prefix logic if AI generation fails or no context
                 let questionPrefix = "";
                 if (assistantLeadQuestions.length > 0) {
@@ -1219,6 +1281,35 @@ User's message: ${message}`;
                 currentFlow: null,
                 showBranding,
                 nextVoiceAction: determineNextVoiceAction('OTHER', null)
+            };
+        }
+        // Inside processMessage function, after the confirmation checks:
+        if (currentActiveFlow?.startsWith('LEAD_CAPTURE_CONFIRM_')) {
+            // Check if user confirmed
+            const isConfirmed = message.toLowerCase().includes('yes') ||
+                message.toLowerCase().includes('correct') ||
+                message.toLowerCase().includes('right') ||
+                message.toLowerCase().includes('that\'s right') ||
+                message.toLowerCase().includes('that\'s correct');
+            if (!isConfirmed) {
+                // User didn't confirm - ask for the information again
+                const questionType = currentActiveFlow.replace('LEAD_CAPTURE_CONFIRM_', '').toLowerCase();
+                const retryQuestion = agentConfig?.questions?.find((q) => q.mapsToLeadField === questionType);
+                if (retryQuestion?.questionText) {
+                    return {
+                        reply: `I apologize for the confusion. Let me ask again: ${retryQuestion.questionText}`,
+                        currentFlow: 'LEAD_CAPTURE',
+                        showBranding,
+                        nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+                    };
+                }
+            }
+            // User confirmed - continue with next question
+            return {
+                reply: "Thank you for confirming. Let's continue.",
+                currentFlow: 'LEAD_CAPTURE',
+                showBranding,
+                nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
             };
         }
     }
