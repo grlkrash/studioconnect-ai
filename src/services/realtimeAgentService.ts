@@ -102,19 +102,42 @@ export class RealtimeAgentService {
       return;
     }
 
+    console.log(`[RealtimeAgent] Setting up Twilio listeners for call ${this.callSid}. Current WebSocket state: ${this.twilioWs.readyState}`);
+
+    // Add ping interval to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (this.twilioWs?.readyState === WebSocket.OPEN) {
+        this.twilioWs.ping();
+      } else {
+        clearInterval(pingInterval);
+      }
+    }, 30000);
+
     this.twilioWs.on('message', (message: Buffer) => {
       this.handleTwilioMessage(message);
     });
-    this.twilioWs.on('close', () => this.cleanup('Twilio'));
-    this.twilioWs.on('error', (error) => {
-      console.error(`[RealtimeAgent] Twilio WebSocket error for ${this.callSid}:`, error);
+
+    this.twilioWs.on('close', (code: number, reason: Buffer) => {
+      clearInterval(pingInterval);
+      console.log(`[RealtimeAgent] Twilio WebSocket closed for call ${this.callSid}. Code: ${code}, Reason: ${reason.toString()}`);
       this.cleanup('Twilio');
+    });
+
+    this.twilioWs.on('error', (error: Error) => {
+      clearInterval(pingInterval);
+      console.error(`[RealtimeAgent] Twilio WebSocket error for call ${this.callSid}:`, error);
+      this.cleanup('Twilio');
+    });
+
+    this.twilioWs.on('pong', () => {
+      console.log(`[RealtimeAgent] Received pong from Twilio for call ${this.callSid}`);
     });
   }
 
   private handleTwilioMessage(message: Buffer) {
     try {
       const msg = JSON.parse(message.toString());
+      console.log(`[RealtimeAgent] Received Twilio message:`, msg);
       
       if (msg.event === "connected") {
         console.log(`[RealtimeAgent] Twilio stream connected for call ${this.callSid}`);
@@ -150,15 +173,15 @@ export class RealtimeAgentService {
           this.openAiWs.send(JSON.stringify(audioAppend));
         }
         
-                 // Send mark message back to Twilio to keep audio stream alive
-         if (this.state.streamSid && this.twilioWs) {
-           const markMsg = {
-             event: "mark", 
-             streamSid: this.state.streamSid,
-             mark: { name: `forwarded_to_openai_${Date.now()}` }
-           };
-           this.twilioWs.send(JSON.stringify(markMsg));
-         }
+        // Send mark message back to Twilio to keep audio stream alive
+        if (this.state.streamSid && this.twilioWs) {
+          const markMsg = {
+            event: "mark", 
+            streamSid: this.state.streamSid,
+            mark: { name: `forwarded_to_openai_${Date.now()}` }
+          };
+          this.twilioWs.send(JSON.stringify(markMsg));
+        }
       } else if (msg.event === "stop") {
         console.log(`[RealtimeAgent] Twilio stream stopped for call: ${this.callSid}`);
         this.cleanup('Twilio');
@@ -177,6 +200,9 @@ export class RealtimeAgentService {
       'OpenAI-Beta': 'realtime=v1'
     };
 
+    console.log(`[RealtimeAgent] OpenAI WebSocket URL: ${url}`);
+    console.log(`[RealtimeAgent] OpenAI WebSocket headers:`, headers);
+
     this.openAiWs = new WebSocket(url, { headers });
     this.setupOpenAIListeners();
   }
@@ -189,10 +215,20 @@ export class RealtimeAgentService {
       await this.configureOpenAiSession();
     });
 
+    // Add ping interval to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (this.openAiWs?.readyState === WebSocket.OPEN) {
+        this.openAiWs.ping();
+      } else {
+        clearInterval(pingInterval);
+      }
+    }, 30000);
+
     this.openAiWs.on('message', (data: Buffer) => {
       const message = data.toString();
       try {
         const response = JSON.parse(message);
+        console.log(`[RealtimeAgent] Received message from OpenAI:`, response);
 
         switch (response.type) {
           case 'session.created':
@@ -241,7 +277,7 @@ export class RealtimeAgentService {
             break;
             
           case 'error':
-            console.log(`[RealtimeAgent] Expected OpenAI operational message for call ${this.callSid}: ${response.message}`);
+            console.error(`[RealtimeAgent] OpenAI error for call ${this.callSid}: ${response.message}`);
             break;
         }
       } catch (error) {
@@ -250,13 +286,19 @@ export class RealtimeAgentService {
     });
 
     this.openAiWs.on('close', (code: number, reason: Buffer) => {
+      clearInterval(pingInterval);
       console.log(`[RealtimeAgent] OpenAI WebSocket closed for call ${this.callSid}. Code: ${code}, Reason: ${reason.toString()}`);
       this.cleanup();
     });
 
     this.openAiWs.on('error', (error: Error) => {
+      clearInterval(pingInterval);
       console.error(`[RealtimeAgent] OpenAI WebSocket error for call ${this.callSid}:`, error);
       this.cleanup();
+    });
+
+    this.openAiWs.on('pong', () => {
+      console.log(`[RealtimeAgent] Received pong from OpenAI for call ${this.callSid}`);
     });
   }
 
@@ -366,7 +408,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       }
     };
 
-    console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}`);
+    console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}:`, sessionConfig);
     try {
       this.openAiWs.send(JSON.stringify(sessionConfig));
       console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
@@ -380,11 +422,12 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Session creation timeout'));
-      }, 10000);
+      }, 30000); // Increased from 10s to 30s
 
       const handler = (event: { data: any }) => {
         try {
           const response = JSON.parse(event.data.toString());
+          console.log(`[RealtimeAgent] Received response during session creation:`, response);
           if (response.type === 'session.created') {
             clearTimeout(timeout);
             this.openAiWs!.removeEventListener('message', handler);
@@ -393,6 +436,10 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
             clearTimeout(timeout);
             this.openAiWs!.removeEventListener('message', handler);
             reject(new Error(`Session error: ${response.error}`));
+          } else if (response.type === 'error') {
+            clearTimeout(timeout);
+            this.openAiWs!.removeEventListener('message', handler);
+            reject(new Error(`OpenAI error: ${response.message}`));
           }
         } catch (error) {
           console.error(`[RealtimeAgent] Error handling session creation response:`, error);
@@ -411,6 +458,14 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
 
   private handleOpenAiAudio(audioB64: string) {
     try {
+      console.log(`[RealtimeAgent] Handling OpenAI audio for call ${this.callSid}. Audio length: ${audioB64.length}`);
+      console.log(`[RealtimeAgent] Current WebSocket states:`, {
+        openAiWsState: this.openAiWs?.readyState,
+        twilioWsState: this.twilioWs?.readyState,
+        isTwilioReady: this.state.isTwilioReady,
+        streamSid: this.state.streamSid
+      });
+
       // Validate audio data
       if (!audioB64 || typeof audioB64 !== 'string') {
         console.error(`[RealtimeAgent] Invalid audio data received for call ${this.callSid}`);
@@ -419,6 +474,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
 
       // Add audio to queue for processing
       this.state.audioQueue.push(audioB64);
+      console.log(`[RealtimeAgent] Added audio to queue. Queue length: ${this.state.audioQueue.length}`);
       this.processAudioQueue();
     } catch (error) {
       console.error(`[RealtimeAgent] Error handling OpenAI audio:`, error);
@@ -428,7 +484,11 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
   private processAudioQueue() {
     // Only process audio if both connections are ready
     if (!this.state.isTwilioReady || !this.state.streamSid || !this.twilioWs) {
-      console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}`);
+      console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}. State:`, {
+        isTwilioReady: this.state.isTwilioReady,
+        streamSid: this.state.streamSid,
+        twilioWsState: this.twilioWs?.readyState
+      });
       return;
     }
 
@@ -456,9 +516,9 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
           this.twilioWs.send(JSON.stringify(twilioMsg));
           this.twilioWs.send(JSON.stringify(markMsg));
           
-          console.log(`[RealtimeAgent] Forwarded audio chunk to Twilio for call ${this.callSid}`);
+          console.log(`[RealtimeAgent] Forwarded audio chunk to Twilio for call ${this.callSid}. Chunk size: ${audioChunk.length}`);
         } else {
-          console.error(`[RealtimeAgent] Twilio WebSocket not open for call ${this.callSid}`);
+          console.error(`[RealtimeAgent] Twilio WebSocket not open for call ${this.callSid}. State: ${this.twilioWs.readyState}`);
           this.cleanup('Twilio');
           return;
         }
@@ -762,6 +822,10 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
 
   public cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
     console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
+    console.log(`[RealtimeAgent] Current WebSocket states:`, {
+      openAiWsState: this.openAiWs?.readyState,
+      twilioWsState: this.twilioWs?.readyState
+    });
     
     // Process lead creation before cleanup if we have conversation data
     if (this.state.conversationHistory.length > 0 && this.state.businessId) {
