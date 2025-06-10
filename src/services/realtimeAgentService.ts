@@ -980,7 +980,10 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         throw new Error('OpenAI WebSocket not ready');
       }
 
-      // Send the welcome message as a text event with user role and clear instruction
+      // Escape any quotes in the welcome message to prevent issues.
+      const safeWelcomeMessage = welcomeMessage.replace(/"/g, '\\"');
+
+      // Use a less rigid prompt that is less likely to trigger AI guardrails.
       const textEvent = {
         type: 'conversation.item.create',
         item: {
@@ -988,7 +991,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
           role: 'user',
           content: [{
             type: 'input_text',
-            text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+            text: `Start the conversation by saying the following welcome message to the caller: "${safeWelcomeMessage}"`
           }]
         }
       };
