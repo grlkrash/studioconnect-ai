@@ -13,6 +13,27 @@ const twilioClient = twilio(
 // Initialize Prisma client for AgentConfig fetching
 const prisma = new PrismaClient()
 
+/**
+ * Validates that all required Twilio environment variables are set
+ * @returns {boolean} True if all required variables are present
+ */
+function validateTwilioConfig(): boolean {
+  const requiredVars = [
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_PHONE_NUMBER'
+  ];
+  
+  const missing = requiredVars.filter(varName => !process.env[varName]);
+  
+  if (missing.length > 0) {
+    console.error(`[NotificationService] Missing required Twilio environment variables: ${missing.join(', ')}`);
+    return false;
+  }
+  
+  return true;
+}
+
 // Initialize email transporter
 let transporter: nodemailer.Transporter
 
@@ -235,25 +256,25 @@ export async function initiateEmergencyVoiceCall(
       .map(([key]) => key);
 
     if (missingVars.length > 0) {
-      console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+      console.error(`[Emergency Call] Missing required environment variables: ${missingVars.join(', ')}`);
       return;
     }
 
     const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
     if (!twilioPhoneNumber) {
-      console.error('TWILIO_PHONE_NUMBER environment variable is not set')
-      return
+      console.error('[Emergency Call] TWILIO_PHONE_NUMBER environment variable is not set');
+      return;
     }
 
     // Fetch AgentConfig for voice settings
-    let agentConfig = null
+    let agentConfig = null;
     try {
       agentConfig = await prisma.agentConfig.findUnique({
         where: { businessId }
-      })
-      console.log('[Emergency Call] Found AgentConfig:', agentConfig ? 'Yes' : 'No')
+      });
+      console.log('[Emergency Call] Found AgentConfig:', agentConfig ? 'Yes' : 'No');
     } catch (configError) {
-      console.error('[Emergency Call] Error fetching AgentConfig:', configError)
+      console.error('[Emergency Call] Error fetching AgentConfig:', configError);
     }
 
     // Configure voice settings with fallbacks - prioritize ENV var for HSP alerts

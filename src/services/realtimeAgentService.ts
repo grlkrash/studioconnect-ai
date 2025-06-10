@@ -1,7 +1,9 @@
-import WebSocket from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
+import { getChatCompletion } from '../services/openai';
+import { cleanVoiceResponse } from '@/utils/voiceHelpers';
 
 const prisma = new PrismaClient();
 
@@ -10,6 +12,14 @@ const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
+
+interface AgentSession {
+  ws: WebSocket;
+  businessId: string;
+  conversationId: string;
+  isActive: boolean;
+  lastActivity: Date;
+}
 
 // This new interface will help manage the state of our connections
 interface ConnectionState {
@@ -77,7 +87,7 @@ export class RealtimeAgentService {
       // Set up Twilio WebSocket listeners - connection to OpenAI will be triggered by 'start' event
       this.setupTwilioListeners();
     } catch (error) {
-      console.error(`[RealtimeAgent] Failed to connect for call ${this.callSid}:`, error);
+      console.error('[RealtimeAgent] Error in connect:', error);
       throw error;
     }
   }
@@ -88,7 +98,7 @@ export class RealtimeAgentService {
       return;
     }
 
-    this.twilioWs.on('message', (message: WebSocket.RawData) => {
+    this.twilioWs.on('message', (message: Buffer) => {
       this.handleTwilioMessage(message);
     });
     this.twilioWs.on('close', () => this.cleanup('Twilio'));
@@ -98,7 +108,7 @@ export class RealtimeAgentService {
     });
   }
 
-  private handleTwilioMessage(message: WebSocket.RawData) {
+  private handleTwilioMessage(message: Buffer) {
     try {
       const msg = JSON.parse(message.toString());
       
@@ -150,14 +160,14 @@ export class RealtimeAgentService {
         this.cleanup('Twilio');
       }
     } catch (error) {
-      console.error(`[RealtimeAgent] Error handling Twilio message for ${this.callSid}:`, error);
+      console.error('[RealtimeAgent] Error handling Twilio message:', error);
     }
   }
 
   private connectToOpenAI() {
     console.log(`[RealtimeAgent] Connecting to OpenAI Realtime API for call: ${this.callSid}`);
     
-    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4-turbo-preview';
     const headers = {
       'Authorization': `Bearer ${this.openaiApiKey}`,
       'OpenAI-Beta': 'realtime=v1'
@@ -336,12 +346,13 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         input_audio_transcription: { model: 'whisper-1' },
         turn_detection: {
           type: 'server_vad',
-          threshold: 0.8,
+          threshold: 0.5,
           prefix_padding_ms: 300,
-          silence_duration_ms: 2200
+          silence_duration_ms: 500
         },
         response_creation: {
-          type: 'auto'
+          type: 'auto',
+          model: 'gpt-4-turbo-preview'
         }
       }
     };
@@ -444,70 +455,89 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
    * Processes lead creation at end of call
    */
   private async processLeadCreation(): Promise<void> {
-    if (!this.state.businessId || this.state.conversationHistory.length < 4) {
-      console.log(`[RealtimeAgent] Skipping lead creation - insufficient conversation data`);
-      return;
-    }
-
     try {
-      console.log(`[RealtimeAgent] Creating lead for call ${this.callSid}...`);
+      // Validate business configuration first
+      if (!this.state.businessId) {
+        console.error('[RealtimeAgent] No business ID available for lead creation');
+        return;
+      }
 
-      // Convert conversation history to format expected by processMessage
+      const hasValidConfig = await this.validateBusinessConfig(this.state.businessId);
+      if (!hasValidConfig) {
+        console.error('[RealtimeAgent] Business configuration validation failed, skipping lead creation');
+        return;
+      }
+
+      // Extract information from conversation
+      const extractedInfo = this.extractLeadInformation();
+      
+      // Check for emergency in the first user message
+      const firstUserMessage = this.state.conversationHistory.find(entry => entry.role === 'user')?.content;
+      const isEmergency = firstUserMessage ? await this.detectEmergencyWithAI(firstUserMessage) : false;
+      
+      // Prepare conversation for AI
       const conversationForAI = this.state.conversationHistory.map(entry => ({
         role: entry.role,
         content: entry.content
       }));
 
-      // Get the user's main message (usually the first substantial user message)
-      const userMessages = this.state.conversationHistory.filter(entry => entry.role === 'user');
-      const mainUserMessage = userMessages.find(msg => msg.content.length > 10) || userMessages[0];
-
-      if (!mainUserMessage) {
-        console.log(`[RealtimeAgent] No substantial user message found for lead creation`);
-        return;
-      }
-
-      // Process through the lead capture system
-      const result = await processMessage(
-        mainUserMessage.content,
-        conversationForAI,
-        this.state.businessId,
-        'LEAD_CAPTURE', // Force lead capture mode
-        this.callSid
-      );
-
-      console.log(`[RealtimeAgent] Lead processing result:`, result);
-
-      // Create conversation summary for lead
-      const conversationSummary = this.state.conversationHistory
-        .map(entry => `${entry.role}: ${entry.content}`)
-        .join('\n');
-
-      // Try to extract key information from conversation
-      const extractedInfo = this.extractLeadInformation();
-
-      // Create lead record
+      // Create lead record with emergency priority if detected
       const newLead = await prisma.lead.create({
         data: {
           businessId: this.state.businessId,
           status: 'NEW',
-          priority: this.detectEmergency() ? 'URGENT' : 'NORMAL',
+          priority: isEmergency ? 'URGENT' : 'NORMAL',
           conversationTranscript: JSON.stringify(conversationForAI),
-          capturedData: extractedInfo,
+          capturedData: {
+            ...extractedInfo,
+            emergency_notes: isEmergency ? firstUserMessage : null
+          },
           contactName: extractedInfo.name || null,
           contactEmail: extractedInfo.email || null,
           contactPhone: extractedInfo.phone || null,
-          notes: `Voice call lead - CallSid: ${this.callSid}`
+          notes: `Voice call lead - CallSid: ${this.callSid}${isEmergency ? ' - EMERGENCY DETECTED' : ''}`
         }
       });
 
-      console.log(`[RealtimeAgent] Lead created successfully:`, newLead.id);
+      console.log(`[RealtimeAgent] Lead created successfully:`, {
+        leadId: newLead.id,
+        isEmergency,
+        priority: newLead.priority
+      });
 
-      // Send notifications
+      // Send notifications immediately
       await this.sendLeadNotifications(newLead);
 
     } catch (error) {
       console.error(`[RealtimeAgent] Error creating lead for call ${this.callSid}:`, error);
+    }
+  }
+
+  /**
+   * Enhanced emergency detection using AI
+   */
+  private async detectEmergencyWithAI(message: string): Promise<boolean> {
+    try {
+      const emergencyCheckPrompt = `Does the following user message indicate an emergency situation (e.g., burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water heater leak)? Respond with only YES or NO. User message: '${message}'`;
+      
+      const isEmergencyResponse = await getChatCompletion(
+        emergencyCheckPrompt, 
+        "You are an emergency detection assistant specialized in identifying urgent home service situations."
+      );
+      
+      const isEmergency = cleanVoiceResponse(isEmergencyResponse || 'NO').trim().toUpperCase() === 'YES';
+      
+      console.log(`[RealtimeAgent] Emergency detection result:`, {
+        message,
+        isEmergency,
+        rawResponse: isEmergencyResponse
+      });
+      
+      return isEmergency;
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error in AI emergency detection:`, error);
+      // Fallback to keyword-based detection if AI fails
+      return this.detectEmergency();
     }
   }
 
@@ -715,5 +745,44 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
    */
   public getCallSid(): string {
     return this.callSid;
+  }
+
+  /**
+   * Validates that the business has proper notification settings configured
+   * @param businessId - The ID of the business to validate
+   * @returns {Promise<boolean>} True if business has valid notification settings
+   */
+  private async validateBusinessConfig(businessId: string): Promise<boolean> {
+    try {
+      const business = await prisma.business.findUnique({
+        where: { id: businessId },
+        select: {
+          notificationEmail: true,
+          notificationPhoneNumber: true,
+          name: true
+        }
+      });
+      
+      if (!business) {
+        console.error(`[RealtimeAgent] Business ${businessId} not found`);
+        return false;
+      }
+      
+      if (!business.notificationEmail && !business.notificationPhoneNumber) {
+        console.warn(`[RealtimeAgent] Business ${business.name} (${businessId}) has no notification methods configured`);
+        return false;
+      }
+      
+      // Log notification configuration
+      console.log(`[RealtimeAgent] Business ${business.name} notification config:`, {
+        hasEmail: !!business.notificationEmail,
+        hasPhone: !!business.notificationPhoneNumber
+      });
+      
+      return true;
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error validating business config:`, error);
+      return false;
+    }
   }
 } 
