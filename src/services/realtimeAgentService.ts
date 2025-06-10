@@ -175,21 +175,23 @@ export class RealtimeAgentService {
       try {
         const response = JSON.parse(message);
 
-        // Uncomment the line below for verbose, real-time event logging
-        // console.log(`[RealtimeAgent] Received OpenAI event: ${response.type} for call ${this.callSid}`);
+        // Enable verbose logging for debugging
+        console.log(`[RealtimeAgent] Received OpenAI event: ${response.type} for call ${this.callSid}`);
 
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
             this.state.isAiReady = true;
             this.state.isCallActive = true;
-            // Configure the session after it's created
-            this.configureOpenAiSession();
+            // Configure session immediately after creation
+            this.configureOpenAiSession().catch(error => {
+              console.error(`[RealtimeAgent] Failed to configure OpenAI session:`, error);
+            });
             break;
 
           case 'session.error':
             console.error(`[RealtimeAgent] OpenAI Session Error for call ${this.callSid}:`, response.error);
-            this.cleanup();
+            this.cleanup('OpenAI');
             break;
             
           case 'response.audio.delta':
@@ -260,13 +262,10 @@ export class RealtimeAgentService {
     let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?'; // Default welcome
 
     try {
-      console.log(`[RealtimeAgent] Fetching call details for ${this.callSid}`);
       const callDetails = await twilioClient.calls(this.callSid).fetch();
       const toPhoneNumber = callDetails.to;
-      console.log(`[RealtimeAgent] Call details fetched. To number: ${toPhoneNumber}`);
       
       if (toPhoneNumber) {
-        console.log(`[RealtimeAgent] Looking up business for phone number: ${toPhoneNumber}`);
         const business = await prisma.business.findFirst({
           where: { twilioPhoneNumber: toPhoneNumber },
           include: {
@@ -278,20 +277,19 @@ export class RealtimeAgentService {
         
         if (business) {
           this.state.businessId = business.id;
-          console.log(`[RealtimeAgent] Business found: ${business.name} (ID: ${business.id})`);
+          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
 
           if (business.agentConfig?.voiceGreetingMessage?.trim()) {
             welcomeMessage = business.agentConfig.voiceGreetingMessage;
-            console.log(`[RealtimeAgent] Using voice greeting message: ${welcomeMessage}`);
+            console.log(`[RealtimeAgent] Using custom voice greeting: "${welcomeMessage}"`);
           } else if (business.agentConfig?.welcomeMessage?.trim()) {
             welcomeMessage = business.agentConfig.welcomeMessage;
-            console.log(`[RealtimeAgent] Using welcome message: ${welcomeMessage}`);
+            console.log(`[RealtimeAgent] Using default welcome message: "${welcomeMessage}"`);
           }
           welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
           
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
-          console.log(`[RealtimeAgent] Found ${questions.length} questions for business`);
           
           businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
 
@@ -299,7 +297,7 @@ START THE CONVERSATION BY SAYING: "${welcomeMessage}"
 
 AFTER the greeting, listen to the user and respond accordingly.
 
-🚨 EMERGENCY DETECTION PROTOCOL:
+EMERGENCY DETECTION PROTOCOL:
 FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water damage):
 - If EMERGENCY detected: Immediately say "I understand this is an emergency situation. I can connect you directly to our team right now, or quickly gather your details so they can respond immediately. What would you prefer?"
 - If they choose "connect now": Say "Absolutely! I'm connecting you to our emergency line right now. Please hold while I transfer your call."
@@ -312,17 +310,15 @@ FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, floodi
   6) "What's your phone number?" 
   7) "Can you describe the emergency situation in detail?"
 
-🎯 NORMAL LEAD CAPTURE: For non-emergency situations, ask questions one at a time:
+NORMAL LEAD CAPTURE: For non-emergency situations, ask questions one at a time:
 ${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
 
 CRITICAL RULES:
-🏢 BUSINESS IDENTITY: You work EXCLUSIVELY for ${businessName}. NEVER suggest competitors.
-📚 KNOWLEDGE BOUNDARIES: Only use information explicitly provided. NEVER invent details.
-🚫 FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
-💬 VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
-🔄 CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for a clear user input. Do NOT continue asking questions if the user hasn't responded clearly.`;
-        } else {
-          console.log(`[RealtimeAgent] No business found for phone number: ${toPhoneNumber}`);
+BUSINESS IDENTITY: You work EXCLUSIVELY for ${businessName}. NEVER suggest competitors.
+KNOWLEDGE BOUNDARIES: Only use information explicitly provided. NEVER invent details.
+FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
+VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
+CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for a clear user input. Do NOT continue asking questions if the user hasn't responded clearly.`;
         }
       }
     } catch (error) {
