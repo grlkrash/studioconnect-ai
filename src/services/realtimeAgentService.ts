@@ -303,12 +303,35 @@ export class RealtimeAgentService {
     const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
     const headers = {
       'Authorization': `Bearer ${this.openaiApiKey}`,
-      'OpenAI-Beta': 'realtime=v1'
+      'OpenAI-Beta': 'realtime=v1',
+      'Content-Type': 'application/json'
     };
 
-    this.ws = new WebSocket(url, { headers });
-    this.setupOpenAIListeners();
-    console.log('[DEBUG] 4a. OpenAI WebSocket connection initiated.');
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const connect = () => {
+      if (this.ws) {
+        this.ws.close();
+      }
+      this.ws = new WebSocket(url, { headers });
+      this.setupOpenAIListeners();
+      console.log('[DEBUG] 4a. OpenAI WebSocket connection initiated.');
+    };
+
+    connect();
+
+    this.ws?.on('error', (error) => {
+      console.error('[DEBUG] OpenAI WebSocket error:', error);
+      if (retryCount < maxRetries) {
+        retryCount++;
+        console.log(`[DEBUG] Retrying OpenAI connection (${retryCount}/${maxRetries})...`);
+        setTimeout(connect, 1000 * retryCount);
+      } else {
+        console.error('[DEBUG] Max retries reached for OpenAI connection');
+        this.cleanup('OpenAI');
+      }
+    });
   }
 
   private setupOpenAIListeners(): void {
