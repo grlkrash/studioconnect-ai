@@ -167,7 +167,7 @@ export class RealtimeAgentService {
   private connectToOpenAI() {
     console.log(`[RealtimeAgent] Connecting to OpenAI Realtime API for call: ${this.callSid}`);
     
-    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4-turbo-preview';
+    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
     const headers = {
       'Authorization': `Bearer ${this.openaiApiKey}`,
       'OpenAI-Beta': 'realtime=v1'
@@ -180,23 +180,22 @@ export class RealtimeAgentService {
   private setupOpenAIListeners(): void {
     if (!this.openAiWs) return;
 
+    this.openAiWs.on('open', async () => {
+      console.log(`[RealtimeAgent] OpenAI connection opened for ${this.callSid}. Configuring session.`);
+      await this.configureOpenAiSession();
+    });
+
     this.openAiWs.on('message', (data: Buffer) => {
       const message = data.toString();
       try {
         const response = JSON.parse(message);
-
-        // Enable verbose logging for debugging
-        console.log(`[RealtimeAgent] Received OpenAI event: ${response.type} for call ${this.callSid}`);
 
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
             this.state.isAiReady = true;
             this.state.isCallActive = true;
-            // Configure session immediately after creation
-            this.configureOpenAiSession().catch(error => {
-              console.error(`[RealtimeAgent] Failed to configure OpenAI session:`, error);
-            });
+            this.triggerGreeting();
             break;
 
           case 'session.error':
@@ -209,7 +208,6 @@ export class RealtimeAgentService {
             break;
 
           case 'conversation.item.created':
-            // Log assistant responses to the console for monitoring
             if (response.item?.role === 'assistant' && response.item?.content?.[0]?.text) {
               const transcript = response.item.content[0].text;
               console.log(`[RealtimeAgent] AI says: "${transcript}" (Call: ${this.callSid})`);
@@ -219,15 +217,14 @@ export class RealtimeAgentService {
 
           case 'conversation.item.input_audio_transcription.completed':
             if (response.item?.transcript) {
-                const userTranscript = response.item.transcript;
-                console.log(`[RealtimeAgent] User says: "${userTranscript}" (Call: ${this.callSid})`);
-                this.addToConversationHistory('user', userTranscript);
+              const userTranscript = response.item.transcript;
+              console.log(`[RealtimeAgent] User says: "${userTranscript}" (Call: ${this.callSid})`);
+              this.addToConversationHistory('user', userTranscript);
             }
             break;
             
           case 'input_audio_buffer.speech_stopped':
             console.log(`[RealtimeAgent] User stopped speaking for call ${this.callSid}`);
-            // With auto response creation, we only need to commit the audio buffer.
             setTimeout(() => {
               if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
                 try {
@@ -240,7 +237,6 @@ export class RealtimeAgentService {
             break;
             
           case 'error':
-            // Log operational errors from OpenAI that don't terminate the session
             console.log(`[RealtimeAgent] Expected OpenAI operational message for call ${this.callSid}: ${response.message}`);
             break;
         }
@@ -270,6 +266,8 @@ export class RealtimeAgentService {
 
     let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
     let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?'; // Default welcome
+    let openaiVoice = 'NOVA'; // Default voice
+    let openaiModel = 'tts-1'; // Default TTS model
 
     try {
       const callDetails = await twilioClient.calls(this.callSid).fetch();
@@ -297,6 +295,16 @@ export class RealtimeAgentService {
             console.log(`[RealtimeAgent] Using default welcome message: "${welcomeMessage}"`);
           }
           welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
+          
+          // Get the configured voice and model
+          if (business.agentConfig?.openaiVoice) {
+            openaiVoice = business.agentConfig.openaiVoice;
+            console.log(`[RealtimeAgent] Using configured OpenAI voice: ${openaiVoice}`);
+          }
+          if (business.agentConfig?.openaiModel) {
+            openaiModel = business.agentConfig.openaiModel;
+            console.log(`[RealtimeAgent] Using configured OpenAI TTS model: ${openaiModel}`);
+          }
           
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
@@ -340,7 +348,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       session: {
         modalities: ['text', 'audio'],
         instructions: businessInstructions,
-        voice: 'alloy',
+        voice: openaiVoice.toLowerCase(),
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: { model: 'whisper-1' },
@@ -352,7 +360,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         },
         response_creation: {
           type: 'auto',
-          model: 'gpt-4-turbo-preview'
+          model: openaiModel
         }
       }
     };
@@ -783,6 +791,71 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
     } catch (error) {
       console.error(`[RealtimeAgent] Error validating business config:`, error);
       return false;
+    }
+  }
+
+  private async triggerGreeting() {
+    console.log(`[RealtimeAgent] Checking readiness to trigger greeting for ${this.callSid}.`);
+    
+    if (this.state.isAiReady && this.state.isTwilioReady) {
+      console.log(`[RealtimeAgent] System is ready. Triggering greeting.`);
+      
+      try {
+        // Fetch call details and business configuration
+        const callDetails = await twilioClient.calls(this.callSid).fetch();
+        const toPhoneNumber = callDetails.to;
+        
+        let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
+        
+        if (toPhoneNumber) {
+          const business = await prisma.business.findFirst({
+            where: { twilioPhoneNumber: toPhoneNumber },
+            include: {
+              agentConfig: true
+            }
+          });
+          
+          if (business) {
+            if (business.agentConfig?.voiceGreetingMessage?.trim()) {
+              welcomeMessage = business.agentConfig.voiceGreetingMessage;
+            } else if (business.agentConfig?.welcomeMessage?.trim()) {
+              welcomeMessage = business.agentConfig.welcomeMessage;
+            }
+            welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
+          }
+        }
+        
+        // Send text event to OpenAI to make the agent speak the welcome message
+        if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+          const textEvent = {
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'assistant',
+              content: [
+                {
+                  type: 'text',
+                  text: welcomeMessage
+                }
+              ]
+            }
+          };
+          
+          this.openAiWs.send(JSON.stringify(textEvent));
+          
+          setTimeout(() => {
+            if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
+              this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
+            }
+          }, 100);
+          
+          console.log(`[RealtimeAgent] Greeting triggered for call ${this.callSid}: "${welcomeMessage}"`);
+        }
+      } catch (error) {
+        console.error(`[RealtimeAgent] Error triggering greeting for call ${this.callSid}:`, error);
+      }
+    } else {
+      console.log(`[RealtimeAgent] Not ready to trigger greeting. AI: ${this.state.isAiReady}, Twilio: ${this.state.isTwilioReady}`);
     }
   }
 } 
