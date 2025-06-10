@@ -468,19 +468,6 @@ export class RealtimeAgentService {
             threshold: 0.5,
             prefix_padding_ms: 300,
             silence_duration_ms: 500
-          },
-          response_format: {
-            type: 'text',
-            text: {
-              temperature: 0.7,
-              max_tokens: 150
-            },
-            audio: {
-              enabled: true,
-              format: 'g711_ulaw',
-              voice: business.agentConfig.openaiVoice || 'alloy',
-              model: 'tts-1-hd'
-            }
           }
         }
       };
