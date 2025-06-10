@@ -113,8 +113,8 @@ export class RealtimeAgentService {
       }
     }, 30000);
 
-    this.twilioWs.on('message', (message: Buffer) => {
-      this.handleTwilioMessage(message);
+    this.twilioWs.on('message', async (message: Buffer) => {
+      await this.handleTwilioMessage(message);
     });
 
     this.twilioWs.on('close', (code: number, reason: Buffer) => {
@@ -134,7 +134,7 @@ export class RealtimeAgentService {
     });
   }
 
-  private handleTwilioMessage(message: Buffer) {
+  private async handleTwilioMessage(message: Buffer) {
     try {
       const msg = JSON.parse(message.toString());
       console.log(`[RealtimeAgent] Received Twilio message:`, msg);
@@ -161,7 +161,35 @@ export class RealtimeAgentService {
         this.state.streamSid = msg.start.streamSid;
         this.state.isTwilioReady = true;
         console.log(`[RealtimeAgent] Twilio stream started for call ${this.callSid}. streamSid: ${this.state.streamSid}`);
-        // Now that we have streamSid, we can safely connect to OpenAI
+
+        // Fetch call details from Twilio API
+        try {
+          const call = await twilioClient.calls(this.callSid).fetch();
+          console.log(`[RealtimeAgent] Fetched call details via Twilio API for ${this.callSid}. To: ${call.to}, From: ${call.from}`);
+          
+          // Look up business by phone number
+          const business = await prisma.business.findFirst({
+            where: { twilioPhoneNumber: call.to },
+            include: {
+              agentConfig: {
+                include: { questions: { orderBy: { order: 'asc' } } }
+              }
+            }
+          });
+          
+          if (business) {
+            this.state.businessId = business.id;
+            console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
+          } else {
+            console.warn(`[RealtimeAgent] No business found for phone number ${call.to}`);
+          }
+        } catch (error) {
+          console.error(`[RealtimeAgent] Failed to fetch call details from Twilio API for ${this.callSid}:`, error);
+          this.cleanup('Other');
+          return;
+        }
+
+        // Now that we have streamSid and business info, we can safely connect to OpenAI
         this.connectToOpenAI();
       } else if (msg.event === "media") {
         // Forward audio from Twilio to OpenAI
