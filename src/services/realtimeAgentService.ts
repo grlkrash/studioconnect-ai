@@ -429,9 +429,6 @@ export class RealtimeAgentService {
     const sessionConfig = {
       type: 'session.update',
       session: {
-        modalities: ['text', 'audio'],
-        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
-        voice: 'alloy',
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: {
@@ -449,7 +446,8 @@ export class RealtimeAgentService {
             format: 'g711_ulaw',
             voice: 'alloy'
           }
-        }
+        },
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.'
       }
     };
 
