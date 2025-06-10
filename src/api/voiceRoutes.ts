@@ -1,11 +1,12 @@
-import { Router, Request, Response, NextFunction } from 'express'
+import { Router } from 'express'
 import twilio from 'twilio'
+import { RealtimeAgentService } from '../services/realtimeAgentService'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
 
 // Custom Twilio request validation middleware
-const customValidateTwilioRequest = (req: Request, res: Response, next: NextFunction) => {
+const customValidateTwilioRequest = (req: any, res: any, next: any) => {
   // Only validate in production
   if (process.env.NODE_ENV !== 'production') return next()
 
@@ -50,6 +51,14 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
       name: 'callSid',
       value: callSid
     })
+
+    // Add business ID if available
+    if (req.body.businessId) {
+      stream.parameter({
+        name: 'businessId',
+        value: req.body.businessId
+      })
+    }
     
     // Add pause to keep the call active
     response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
@@ -64,6 +73,30 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     response.hangup()
     res.type('text/xml')
     res.status(500).send(response.toString())
+  }
+})
+
+// GET /status - Check voice system status
+router.get('/status', async (req, res) => {
+  try {
+    const agentService = RealtimeAgentService.getInstance()
+    const status = agentService.getConnectionStatus()
+    
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      voiceSystem: {
+        status,
+        activeCalls: agentService.getActiveConnections()
+      }
+    })
+  } catch (error) {
+    console.error('[VOICE STREAM] Error checking status:', error)
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to check voice system status',
+      timestamp: new Date().toISOString()
+    })
   }
 })
 

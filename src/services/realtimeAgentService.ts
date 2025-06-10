@@ -149,6 +149,7 @@ export class RealtimeAgentService {
   private openAiWs: WebSocket | null = null;
   private state: ConnectionState;
   private readonly openaiApiKey: string;
+  private readonly model: string = 'gpt-4o-realtime-preview-2024-10-01';
   public onCallSidReceived?: (callSid: string) => void;
   private conversationSummary: string = '';
   private currentQuestionIndex: number = 0;
@@ -376,34 +377,34 @@ export class RealtimeAgentService {
     this.openAiWs.on('open', () => {
       console.log('[DEBUG] 5a. OpenAI WebSocket connected');
       this.state.isAiReady = true;
-      this.configureOpenAiSession();
     });
 
     this.openAiWs.on('close', () => {
       console.log('[DEBUG] OpenAI WebSocket closed');
+      this.state.isAiReady = false;
       this.cleanup('OpenAI');
     });
 
     this.openAiWs.on('error', (error: Error) => {
       console.error('[DEBUG] OpenAI WebSocket error:', error);
-      this.cleanup('OpenAI');
+      this.cleanup('OpenAI', error);
     });
 
     this.openAiWs.on('message', async (data: any) => {
       try {
         const response = JSON.parse(data.toString());
-        console.log('[DEBUG] 6. Received OpenAI message:', response.type);
+        console.log('[DEBUG] Received OpenAI message:', response.type);
 
         switch (response.type) {
           case 'session.created':
             console.log('[DEBUG] Session created, configuring...');
-            this.configureOpenAiSession();
+            await this.configureOpenAiSession();
             break;
 
           case 'session.updated':
             console.log('[DEBUG] Session configured, ready for audio');
             if (!this.state.welcomeMessageDelivered && this.state.businessId) {
-              this.triggerGreeting();
+              await this.triggerGreeting();
             }
             break;
 
@@ -419,6 +420,7 @@ export class RealtimeAgentService {
 
           case 'input_audio_buffer.speech_started':
             console.log('[DEBUG] Speech started');
+            this.state.lastActivity = Date.now();
             break;
 
           case 'input_audio_buffer.speech_stopped':
@@ -432,11 +434,13 @@ export class RealtimeAgentService {
             break;
 
           case 'response.text.delta':
-            console.log('[DEBUG] 6d. Text delta received:', response.delta);
+            console.log('[DEBUG] Text delta received:', response.delta);
+            this.state.lastActivity = Date.now();
             break;
 
           case 'response.text.done':
-            console.log('[DEBUG] 6e. Text response complete');
+            console.log('[DEBUG] Text response complete');
+            this.state.lastActivity = Date.now();
             break;
 
           case 'error':
@@ -445,7 +449,7 @@ export class RealtimeAgentService {
             break;
         }
       } catch (error) {
-        console.error('[DEBUG] Error processing OpenAI message:', error);
+        console.error('[DEBUG] Error handling OpenAI message:', error);
       }
     });
 
@@ -453,61 +457,39 @@ export class RealtimeAgentService {
   }
 
   private async configureOpenAiSession(): Promise<void> {
-    console.log('[DEBUG] 7. Configuring OpenAI session...');
-    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
-      console.error('[DEBUG] OpenAI WebSocket not ready for configuration');
-      return;
-    }
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) return;
 
-    try {
-      const business = await prisma.business.findUnique({
-        where: { id: this.state.businessId! },
-        include: { agentConfig: true }
-      });
-
-      if (!business?.agentConfig) {
-        console.error('[DEBUG] Business or agent config not found');
-        return;
-      }
-
-      // Get the configured voice and validate it
-      const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as const;
-      const configuredVoice = (business.agentConfig.openaiVoice || 'nova').toLowerCase();
-      const openaiVoice = validVoices.includes(configuredVoice as typeof validVoices[number]) 
-        ? configuredVoice 
-        : 'nova';
-      
-      console.log(`[DEBUG] Configured voice from database: ${configuredVoice}, using: ${openaiVoice}`);
-
-      const sessionConfig = {
-        type: 'session.update',
-        session: {
-          modalities: ['text', 'audio'],
-          voice: openaiVoice,
-          output_audio_format: 'g711_ulaw',
-          input_audio_transcription: {
-            model: 'whisper-1',
-            language: 'en',
-            temperature: 0.2,
-            prompt: 'This is a business conversation. The assistant is helpful and professional.',
-            response_format: 'verbose_json'
-          },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500,
-            min_speech_duration_ms: 100,
-            max_speech_duration_ms: 30000
+    const sessionConfig = {
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+        voice: 'alloy',
+        input_audio_format: 'g711_ulaw',
+        output_audio_format: 'g711_ulaw',
+        input_audio_transcription: {
+          model: 'whisper-1',
+          language: 'auto',
+          temperature: 0.2,
+          prompt: 'This is a business conversation. The assistant is helpful and professional.'
+        },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
+        },
+        response_format: {
+          type: 'text',
+          text: {
+            temperature: 0.7,
+            max_tokens: 150
           }
         }
-      };
+      }
+    };
 
-      console.log('[DEBUG] Sending session configuration with voice:', openaiVoice);
-      await this.sendWebSocketMessage(this.openAiWs, sessionConfig, 'Session configuration to OpenAI');
-    } catch (error) {
-      console.error('[DEBUG] Error configuring OpenAI session:', error);
-    }
+    await this.sendWebSocketMessage(this.openAiWs, sessionConfig, 'Session config to OpenAI');
   }
 
   private async triggerGreeting(): Promise<void> {
@@ -744,6 +726,10 @@ export class RealtimeAgentService {
   public getConnectionStatus(): string {
     const wsStatus = this.twilioWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
     return `WebSocket: ${wsStatus}, Twilio Ready: ${this.state.isTwilioReady}, AI Ready: ${this.state.isAiReady}`;
+  }
+
+  public getActiveConnections(): number {
+    return this.state.isCallActive ? 1 : 0;
   }
 }
 
