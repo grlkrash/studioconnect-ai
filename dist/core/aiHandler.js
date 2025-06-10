@@ -392,9 +392,11 @@ const offerEmergencyEscalation = async (emergencyMessage, businessName) => {
 
 This appears to be a serious emergency. Generate a brief, empathetic response that:
 1. Acknowledges the urgency of their situation
-2. Offers immediate escalation to a live person
-3. Provides assurance that help is coming
-4. Asks if they want immediate escalation or to continue with quick questions
+2. Offers two clear options:
+   - Immediate connection to emergency response team (within 30 seconds)
+   - Quick information gathering (2-3 questions) for immediate dispatch
+3. Explains what happens in each option
+4. Sets clear expectations for response time
 
 Keep it conversational and under 30 seconds when spoken. Use natural speech patterns.
 
@@ -402,11 +404,11 @@ Business name: ${businessName || 'our team'}`;
         const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined);
         const aiResponse = await (0, openai_1.getChatCompletion)(escalationPrompt, voiceSystemPrompt);
         return cleanVoiceResponse(aiResponse ||
-            `I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?`);
+            `I understand this is an emergency situation. I can either connect you directly to our emergency response team right now (within 30 seconds), or quickly gather just 2-3 essential details so we can dispatch help immediately. Which would you prefer?`);
     }
     catch (error) {
         console.error('Error generating emergency escalation offer:', error);
-        return `I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?`;
+        return `I understand this is an emergency situation. I can either connect you directly to our emergency response team right now (within 30 seconds), or quickly gather just 2-3 essential details so we can dispatch help immediately. Which would you prefer?`;
     }
 };
 /**
@@ -506,7 +508,7 @@ const processMessage = async (message, conversationHistory, businessId, currentA
             console.log('Handling emergency escalation response...');
             // Use AI to detect user's preference
             const escalationChoicePrompt = `The user was offered emergency escalation with this message:
-      "I understand this is an emergency situation. I can either connect you directly to someone from our team right now, or quickly gather your details so they can respond immediately. What would you prefer?"
+      "I understand this is an emergency situation. I can either connect you directly to our emergency response team right now (within 30 seconds), or quickly gather just 2-3 essential details so we can dispatch help immediately. Which would you prefer?"
 
       User's response: "${message}"
 
@@ -702,8 +704,15 @@ User's Question: ${message}`;
         }
         else if (intent === 'END_CALL') {
             console.log('Entering END_CALL flow...');
+            // Use custom end call message if available, otherwise use default
+            let endCallMessage = agentConfig?.voiceEndCallMessage ||
+                "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!";
+            // Replace {businessName} template variable if present
+            if (business?.name) {
+                endCallMessage = endCallMessage.replace(/\{businessName\}/gi, business.name);
+            }
             return {
-                reply: "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!",
+                reply: endCallMessage,
                 currentFlow: null,
                 showBranding,
                 nextVoiceAction: 'HANGUP'
@@ -1120,8 +1129,15 @@ Generate a natural way to ask this question that flows well in the conversation.
                     console.error('Failed to send notification email:', emailError);
                 }
                 if (isEmergency) {
+                    // Use custom emergency message if available, otherwise use default
+                    let emergencyMessage = agentConfig?.voiceEmergencyMessage ||
+                        "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.";
+                    // Replace {businessName} template variable if present
+                    if (business?.name) {
+                        emergencyMessage = emergencyMessage.replace(/\{businessName\}/gi, business.name);
+                    }
                     return {
-                        reply: "Thank you for providing that information. We've identified this as an URGENT situation and will prioritize your request. Our team will contact you as soon as possible to address your emergency.",
+                        reply: emergencyMessage,
                         currentFlow: null,
                         showBranding,
                         nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', null)
@@ -1129,8 +1145,13 @@ Generate a natural way to ask this question that flows well in the conversation.
                 }
                 else {
                     // Use custom completion message if available, otherwise use default
-                    const completionMessage = agentConfig?.leadCaptureCompletionMessage ||
+                    let completionMessage = agentConfig?.voiceCompletionMessage ||
+                        agentConfig?.leadCaptureCompletionMessage ||
                         "Thanks for providing that information! Our team will review it and get back to you ASAP.";
+                    // Replace {businessName} template variable if present
+                    if (business?.name) {
+                        completionMessage = completionMessage.replace(/\{businessName\}/gi, business.name);
+                    }
                     return {
                         reply: completionMessage,
                         currentFlow: null,

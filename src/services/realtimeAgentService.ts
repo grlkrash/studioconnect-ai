@@ -3,7 +3,7 @@ import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
-import { cleanVoiceResponse } from '@/utils/voiceHelpers';
+import { cleanVoiceResponse } from '../utils/voiceHelpers';
 
 const prisma = new PrismaClient();
 
