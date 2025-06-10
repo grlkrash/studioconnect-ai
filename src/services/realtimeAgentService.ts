@@ -149,8 +149,9 @@ export class RealtimeAgentService {
   private conversationSummary: string = '';
   private currentQuestionIndex: number = 0;
   private leadCaptureQuestions: Question[] = [];
+  private callSid: string = '';
 
-  private constructor() {
+  public constructor() {
     console.log('[DEBUG] 0. Initializing RealtimeAgentService...');
     this.openaiApiKey = process.env.OPENAI_API_KEY || '';
     
@@ -644,6 +645,15 @@ export class RealtimeAgentService {
       console.error('[DEBUG] Error getting welcome message:', error);
       return 'Hello! Thank you for calling. How can I help you today?';
     }
+  }
+
+  public getCallSid(): string {
+    return this.callSid;
+  }
+
+  public getConnectionStatus(): string {
+    const wsStatus = this.ws?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
+    return `WebSocket: ${wsStatus}, Twilio Ready: ${this.state.isTwilioReady}, AI Ready: ${this.state.isAiReady}`;
   }
 }
 
