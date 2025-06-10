@@ -401,11 +401,11 @@ EMERGENCY KEYWORDS TO DETECT: burst, flooding, leak, emergency, urgent, no heat,
             type: 'conversation.item.create',
             item: {
               type: 'message',
-              role: 'user',
+              role: 'assistant',
               content: [
                 {
-                  type: 'input_text',
-                  text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+                  type: 'text',
+                  text: welcomeMessage
                 }
               ]
             }
