@@ -10,6 +10,7 @@ import { generateSpeechFromText } from './openai';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -69,7 +70,7 @@ interface AgentState {
 
 interface AgentConfig {
   useOpenaiTts: boolean;
-  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+  openaiVoice: 'alloy' | 'ash' | 'ballad' | 'coral' | 'echo' | 'sage' | 'shimmer' | 'verse';
   openaiModel: 'tts-1' | 'tts-1-hd';
   welcomeMessage: string;
   voiceGreetingMessage: string;
@@ -446,12 +447,14 @@ export class RealtimeAgentService {
         return;
       }
 
-      // Define supported voices and validate
-      const supportedVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
-      const configuredVoice = (business.agentConfig.openaiVoice || 'alloy').toLowerCase();
-      const voice = supportedVoices.includes(configuredVoice) ? configuredVoice : 'alloy';
-
-      console.log(`[DEBUG] Using OpenAI voice: ${voice}`);
+      // Get the configured voice and validate it
+      const validVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const;
+      const configuredVoice = business.agentConfig.openaiVoice?.toLowerCase() || 'alloy';
+      const openaiVoice = validVoices.includes(configuredVoice as typeof validVoices[number]) 
+        ? configuredVoice 
+        : 'alloy';
+      
+      console.log(`[DEBUG] Configured voice from database: ${configuredVoice}, using: ${openaiVoice}`);
 
       const sessionConfig = {
         type: 'session.update',
@@ -460,24 +463,33 @@ export class RealtimeAgentService {
           temperature: 0.7,
           modalities: ['text', 'audio'],
           instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
-          voice: voice,
+          voice: openaiVoice,
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: {
             model: 'whisper-1',
             language: 'en',
             temperature: 0.2,
-            prompt: 'This is a business conversation. The assistant is helpful and professional.'
+            prompt: 'This is a business conversation. The assistant is helpful and professional.',
+            response_format: 'verbose_json'
           },
           turn_detection: {
             type: 'server_vad',
             threshold: 0.5,
             prefix_padding_ms: 300,
-            silence_duration_ms: 500
+            silence_duration_ms: 500,
+            min_speech_duration_ms: 100,
+            max_speech_duration_ms: 30000
+          },
+          response_format: {
+            type: 'verbose_json',
+            include_audio: true,
+            include_text: true
           }
         }
       };
 
+      console.log('[DEBUG] Sending session configuration with voice:', openaiVoice);
       await this.sendWebSocketMessage(this.openAiWs, sessionConfig, 'Session configuration to OpenAI');
     } catch (error) {
       console.error('[DEBUG] Error configuring OpenAI session:', error);
