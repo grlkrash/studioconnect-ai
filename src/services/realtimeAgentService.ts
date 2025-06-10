@@ -410,6 +410,11 @@ export class RealtimeAgentService {
           case 'response.text.done':
             console.log('[DEBUG] 6e. Text response complete');
             break;
+
+          case 'error':
+            console.error('[DEBUG] OpenAI error:', response.error);
+            this.cleanup('OpenAI', new Error(response.error));
+            break;
         }
       } catch (error) {
         console.error('[DEBUG] Error processing OpenAI message:', error);
@@ -480,12 +485,13 @@ export class RealtimeAgentService {
         this.ws.send(JSON.stringify(textEvent));
         console.log('[DEBUG] 7e. Welcome message sent to OpenAI');
 
-        setTimeout(() => {
-          if (this.ws?.readyState === 1) {
-            this.ws.send(JSON.stringify({ type: 'response.create' }));
-            console.log('[DEBUG] 7f. Response creation triggered');
-          }
-        }, 100);
+        // Wait for message to be processed before creating response
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (this.ws?.readyState === 1) {
+          this.ws.send(JSON.stringify({ type: 'response.create' }));
+          console.log('[DEBUG] 7f. Response creation triggered');
+        }
 
         this.state.welcomeMessageDelivered = true;
       }
