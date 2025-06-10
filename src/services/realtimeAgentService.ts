@@ -452,7 +452,6 @@ export class RealtimeAgentService {
           model: 'gpt-4o-realtime-preview-2024-10-01',
           temperature: 0.7,
           modalities: ['text', 'audio'],
-          system_prompt: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
           instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
           voice: business.agentConfig.openaiVoice || 'alloy',
           input_audio_format: 'g711_ulaw',
