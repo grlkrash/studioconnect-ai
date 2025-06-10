@@ -261,6 +261,11 @@ export class RealtimeAgentService {
         switch (response.type) {
           case 'session.created':
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
+            // Don't set isAiReady or trigger greeting here - wait for session.updated
+            break;
+
+          case 'session.updated':
+            console.log(`[RealtimeAgent] OpenAI session updated successfully for call ${this.callSid}`);
             this.state.isAiReady = true;
             this.state.isCallActive = true;
             this.triggerGreeting();
@@ -440,17 +445,17 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       return;
     }
 
-    // Wait for session creation before triggering greeting
+    // Wait for session update confirmation
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Session creation timeout'));
-      }, 30000); // Increased from 10s to 30s
+        reject(new Error('Session update timeout'));
+      }, 30000);
 
       const handler = (event: { data: any }) => {
         try {
           const response = JSON.parse(event.data.toString());
-          console.log(`[RealtimeAgent] Received response during session creation:`, response);
-          if (response.type === 'session.created') {
+          console.log(`[RealtimeAgent] Received response during session update:`, response);
+          if (response.type === 'session.updated') {
             clearTimeout(timeout);
             this.openAiWs!.removeEventListener('message', handler);
             resolve();
@@ -464,18 +469,15 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
             reject(new Error(`OpenAI error: ${response.message}`));
           }
         } catch (error) {
-          console.error(`[RealtimeAgent] Error handling session creation response:`, error);
+          console.error(`[RealtimeAgent] Error handling session update response:`, error);
         }
       };
       this.openAiWs!.addEventListener('message', handler);
     }).catch(error => {
-      console.error(`[RealtimeAgent] Session creation failed:`, error);
+      console.error(`[RealtimeAgent] Session update failed:`, error);
       this.cleanup('OpenAI');
       return;
     });
-
-    // Now trigger the greeting after session is created
-    await this.triggerGreeting();
   }
 
   private handleOpenAiAudio(audioB64: string) {
