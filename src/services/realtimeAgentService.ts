@@ -183,11 +183,13 @@ export class RealtimeAgentService {
             console.log(`[RealtimeAgent] OpenAI session created for call ${this.callSid}`);
             this.state.isAiReady = true;
             this.state.isCallActive = true;
+            // Configure the session after it's created
+            this.configureOpenAiSession();
             break;
 
           case 'session.error':
             console.error(`[RealtimeAgent] OpenAI Session Error for call ${this.callSid}:`, response.error);
-            this.cleanup('OpenAI');
+            this.cleanup();
             break;
             
           case 'response.audio.delta':
@@ -258,10 +260,13 @@ export class RealtimeAgentService {
     let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?'; // Default welcome
 
     try {
+      console.log(`[RealtimeAgent] Fetching call details for ${this.callSid}`);
       const callDetails = await twilioClient.calls(this.callSid).fetch();
       const toPhoneNumber = callDetails.to;
+      console.log(`[RealtimeAgent] Call details fetched. To number: ${toPhoneNumber}`);
       
       if (toPhoneNumber) {
+        console.log(`[RealtimeAgent] Looking up business for phone number: ${toPhoneNumber}`);
         const business = await prisma.business.findFirst({
           where: { twilioPhoneNumber: toPhoneNumber },
           include: {
@@ -273,17 +278,20 @@ export class RealtimeAgentService {
         
         if (business) {
           this.state.businessId = business.id;
-          console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
+          console.log(`[RealtimeAgent] Business found: ${business.name} (ID: ${business.id})`);
 
           if (business.agentConfig?.voiceGreetingMessage?.trim()) {
             welcomeMessage = business.agentConfig.voiceGreetingMessage;
+            console.log(`[RealtimeAgent] Using voice greeting message: ${welcomeMessage}`);
           } else if (business.agentConfig?.welcomeMessage?.trim()) {
             welcomeMessage = business.agentConfig.welcomeMessage;
+            console.log(`[RealtimeAgent] Using welcome message: ${welcomeMessage}`);
           }
           welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
           
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
+          console.log(`[RealtimeAgent] Found ${questions.length} questions for business`);
           
           businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
 
@@ -313,6 +321,8 @@ CRITICAL RULES:
 🚫 FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
 💬 VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
 🔄 CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect silence or unclear audio, WAIT for a clear user input. Do NOT continue asking questions if the user hasn't responded clearly.`;
+        } else {
+          console.log(`[RealtimeAgent] No business found for phone number: ${toPhoneNumber}`);
         }
       }
     } catch (error) {
@@ -340,6 +350,7 @@ CRITICAL RULES:
       }
     };
 
+    console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}`);
     this.openAiWs.send(JSON.stringify(sessionConfig));
     console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
   }
