@@ -431,36 +431,48 @@ export class RealtimeAgentService {
       return;
     }
 
-    const sessionConfig = {
-      type: 'session.update',
-      session: {
-        model: 'gpt-4o-realtime-preview-2024-10-01',
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: {
-          model: 'whisper-1',
-          language: 'en'
-        },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500
-        },
-        response: {
+    try {
+      const business = await prisma.business.findUnique({
+        where: { id: this.state.businessId! },
+        include: { agentConfig: true }
+      });
+
+      if (!business?.agentConfig) {
+        console.error('[DEBUG] Business or agent config not found');
+        return;
+      }
+
+      const sessionConfig = {
+        type: 'session.update',
+        session: {
+          model: 'gpt-4o-realtime-preview-2024-10-01',
+          input_audio_format: 'g711_ulaw',
+          output_audio_format: 'g711_ulaw',
+          input_audio_transcription: {
+            model: 'whisper-1',
+            language: 'en'
+          },
+          turn_detection: {
+            type: 'server_vad',
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 500
+          },
           audio: {
             enabled: true,
             format: 'g711_ulaw',
-            voice: 'alloy',
-            model: 'tts-1'
-          }
-        },
-        instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.'
-      }
-    };
+            voice: business.agentConfig.openaiVoice || 'alloy',
+            model: business.agentConfig.openaiModel || 'tts-1-hd'
+          },
+          instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.'
+        }
+      };
 
-    this.ws.send(JSON.stringify(sessionConfig));
-    console.log('[DEBUG] 7a. OpenAI session configuration sent');
+      this.ws.send(JSON.stringify(sessionConfig));
+      console.log('[DEBUG] 7a. OpenAI session configuration sent');
+    } catch (error) {
+      console.error('[DEBUG] Error configuring OpenAI session:', error);
+    }
   }
 
   private async triggerGreeting(): Promise<void> {
