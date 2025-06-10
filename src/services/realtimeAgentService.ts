@@ -32,6 +32,8 @@ interface ConnectionState {
   leadCaptureTriggered: boolean;
   hasCollectedLeadInfo: boolean;
   isCallActive: boolean;
+  welcomeMessageDelivered: boolean;
+  welcomeMessageAttempts: number;
 }
 
 /**
@@ -68,6 +70,8 @@ export class RealtimeAgentService {
       leadCaptureTriggered: false,
       hasCollectedLeadInfo: false,
       isCallActive: false,
+      welcomeMessageDelivered: false,
+      welcomeMessageAttempts: 0,
     };
 
     // Set up Twilio WebSocket listeners immediately
@@ -265,7 +269,6 @@ export class RealtimeAgentService {
     console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
 
     let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
-    let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?'; // Default welcome
     let openaiVoice = 'NOVA'; // Default voice
     let openaiModel = 'tts-1'; // Default TTS model
 
@@ -286,15 +289,6 @@ export class RealtimeAgentService {
         if (business) {
           this.state.businessId = business.id;
           console.log(`[RealtimeAgent] Business ID stored: ${business.id} for call ${this.callSid}`);
-
-          if (business.agentConfig?.voiceGreetingMessage?.trim()) {
-            welcomeMessage = business.agentConfig.voiceGreetingMessage;
-            console.log(`[RealtimeAgent] Using custom voice greeting: "${welcomeMessage}"`);
-          } else if (business.agentConfig?.welcomeMessage?.trim()) {
-            welcomeMessage = business.agentConfig.welcomeMessage;
-            console.log(`[RealtimeAgent] Using default welcome message: "${welcomeMessage}"`);
-          }
-          welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
           
           // Get the configured voice and model
           if (business.agentConfig?.openaiVoice) {
@@ -308,6 +302,7 @@ export class RealtimeAgentService {
           
           const businessName = business.name;
           const questions = business.agentConfig?.questions || [];
+          const welcomeMessage = await this.getWelcomeMessage(business.id);
           
           businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
 
@@ -721,6 +716,8 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       leadCaptureTriggered: false,
       hasCollectedLeadInfo: false,
       isCallActive: false,
+      welcomeMessageDelivered: false,
+      welcomeMessageAttempts: 0,
     };
   }
 
@@ -797,65 +794,97 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
   private async triggerGreeting() {
     console.log(`[RealtimeAgent] Checking readiness to trigger greeting for ${this.callSid}.`);
     
-    if (this.state.isAiReady && this.state.isTwilioReady) {
-      console.log(`[RealtimeAgent] System is ready. Triggering greeting.`);
-      
-      try {
-        // Fetch call details and business configuration
-        const callDetails = await twilioClient.calls(this.callSid).fetch();
-        const toPhoneNumber = callDetails.to;
-        
-        let welcomeMessage = 'Hello! Thank you for calling. How can I help you today?';
-        
-        if (toPhoneNumber) {
-          const business = await prisma.business.findFirst({
-            where: { twilioPhoneNumber: toPhoneNumber },
-            include: {
-              agentConfig: true
-            }
-          });
-          
-          if (business) {
-            if (business.agentConfig?.voiceGreetingMessage?.trim()) {
-              welcomeMessage = business.agentConfig.voiceGreetingMessage;
-            } else if (business.agentConfig?.welcomeMessage?.trim()) {
-              welcomeMessage = business.agentConfig.welcomeMessage;
-            }
-            welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, business.name);
-          }
-        }
-        
-        // Send text event to OpenAI to make the agent speak the welcome message
-        if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-          const textEvent = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'assistant',
-              content: [
-                {
-                  type: 'text',
-                  text: welcomeMessage
-                }
-              ]
-            }
-          };
-          
-          this.openAiWs.send(JSON.stringify(textEvent));
-          
-          setTimeout(() => {
-            if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-              this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-            }
-          }, 100);
-          
-          console.log(`[RealtimeAgent] Greeting triggered for call ${this.callSid}: "${welcomeMessage}"`);
-        }
-      } catch (error) {
-        console.error(`[RealtimeAgent] Error triggering greeting for call ${this.callSid}:`, error);
-      }
-    } else {
+    if (!this.state.isAiReady || !this.state.isTwilioReady) {
       console.log(`[RealtimeAgent] Not ready to trigger greeting. AI: ${this.state.isAiReady}, Twilio: ${this.state.isTwilioReady}`);
+      return;
     }
+
+    if (this.state.welcomeMessageDelivered) {
+      console.log(`[RealtimeAgent] Welcome message already delivered for call ${this.callSid}`);
+      return;
+    }
+
+    try {
+      if (!this.state.businessId) {
+        console.error(`[RealtimeAgent] No business ID available for call ${this.callSid}`);
+        return;
+      }
+
+      const welcomeMessage = await this.getWelcomeMessage(this.state.businessId);
+      await this.sendWelcomeMessage(welcomeMessage);
+      
+      this.state.welcomeMessageDelivered = true;
+      console.log(`[RealtimeAgent] Greeting delivered for call ${this.callSid}: "${welcomeMessage}"`);
+    } catch (error) {
+      this.state.welcomeMessageAttempts++;
+      console.error(`[RealtimeAgent] Failed to deliver greeting (attempt ${this.state.welcomeMessageAttempts}):`, error);
+      
+      if (this.state.welcomeMessageAttempts < 3) {
+        setTimeout(() => this.triggerGreeting(), 1000 * this.state.welcomeMessageAttempts);
+      }
+    }
+  }
+
+  private async getWelcomeMessage(businessId: string): Promise<string> {
+    try {
+      const business = await prisma.business.findUnique({
+        where: { id: businessId },
+        include: { agentConfig: true }
+      });
+      
+      if (!business) {
+        console.warn(`[RealtimeAgent] Business ${businessId} not found, using default welcome message`);
+        return 'Hello! Thank you for calling. How can I help you today?';
+      }
+      
+      let welcomeMessage = business.agentConfig?.voiceGreetingMessage?.trim() || 
+                          business.agentConfig?.welcomeMessage?.trim() || 
+                          'Hello! Thank you for calling. How can I help you today?';
+                          
+      return welcomeMessage.replace(/\{businessName\}/gi, business.name);
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error getting welcome message:`, error);
+      return 'Hello! Thank you for calling. How can I help you today?';
+    }
+  }
+
+  private async sendWelcomeMessage(message: string): Promise<void> {
+    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
+      throw new Error('OpenAI WebSocket not ready');
+    }
+
+    const textEvent = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: message }]
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Welcome message delivery timeout'));
+      }, 5000);
+
+      const handler = (event: { data: any }) => {
+        try {
+          const response = JSON.parse(event.data.toString());
+          if (response.type === 'conversation.item.created') {
+            clearTimeout(timeout);
+            this.openAiWs!.removeEventListener('message', handler);
+            resolve();
+          }
+        } catch (error) {
+          console.error(`[RealtimeAgent] Error handling welcome message response:`, error);
+        }
+      };
+
+      this.openAiWs!.addEventListener('message', handler);
+      this.openAiWs!.send(JSON.stringify(textEvent));
+    });
+
+    // Send response creation after confirmation
+    this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
   }
 } 
