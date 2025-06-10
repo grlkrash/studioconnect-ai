@@ -363,6 +363,25 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
     console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}`);
     this.openAiWs.send(JSON.stringify(sessionConfig));
     console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
+
+    // Wait for session creation before triggering greeting
+    await new Promise<void>((resolve) => {
+      const handler = (event: { data: any }) => {
+        try {
+          const response = JSON.parse(event.data.toString());
+          if (response.type === 'session.created') {
+            this.openAiWs!.removeEventListener('message', handler);
+            resolve();
+          }
+        } catch (error) {
+          console.error(`[RealtimeAgent] Error handling session creation response:`, error);
+        }
+      };
+      this.openAiWs!.addEventListener('message', handler);
+    });
+
+    // Now trigger the greeting after session is created
+    await this.triggerGreeting();
   }
 
   private handleOpenAiAudio(audioB64: string) {
@@ -811,7 +830,45 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       }
 
       const welcomeMessage = await this.getWelcomeMessage(this.state.businessId);
-      await this.sendWelcomeMessage(welcomeMessage);
+      
+      if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
+        throw new Error('OpenAI WebSocket not ready');
+      }
+
+      // Send the welcome message as a text event
+      const textEvent = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: welcomeMessage }]
+        }
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Welcome message delivery timeout'));
+        }, 5000);
+
+        const handler = (event: { data: any }) => {
+          try {
+            const response = JSON.parse(event.data.toString());
+            if (response.type === 'conversation.item.created') {
+              clearTimeout(timeout);
+              this.openAiWs!.removeEventListener('message', handler);
+              resolve();
+            }
+          } catch (error) {
+            console.error(`[RealtimeAgent] Error handling welcome message response:`, error);
+          }
+        };
+
+        this.openAiWs!.addEventListener('message', handler);
+        this.openAiWs!.send(JSON.stringify(textEvent));
+      });
+
+      // Send response creation after confirmation
+      this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
       
       this.state.welcomeMessageDelivered = true;
       console.log(`[RealtimeAgent] Greeting delivered for call ${this.callSid}: "${welcomeMessage}"`);
@@ -846,45 +903,5 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       console.error(`[RealtimeAgent] Error getting welcome message:`, error);
       return 'Hello! Thank you for calling. How can I help you today?';
     }
-  }
-
-  private async sendWelcomeMessage(message: string): Promise<void> {
-    if (!this.openAiWs || this.openAiWs.readyState !== WebSocket.OPEN) {
-      throw new Error('OpenAI WebSocket not ready');
-    }
-
-    const textEvent = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'text', text: message }]
-      }
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Welcome message delivery timeout'));
-      }, 5000);
-
-      const handler = (event: { data: any }) => {
-        try {
-          const response = JSON.parse(event.data.toString());
-          if (response.type === 'conversation.item.created') {
-            clearTimeout(timeout);
-            this.openAiWs!.removeEventListener('message', handler);
-            resolve();
-          }
-        } catch (error) {
-          console.error(`[RealtimeAgent] Error handling welcome message response:`, error);
-        }
-      };
-
-      this.openAiWs!.addEventListener('message', handler);
-      this.openAiWs!.send(JSON.stringify(textEvent));
-    });
-
-    // Send response creation after confirmation
-    this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
   }
 } 

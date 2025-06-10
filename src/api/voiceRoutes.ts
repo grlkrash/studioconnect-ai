@@ -936,9 +936,14 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     console.log('[VOICE STREAM] APP_PRIMARY_URL:', process.env.APP_PRIMARY_URL)
     console.log('[VOICE STREAM] NODE_ENV:', process.env.NODE_ENV)
     
-    // Validate HOSTNAME environment variable
-    if (!process.env.HOSTNAME) {
-      throw new Error('HOSTNAME environment variable is required for WebSocket streaming')
+    // Determine WebSocket URL - prioritize APP_PRIMARY_URL if available
+    let wsUrl: string;
+    if (process.env.APP_PRIMARY_URL) {
+      wsUrl = process.env.APP_PRIMARY_URL.replace('http://', 'wss://').replace('https://', 'wss://');
+    } else if (process.env.HOSTNAME) {
+      wsUrl = `wss://${process.env.HOSTNAME}`;
+    } else {
+      throw new Error('Neither APP_PRIMARY_URL nor HOSTNAME environment variables are set for WebSocket streaming');
     }
     
     // Extract CallSid from request body
@@ -948,22 +953,21 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     const response = new VoiceResponse()
     const connect = response.connect()
     
-    // Create stream connection to WebSocket server - use Parameter for CallSid (robust method)
-    const streamUrl = `wss://${process.env.HOSTNAME}/`
+    // Create stream connection to WebSocket server
     const stream = connect.stream({
-      url: streamUrl
+      url: wsUrl
     })
     
-    // Add the CallSid as a parameter - this is the robust way that survives network proxies
+    // Add the CallSid as a parameter
     stream.parameter({
       name: 'callSid',
       value: callSid
     })
     
-    // Add pause to keep the call active - this is crucial for WebSocket handling
+    // Add pause to keep the call active
     response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
     
-    console.log('[VOICE STREAM] Connecting to WebSocket URL:', streamUrl)
+    console.log('[VOICE STREAM] Connecting to WebSocket URL:', wsUrl)
     console.log('[VOICE STREAM] CallSid will be passed as parameter:', callSid)
     
     // Debug: Log the generated TwiML
@@ -973,14 +977,14 @@ router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
     res.type('text/xml')
     res.send(twimlString)
     
-    console.log('[VOICE STREAM] Successfully initiated media stream for CallSid:', req.body.CallSid)
+    console.log('[VOICE STREAM] Successfully initiated media stream for CallSid:', callSid)
     
   } catch (error) {
-    console.error('[VOICE STREAM] Critical error in /incoming:', error)
+    console.error('[VOICE STREAM] Error handling incoming call:', error)
     
-    // Fallback to basic response if streaming fails
+    // Send error response
     const response = new VoiceResponse()
-    response.say({ voice: 'alice' }, 'Thank you for calling. We are experiencing technical difficulties. Please try calling back in a moment.')
+    response.say({ voice: 'alice' }, 'We are experiencing technical difficulties. Please try your call again later.')
     response.hangup()
     
     res.type('text/xml')
