@@ -442,6 +442,13 @@ export class RealtimeAgentService {
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 500
+        },
+        response: {
+          audio: {
+            enabled: true,
+            format: 'g711_ulaw',
+            voice: 'alloy'
+          }
         }
       }
     };
