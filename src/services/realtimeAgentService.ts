@@ -400,10 +400,6 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 500
-        },
-        response_creation: {
-          type: 'auto',
-          model: openaiModel
         }
       }
     };
