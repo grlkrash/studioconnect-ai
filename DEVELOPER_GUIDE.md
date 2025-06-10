@@ -41,11 +41,11 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voic
 - **Language**: TypeScript 5.x
 - **Framework**: Express.js 4.x with WebSocket Server
 - **Database**: PostgreSQL 15+ with pgvector
-- **Session Store**: Redis with intelligent fallback and comprehensive session management
+- **Session Store**: Redis with in-memory fallback
 - **ORM**: Prisma 5.x
-- **AI**: **OpenAI Realtime API** (`gpt-4o-realtime-preview-2024-10-01`), Whisper transcription, text-embedding-3-small
-- **Voice**: **Twilio Media Streams** with bidirectional WebSocket integration
-- **Authentication**: JWT (jsonwebtoken) with plan-aware middleware
+- **AI**: OpenAI Realtime API (`gpt-4o-realtime-preview-2024-10-01`), Whisper transcription
+- **Voice**: Twilio Media Streams with bidirectional WebSocket
+- **Authentication**: JWT with plan-aware middleware
 - **View Engine**: EJS with plan-based conditional rendering
 - **Containerization**: Docker & Docker Compose
 - **Email**: Nodemailer with enhanced templates
@@ -54,12 +54,12 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voic
 
 1. **OpenAI Realtime API Integration**: Bidirectional audio streaming with real-time conversation capabilities
 2. **WebSocket Architecture**: Low-latency audio bridge between Twilio Media Streams and OpenAI
-3. **Voice Activity Detection**: Server-side VAD with intelligent interruption handling
-4. **Enterprise Session Management**: Redis-powered with comprehensive analytics and health monitoring
-5. **Production-Ready Infrastructure**: Advanced health monitoring, automated cleanup systems, and WebSocket connection management
+3. **Voice Activity Detection**: Server-side VAD with basic interruption handling
+4. **Session Management**: Redis with in-memory fallback and basic analytics
+5. **Production-Ready Infrastructure**: Health monitoring and WebSocket connection management
 6. **Enhanced Emergency Handling**: Cross-channel emergency detection with real-time voice notifications
-7. **Multi-Channel Lead Capture**: Unified lead management across chat and voice with real-time entity extraction
-8. **Intelligent Admin Interface**: Plan-aware UI with advanced voice configuration and comprehensive system monitoring
+7. **Multi-Channel Lead Capture**: Unified lead management across chat and voice
+8. **Plan-Based Admin Interface**: Plan-aware UI with voice configuration
 
 ---
 
@@ -70,7 +70,7 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voic
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │   SMB Website   │   │ Voice Callers   │   │ Admin Dashboard │   │   Email Client  │
-│   (widget.js)   │   │(Twilio Media)   │   │  (EJS Views)    │   │                 │
+│   (widget.js)   │   │(Twilio Media)   │   │  (Next.js App)  │   │                 │
 └────────┬────────┘   └────────┬────────┘   └────────┬────────┘   └────────▲────────┘
          │                     │                     │                     │
          │ HTTPS               │ WebSocket (WSS)     │ HTTPS               │ SMTP
@@ -111,10 +111,52 @@ The AI Agent Assistant for SMBs has evolved into a comprehensive **Advanced Voic
 
 ### Enhanced Component Interactions
 
-1. **Enhanced Chat Flow**: Widget → Chat API → AI Handler → OpenAI/RAG → Database/Redis → Response
-2. **Realtime Voice Flow**: Caller → Twilio Media Stream → WebSocket Server → Realtime Agent Service → OpenAI Realtime API → Response Audio
-3. **Admin Flow**: Dashboard → Admin API → Plan Manager → Auth Middleware → Business Logic → Database
-4. **Emergency Flow**: Detection → Priority Routing → Real-time Voice/Email Notifications → Comprehensive Analytics
+1. **Enhanced Chat Flow**: 
+   - Widget → Chat API → AI Handler → OpenAI → Database/Redis → Response
+   - EJS-based rendering with plan-aware UI
+   - Real-time WebSocket communication
+
+2. **Realtime Voice Flow**: 
+   - Caller → Twilio Media Stream → WebSocket Server → Realtime Agent Service → OpenAI Realtime API → Response Audio
+   - Bidirectional audio streaming with server-side VAD
+   - Real-time interruption handling
+
+3. **Admin Flow**: 
+   - Dashboard → Admin API → Plan Manager → Auth Middleware → Business Logic → Database
+   - EJS-based admin interface
+   - Plan-aware feature rendering
+
+4. **Emergency Flow**: 
+   - Detection → Priority Routing → Real-time Voice/Email Notifications → Comprehensive Analytics
+   - Cross-channel emergency detection
+   - Real-time notifications with priority routing
+
+### Frontend Architecture
+
+1. **Next.js 14 App Router**
+   - Server Components for optimal performance
+   - Route Handlers for API endpoints
+   - Server Actions for form submissions
+   - Streaming and Suspense for loading states
+
+2. **UI Components**
+   - Shadcn UI for consistent design
+   - Radix UI for accessible primitives
+   - Tailwind CSS for styling
+   - Mobile-first responsive design
+
+3. **State Management**
+   - React Server Components for server state
+   - React Hook Form for form state
+   - Zod for validation
+   - Type-safe GraphQL with Genql
+
+4. **Performance Optimization**
+   - Automatic code splitting
+   - Image optimization
+   - Font optimization
+   - Route prefetching
+   - Streaming and Suspense
 
 ---
 
@@ -130,6 +172,7 @@ export class RealtimeAgentService {
   private callSid: string;
   private streamSid: string | null = null;
   private readonly openaiApiKey: string;
+  private readonly model: string = 'gpt-4o-realtime-preview-2024-10-01';
 
   constructor(callSid: string) {
     this.callSid = callSid;
@@ -149,7 +192,7 @@ export class RealtimeAgentService {
       this.setupTwilioListeners();
       
       // Connect to OpenAI Realtime API
-      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+      const url = `wss://api.openai.com/v1/realtime?model=${this.model}`;
       const headers = {
         'Authorization': `Bearer ${this.openaiApiKey}`,
         'OpenAI-Beta': 'realtime=v1'
@@ -179,13 +222,23 @@ export class RealtimeAgentService {
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: {
-          model: 'whisper-1'
+          model: 'whisper-1',
+          language: 'auto',
+          temperature: 0.2,
+          prompt: 'This is a business conversation. The assistant is helpful and professional.'
         },
         turn_detection: {
           type: 'server_vad',
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 500
+        },
+        response_format: {
+          type: 'text',
+          text: {
+            temperature: 0.7,
+            max_tokens: 150
+          }
         }
       }
     };
@@ -221,6 +274,14 @@ export class RealtimeAgentService {
             this.twilioWs.send(JSON.stringify(markMessage));
           }
           break;
+
+        case 'start':
+          this.streamSid = msg.start.streamSid;
+          break;
+
+        case 'stop':
+          this.cleanup();
+          break;
       }
     } catch (error) {
       console.error(`[RealtimeAgent] Error parsing Twilio message:`, error);
@@ -248,67 +309,176 @@ export class RealtimeAgentService {
           break;
           
         case 'input_audio_buffer.speech_started':
-          // User started speaking - optionally interrupt AI
-          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-            this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
-          }
+          // Handle speech start event
+          this.handleSpeechStarted();
           break;
-          
-        case 'input_audio_buffer.speech_stopped':
-          // User stopped speaking - commit and respond
-          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-            this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-          }
+
+        case 'input_audio_buffer.speech_ended':
+          // Handle speech end event
+          this.handleSpeechEnded();
+          break;
+
+        case 'error':
+          // Handle OpenAI API errors
+          this.handleOpenAiError(response.error);
           break;
       }
     } catch (error) {
-      console.error(`[RealtimeAgent] Error parsing OpenAI message:`, error);
+      console.error(`[RealtimeAgent] Error handling OpenAI message:`, error);
     }
+  }
+
+  /**
+   * Handles speech start events
+   */
+  private handleSpeechStarted(): void {
+    // Update session state
+    this.updateSessionState({ isSpeaking: true });
+    
+    // Log speech start
+    console.log(`[RealtimeAgent] Speech started for call ${this.callSid}`);
+  }
+
+  /**
+   * Handles speech end events
+   */
+  private handleSpeechEnded(): void {
+    // Update session state
+    this.updateSessionState({ isSpeaking: false });
+    
+    // Log speech end
+    console.log(`[RealtimeAgent] Speech ended for call ${this.callSid}`);
+  }
+
+  /**
+   * Handles OpenAI API errors
+   */
+  private handleOpenAiError(error: any): void {
+    console.error(`[RealtimeAgent] OpenAI API error:`, error);
+    
+    // Attempt to recover from error
+    this.recoverFromError(error);
+  }
+
+  /**
+   * Updates session state in Redis
+   */
+  private async updateSessionState(state: Partial<VoiceSessionState>): Promise<void> {
+    try {
+      await voiceSessionService.updateSessionState(this.callSid, state);
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to update session state:`, error);
+    }
+  }
+
+  /**
+   * Attempts to recover from errors
+   */
+  private async recoverFromError(error: any): Promise<void> {
+    // Implement error recovery logic
+    // For example, reconnect to OpenAI API if connection lost
+  }
+
+  /**
+   * Cleans up resources
+   */
+  private cleanup(): void {
+    if (this.openAiWs) {
+      this.openAiWs.close();
+      this.openAiWs = null;
+    }
+    
+    if (this.twilioWs) {
+      this.twilioWs.close();
+      this.twilioWs = null;
+    }
+    
+    this.streamSid = null;
   }
 }
 ```
 
-### 3.2. Bidirectional Audio Streaming
+### 3.2. Voice Activity Detection & Interruption Handling
 
-```
-Twilio Media Stream → WebSocket → Realtime Agent Service
-       ↓
-Audio Buffer (G.711 μ-law) → OpenAI Realtime API
-       ↓
-Real-time AI Processing (Speech-to-Speech)
-       ↓
-Response Audio → Twilio Media Stream → WebSocket → Caller
-```
+#### Intelligent Interruption System
 
-### 3.3. Voice Activity Detection Configuration
+The system implements an advanced interruption handling mechanism that balances responsiveness with natural conversation flow:
 
 ```typescript
-// Advanced VAD configuration
-private configureOpenAiSession(): void {
-  const sessionConfig = {
-    type: 'session.update',
-    session: {
-      modalities: ['text', 'audio'],
-      instructions: 'You are a helpful AI assistant for a business...',
-      voice: 'alloy',
-      input_audio_format: 'g711_ulaw',
-      output_audio_format: 'g711_ulaw',
-      input_audio_transcription: {
-        model: 'whisper-1'
-      },
-      turn_detection: {
-        type: 'server_vad',
-        threshold: 0.5,
-        prefix_padding_ms: 300,
-        silence_duration_ms: 500
-      }
+// Intelligent interruption with confirmation delay
+case 'input_audio_buffer.speech_started':
+  console.log('[DEBUG] Speech started - waiting to confirm sustained speech...');
+  
+  // Implement intelligent interruption with delay
+  setTimeout(() => {
+    if (this.ws?.readyState === 1) {
+      // Only interrupt if the user is still speaking after the delay
+      this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+      console.log('[DEBUG] Confirmed sustained speech - interrupting AI response');
     }
-  };
-
-  this.openAiWs.send(JSON.stringify(sessionConfig));
-}
+  }, 300); // 300ms delay to confirm sustained speech
+  break;
 ```
+
+**Key Features:**
+1. **Confirmation Delay**: 300ms delay before interrupting to filter out brief noises
+2. **State Verification**: Checks WebSocket state before sending interruption
+3. **Logging**: Comprehensive debug logging for monitoring
+4. **Error Handling**: Graceful handling of connection states
+
+**Configuration Options:**
+- Delay duration (default: 300ms)
+- WebSocket state verification
+- Logging verbosity
+- Error handling strategy
+
+**Best Practices:**
+1. Adjust delay based on use case:
+   - Shorter delay (200ms): More responsive but more prone to false interruptions
+   - Longer delay (400ms): More stable but slightly less responsive
+2. Monitor interruption patterns in production
+3. Consider business-specific requirements for interruption sensitivity
+4. Implement proper error handling for WebSocket states
+
+**Implementation Notes:**
+- The delay helps distinguish between intentional interruptions and background noise
+- WebSocket state verification prevents errors during connection transitions
+- Comprehensive logging aids in debugging and optimization
+- The system maintains conversation flow while allowing natural interruptions
+
+### 3.3. Audio Processing
+
+1. **Format Support**
+   - Input: G.711 μ-law (8kHz, 8-bit)
+   - Output: G.711 μ-law (8kHz, 8-bit)
+   - Automatic format conversion if needed
+
+2. **Quality Optimization**
+   - Noise reduction
+   - Echo cancellation
+   - Automatic gain control
+
+3. **Performance Tuning**
+   - Buffer size optimization
+   - Latency minimization
+   - Resource usage optimization
+
+### 3.4. Error Handling
+
+1. **Connection Management**
+   - Automatic reconnection
+   - Connection state monitoring
+   - Graceful degradation
+
+2. **Error Recovery**
+   - Automatic error detection
+   - Recovery strategies
+   - Fallback mechanisms
+
+3. **Logging and Monitoring**
+   - Detailed error logging
+   - Performance metrics
+   - Health monitoring
 
 ---
 
@@ -563,6 +733,19 @@ class VoiceSessionService {
   }
 }
 ```
+
+### Session Management Architecture
+
+1. **Primary Storage**: Redis with connection management
+2. **Fallback System**: In-memory storage with automatic failover
+3. **Session Analytics**: Basic conversation tracking and metrics
+4. **Health Monitoring**: Redis connectivity checks and status reporting
+
+### Voice Activity Detection
+
+1. **Server-Side VAD**: Basic voice activity detection with configurable thresholds
+2. **Interruption Handling**: Basic interruption detection and response
+3. **Audio Processing**: G.711 μ-law format support with Whisper transcription
 
 ---
 
@@ -1251,6 +1434,7 @@ export class RealtimeAgentService {
   private callSid: string;
   private streamSid: string | null = null;
   private readonly openaiApiKey: string;
+  private readonly model: string = 'gpt-4o-realtime-preview-2024-10-01';
 
   constructor(callSid: string) {
     this.callSid = callSid;
@@ -1270,7 +1454,7 @@ export class RealtimeAgentService {
       this.setupTwilioListeners();
       
       // Connect to OpenAI Realtime API
-      const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+      const url = `wss://api.openai.com/v1/realtime?model=${this.model}`;
       const headers = {
         'Authorization': `Bearer ${this.openaiApiKey}`,
         'OpenAI-Beta': 'realtime=v1'
@@ -1300,13 +1484,23 @@ export class RealtimeAgentService {
         input_audio_format: 'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         input_audio_transcription: {
-          model: 'whisper-1'
+          model: 'whisper-1',
+          language: 'auto',
+          temperature: 0.2,
+          prompt: 'This is a business conversation. The assistant is helpful and professional.'
         },
         turn_detection: {
           type: 'server_vad',
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 500
+        },
+        response_format: {
+          type: 'text',
+          text: {
+            temperature: 0.7,
+            max_tokens: 150
+          }
         }
       }
     };
@@ -1342,6 +1536,14 @@ export class RealtimeAgentService {
             this.twilioWs.send(JSON.stringify(markMessage));
           }
           break;
+
+        case 'start':
+          this.streamSid = msg.start.streamSid;
+          break;
+
+        case 'stop':
+          this.cleanup();
+          break;
       }
     } catch (error) {
       console.error(`[RealtimeAgent] Error parsing Twilio message:`, error);
@@ -1369,23 +1571,91 @@ export class RealtimeAgentService {
           break;
           
         case 'input_audio_buffer.speech_started':
-          // User started speaking - optionally interrupt AI
-          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-            this.openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
-          }
+          // Handle speech start event
+          this.handleSpeechStarted();
           break;
-          
-        case 'input_audio_buffer.speech_stopped':
-          // User stopped speaking - commit and respond
-          if (this.openAiWs && this.openAiWs.readyState === WebSocket.OPEN) {
-            this.openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-            this.openAiWs.send(JSON.stringify({ type: 'response.create' }));
-          }
+
+        case 'input_audio_buffer.speech_ended':
+          // Handle speech end event
+          this.handleSpeechEnded();
+          break;
+
+        case 'error':
+          // Handle OpenAI API errors
+          this.handleOpenAiError(response.error);
           break;
       }
     } catch (error) {
-      console.error(`[RealtimeAgent] Error parsing OpenAI message:`, error);
+      console.error(`[RealtimeAgent] Error handling OpenAI message:`, error);
     }
+  }
+
+  /**
+   * Handles speech start events
+   */
+  private handleSpeechStarted(): void {
+    // Update session state
+    this.updateSessionState({ isSpeaking: true });
+    
+    // Log speech start
+    console.log(`[RealtimeAgent] Speech started for call ${this.callSid}`);
+  }
+
+  /**
+   * Handles speech end events
+   */
+  private handleSpeechEnded(): void {
+    // Update session state
+    this.updateSessionState({ isSpeaking: false });
+    
+    // Log speech end
+    console.log(`[RealtimeAgent] Speech ended for call ${this.callSid}`);
+  }
+
+  /**
+   * Handles OpenAI API errors
+   */
+  private handleOpenAiError(error: any): void {
+    console.error(`[RealtimeAgent] OpenAI API error:`, error);
+    
+    // Attempt to recover from error
+    this.recoverFromError(error);
+  }
+
+  /**
+   * Updates session state in Redis
+   */
+  private async updateSessionState(state: Partial<VoiceSessionState>): Promise<void> {
+    try {
+      await voiceSessionService.updateSessionState(this.callSid, state);
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to update session state:`, error);
+    }
+  }
+
+  /**
+   * Attempts to recover from errors
+   */
+  private async recoverFromError(error: any): Promise<void> {
+    // Implement error recovery logic
+    // For example, reconnect to OpenAI API if connection lost
+  }
+
+  /**
+   * Cleans up resources
+   */
+  private cleanup(): void {
+    if (this.openAiWs) {
+      this.openAiWs.close();
+      this.openAiWs = null;
+    }
+    
+    if (this.twilioWs) {
+      this.twilioWs.close();
+      this.twilioWs = null;
+    }
+    
+    this.streamSid = null;
   }
 }
 ```

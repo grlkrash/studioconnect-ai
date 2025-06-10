@@ -1,52 +1,52 @@
-# AI Agent Assistant for SMBs - Advanced Voice-Enabled Multi-Channel Platform
+# AI Agent Assistant for SMBs
 **Version 4.2** | *OpenAI Realtime API & WebSocket Implementation*
 
-## 🚀 Overview
+## Overview
+Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Businesses, featuring OpenAI Realtime API integration, bidirectional audio streaming, and plan-based feature tiers.
 
-The AI Agent Assistant for SMBs is a comprehensive **Advanced Voice-Enabled Multi-Channel Platform** that empowers small to medium-sized businesses with intelligent conversation capabilities across both chat and voice interactions. The platform features **OpenAI Realtime API integration** with bidirectional audio streaming, enterprise-grade Redis session management, advanced health monitoring, and production-ready infrastructure.
+## Key Features
 
-## ✨ Key Features
+### Advanced Voice Agent System
+- **🎵 Dynamic Audio Processing**: Real-time speech-to-speech with OpenAI's `gpt-4o-realtime-preview-2024-10-01` model
+- **🎯 Voice Activity Detection**: Server-side VAD with intelligent interruption handling
+- **🔄 WebSocket Architecture**: Low-latency audio bridge between Twilio and OpenAI
+- **🎙️ Dynamic Business Greetings**: Context-aware greeting generation
 
-### 🎯 Advanced Voice Agent System
-- **🔊 OpenAI Realtime API**: Bidirectional audio streaming with real-time conversation capabilities
-- **🎵 Dynamic Audio Processing**: Real-time speech-to-speech with OpenAI's `gpt-4o-realtime-preview` model
-- **🔄 WebSocket Architecture**: Low-latency bidirectional audio bridge between Twilio and OpenAI
-- **🎯 Voice Activity Detection**: Server-side VAD with configurable thresholds and silence detection
-- **💬 Natural Conversation Flow**: Real-time interruption handling and response generation
-- **📞 Multi-Language Support**: G.711 μ-law audio format with Whisper transcription
+### Session Management
+- **💾 Redis with Fallback**: Primary Redis storage with in-memory fallback
+- **📊 Basic Analytics**: Session tracking and metrics
+- **🔍 Health Monitoring**: Redis connectivity checks and status reporting
 
-### 🏢 Enterprise Session Management
-- **💾 Redis-First Architecture**: Primary Redis storage with comprehensive connection management and automatic reconnection
-- **🔄 Intelligent Fallback System**: Seamless failover to in-memory storage with advanced cleanup and memory optimization
-- **📊 Real-Time Analytics**: Live conversation tracking with entity extraction, intent classification, and conversation analytics
-- **❤️ Health Monitoring**: Continuous Redis health checks with exponential backoff and detailed status reporting
-- **🧠 Memory Optimization**: Configurable session limits, automatic expiration, and intelligent resource management
+### Plan-Based Feature Tiers
+- **FREE**: Basic chat functionality
+- **BASIC**: Enhanced lead capture
+- **PRO**: Full voice agent access
 
-### 🎛️ Plan-Based Feature Tiers
-- **🆓 FREE Tier**: Basic chat widget with up to 5 lead capture questions
-- **⭐ BASIC Tier**: Enhanced chat with unlimited questions and priority notifications
-- **🚀 PRO Tier**: Full voice agent, premium voices, emergency calls, and advanced analytics
+### Enhanced Emergency System
+- **🚨 Cross-Channel Detection**: Works across chat and voice
+- **📞 Priority Notifications**: Real-time voice alerts for emergencies
+- **📝 Context Preservation**: Full conversation history maintained
 
-### 🚨 Enhanced Emergency System
-- **🔍 Cross-Channel Detection**: Advanced emergency keyword detection across chat and voice
-- **📞 Priority Voice Notifications**: Real-time emergency calls to business owners (PRO tier)
-- **⚡ Essential Question Flagging**: Streamlined emergency flows with `isEssentialForEmergency` question filtering
-- **🎯 Priority Routing**: Automatic priority assignment and intelligent routing based on urgency
+### Production-Ready Infrastructure
+- **🔧 Health Monitoring**: System status tracking
+- **🧹 Resource Management**: Basic cleanup systems
+- **📈 Performance Tracking**: WebSocket metrics
 
-### 🔔 Advanced Notification Management
-- **📧 Email Notifications**: Configurable email alerts for all captured leads with detailed information
-- **📞 Emergency Phone Calls**: Automated voice calls for urgent/emergency situations
-- **⚙️ Easy Configuration**: User-friendly admin panel to set notification preferences
-- **🧪 Test Functionality**: Built-in email testing to verify SendGrid configuration
-- **✅ Smart Validation**: Email format and phone number validation with international support
+## Technology Stack
+- **Runtime**: Node.js 20.x
+- **Language**: TypeScript 5.x
+- **Framework**: Express.js 4.x with WebSocket Server
+- **Database**: PostgreSQL 15+ with pgvector
+- **Session Store**: Redis with in-memory fallback
+- **ORM**: Prisma 5.x
+- **AI**: OpenAI Realtime API (`gpt-4o-realtime-preview-2024-10-01`)
+- **Voice**: Twilio Media Streams with bidirectional WebSocket
+- **Authentication**: JWT with plan-aware middleware
+- **View Engine**: EJS with plan-based conditional rendering
+- **Containerization**: Docker & Docker Compose
+- **Email**: Nodemailer with enhanced templates
 
-### 📈 Production-Ready Infrastructure
-- **📊 Health Monitoring Dashboard**: Comprehensive system health tracking with detailed component metrics
-- **🧹 Automated Cleanup**: Memory optimization with configurable limits and automated resource management
-- **🔧 Advanced Error Handling**: Graceful degradation and comprehensive error recovery systems
-- **🎯 Performance Optimization**: Memory-efficient session management with intelligent cleanup algorithms
-
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
@@ -86,20 +86,7 @@ The AI Agent Assistant for SMBs is a comprehensive **Advanced Voice-Enabled Mult
                     └─────────────────┘            └──────────────┘
 ```
 
-## 🛠️ Technology Stack
-
-- **Runtime**: Node.js 20.x
-- **Language**: TypeScript 5.x
-- **Framework**: Express.js 4.x with WebSocket Server
-- **Database**: PostgreSQL 15+ with pgvector
-- **Session Store**: Redis with intelligent fallback
-- **ORM**: Prisma 5.x
-- **AI**: OpenAI Realtime API (`gpt-4o-realtime-preview-2024-10-01`)
-- **Voice**: Twilio Media Streams with bidirectional WebSocket
-- **Authentication**: JWT with plan-aware middleware
-- **Containerization**: Docker & Docker Compose
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 20.x or higher
@@ -148,6 +135,10 @@ FROM_EMAIL="noreply@your-domain.com"
 
 # JWT Configuration
 JWT_SECRET="your-super-secret-jwt-key"
+
+# Next.js Configuration
+NEXT_PUBLIC_API_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ```
 
 ### 3. Installation & Setup
@@ -172,7 +163,7 @@ npm run dev
 - **Health Monitoring**: http://localhost:3000/health
 - **WebSocket Server**: ws://localhost:3000/ (for Twilio Media Streams)
 
-## 🎯 Advanced Features
+## Advanced Features
 
 ### 🔊 OpenAI Realtime API Integration
 
@@ -195,7 +186,22 @@ turn_detection: {
   prefix_padding_ms: 300,
   silence_duration_ms: 500
 }
+
+// Intelligent interruption handling
+// 300ms delay to confirm sustained speech before interrupting
+setTimeout(() => {
+  if (isStillSpeaking) {
+    ws.send(JSON.stringify({ type: 'response.cancel' }));
+  }
+}, 300);
 ```
+
+**Features:**
+- Server-side Voice Activity Detection (VAD)
+- Intelligent interruption with 300ms confirmation delay
+- Noise filtering to prevent false interruptions
+- Configurable thresholds for speech detection
+- Automatic turn-taking based on silence duration
 
 **Dynamic Business Greetings:**
 ```typescript
@@ -248,7 +254,7 @@ PUT /api/admin/business/notifications
 // Test email configuration
 POST /api/admin/test-sendgrid
 {
-  "testEmail": "test@example.com"
+  "email": "test@example.com"
 }
 ```
 

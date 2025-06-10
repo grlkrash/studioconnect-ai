@@ -353,10 +353,16 @@ export class RealtimeAgentService {
             break;
 
           case 'input_audio_buffer.speech_started':
-            console.log('[DEBUG] 6b. Speech started');
-            if (this.ws?.readyState === 1) {
-              this.ws.send(JSON.stringify({ type: 'response.cancel' }));
-            }
+            console.log('[DEBUG] 6b. Speech started - waiting to confirm sustained speech...');
+            
+            // Implement intelligent interruption with delay
+            setTimeout(() => {
+              if (this.ws?.readyState === 1) {
+                // Only interrupt if the user is still speaking after the delay
+                this.ws.send(JSON.stringify({ type: 'response.cancel' }));
+                console.log('[DEBUG] 6b.1. Confirmed sustained speech - interrupting AI response');
+              }
+            }, 300); // 300ms delay to confirm sustained speech
             break;
 
           case 'input_audio_buffer.speech_stopped':
