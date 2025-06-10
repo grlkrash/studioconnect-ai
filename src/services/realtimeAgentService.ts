@@ -143,6 +143,7 @@ async function cleanupTempFile(filePath: string) {
 export class RealtimeAgentService {
   private static instance: RealtimeAgentService;
   private ws: WebSocket | null = null;
+  private openAiWs: WebSocket | null = null;
   private state: ConnectionState;
   private readonly openaiApiKey: string;
   public onCallSidReceived?: (callSid: string) => void;
@@ -189,11 +190,26 @@ export class RealtimeAgentService {
   /**
    * Establishes bidirectional audio bridge between Twilio and OpenAI
    */
-  public async connect(ws: WebSocket): Promise<void> {
+  public async connect(twilioWs: WebSocket): Promise<void> {
     console.log('[DEBUG] 1. Connecting to Twilio WebSocket...');
-    this.ws = ws;
+    this.ws = twilioWs;
     this.setupTwilioListeners();
     console.log('[DEBUG] 1a. Twilio WebSocket connection setup complete.');
+  }
+
+  private async sendWebSocketMessage(ws: WebSocket | null, message: any, context: string): Promise<void> {
+    if (!ws || ws.readyState !== 1) {
+      console.warn(`[DEBUG] Cannot send ${context} - WebSocket not ready`);
+      return;
+    }
+
+    try {
+      ws.send(JSON.stringify(message));
+      console.log(`[DEBUG] ${context} sent successfully`);
+    } catch (error) {
+      console.error(`[DEBUG] Error sending ${context}:`, error);
+      this.cleanup('WebSocket', error as Error);
+    }
   }
 
   private setupTwilioListeners(): void {
@@ -272,23 +288,16 @@ export class RealtimeAgentService {
           }
         } else if (data.event === 'media') {
           console.log('[DEBUG] 3d. Processing media event...');
-          if (this.ws?.readyState === 1) {
-            const audioAppend = {
-              type: 'input_audio_buffer.append',
-              audio: data.media.payload
-            };
-            this.ws.send(JSON.stringify(audioAppend));
-            console.log('[DEBUG] 3e. Audio forwarded to OpenAI');
-          }
+          await this.sendWebSocketMessage(this.openAiWs, {
+            type: 'input_audio_buffer.append',
+            audio: data.media.payload
+          }, 'Audio to OpenAI');
 
-          if (this.ws?.readyState === 1 && this.state.streamSid) {
-            const markMessage = {
-              event: 'mark',
-              streamSid: this.state.streamSid,
-              mark: { name: `audio_processed_${Date.now()}` }
-            };
-            this.ws.send(JSON.stringify(markMessage));
-          }
+          await this.sendWebSocketMessage(this.ws, {
+            event: 'mark',
+            streamSid: this.state.streamSid,
+            mark: { name: `audio_processed_${Date.now()}` }
+          }, 'Mark to Twilio');
         }
       } catch (error) {
         console.error('[DEBUG] Error processing Twilio message:', error);
@@ -311,17 +320,17 @@ export class RealtimeAgentService {
     const maxRetries = 3;
 
     const connect = () => {
-      if (this.ws) {
-        this.ws.close();
+      if (this.openAiWs) {
+        this.openAiWs.close();
       }
-      this.ws = new WebSocket(url, { headers });
+      this.openAiWs = new WebSocket(url, { headers });
       this.setupOpenAIListeners();
       console.log('[DEBUG] 4a. OpenAI WebSocket connection initiated.');
     };
 
     connect();
 
-    this.ws?.on('error', (error) => {
+    this.openAiWs?.on('error', (error) => {
       console.error('[DEBUG] OpenAI WebSocket error:', error);
       if (retryCount < maxRetries) {
         retryCount++;
@@ -336,28 +345,28 @@ export class RealtimeAgentService {
 
   private setupOpenAIListeners(): void {
     console.log('[DEBUG] 5. Setting up OpenAI listeners...');
-    if (!this.ws) {
+    if (!this.openAiWs) {
       console.error('[DEBUG] OpenAI WebSocket not initialized');
       return;
     }
 
-    this.ws.on('open', () => {
+    this.openAiWs.on('open', () => {
       console.log('[DEBUG] 5a. OpenAI WebSocket connected');
       this.state.isAiReady = true;
       this.configureOpenAiSession();
     });
 
-    this.ws.on('close', () => {
+    this.openAiWs.on('close', () => {
       console.log('[DEBUG] OpenAI WebSocket closed');
       this.cleanup('OpenAI');
     });
 
-    this.ws.on('error', (error: Error) => {
+    this.openAiWs.on('error', (error: Error) => {
       console.error('[DEBUG] OpenAI WebSocket error:', error);
       this.cleanup('OpenAI');
     });
 
-    this.ws.on('message', (data: any) => {
+    this.openAiWs.on('message', async (data: any) => {
       try {
         const response = JSON.parse(data.toString());
         console.log('[DEBUG] 6. Received OpenAI message:', response.type);
@@ -371,36 +380,31 @@ export class RealtimeAgentService {
             break;
 
           case 'response.audio.delta':
-            if (this.ws?.readyState === 1 && this.state.streamSid) {
-              const twilioMessage = {
-                event: 'media',
-                streamSid: this.state.streamSid,
-                media: { payload: response.delta }
-              };
-              this.ws.send(JSON.stringify(twilioMessage));
-              console.log('[DEBUG] 6b. Audio forwarded to Twilio');
-            }
+            await this.sendWebSocketMessage(this.ws, {
+              event: 'media',
+              streamSid: this.state.streamSid,
+              media: { payload: response.delta }
+            }, 'Audio delta to Twilio');
+            break;
+
+          case 'response.audio.done':
+            console.log('[DEBUG] 6b.1. Audio response complete');
             break;
 
           case 'input_audio_buffer.speech_started':
             console.log('[DEBUG] 6b. Speech started - waiting to confirm sustained speech...');
             
             // Implement intelligent interruption with delay
-            setTimeout(() => {
-              if (this.ws?.readyState === 1) {
-                // Only interrupt if the user is still speaking after the delay
-                this.ws.send(JSON.stringify({ type: 'response.cancel' }));
-                console.log('[DEBUG] 6b.1. Confirmed sustained speech - interrupting AI response');
-              }
+            setTimeout(async () => {
+              await this.sendWebSocketMessage(this.openAiWs, { type: 'response.cancel' }, 'Cancel response to OpenAI');
+              console.log('[DEBUG] 6b.1. Confirmed sustained speech - interrupting AI response');
             }, 300); // 300ms delay to confirm sustained speech
             break;
 
           case 'input_audio_buffer.speech_stopped':
             console.log('[DEBUG] 6c. Speech stopped');
-            if (this.ws?.readyState === 1) {
-              this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-              this.ws.send(JSON.stringify({ type: 'response.create' }));
-            }
+            await this.sendWebSocketMessage(this.openAiWs, { type: 'input_audio_buffer.commit' }, 'Commit audio to OpenAI');
+            await this.sendWebSocketMessage(this.openAiWs, { type: 'response.create' }, 'Create response to OpenAI');
             break;
 
           case 'response.text.delta':
@@ -426,7 +430,7 @@ export class RealtimeAgentService {
 
   private async configureOpenAiSession(): Promise<void> {
     console.log('[DEBUG] 7. Configuring OpenAI session...');
-    if (!this.ws || this.ws.readyState !== 1) {
+    if (!this.openAiWs || this.openAiWs.readyState !== 1) {
       console.error('[DEBUG] OpenAI WebSocket not ready for configuration');
       return;
     }
@@ -446,11 +450,19 @@ export class RealtimeAgentService {
         type: 'session.update',
         session: {
           model: 'gpt-4o-realtime-preview-2024-10-01',
+          temperature: 0.7,
+          max_tokens: 150,
+          modalities: ['text', 'audio'],
+          system_prompt: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+          instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
+          voice: business.agentConfig.openaiVoice || 'alloy',
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: {
             model: 'whisper-1',
-            language: 'en'
+            language: 'en',
+            temperature: 0.2,
+            prompt: 'This is a business conversation. The assistant is helpful and professional.'
           },
           turn_detection: {
             type: 'server_vad',
@@ -458,18 +470,47 @@ export class RealtimeAgentService {
             prefix_padding_ms: 300,
             silence_duration_ms: 500
           },
-          output_audio: {
-            enabled: true,
-            format: 'g711_ulaw',
-            voice: business.agentConfig.openaiVoice || 'alloy',
-            model: business.agentConfig.openaiModel || 'tts-1-hd'
+          response_format: {
+            type: 'text',
+            text: {
+              temperature: 0.7,
+              max_tokens: 150
+            },
+            audio: {
+              enabled: true,
+              format: 'g711_ulaw',
+              voice: business.agentConfig.openaiVoice || 'alloy',
+              model: 'tts-1-hd'
+            }
           },
-          instructions: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.'
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'detect_emergency',
+                description: 'Detect if the user is reporting an emergency situation',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    is_emergency: {
+                      type: 'boolean',
+                      description: 'Whether the user is reporting an emergency'
+                    },
+                    emergency_type: {
+                      type: 'string',
+                      description: 'Type of emergency if detected',
+                      enum: ['medical', 'fire', 'security', 'other']
+                    }
+                  },
+                  required: ['is_emergency']
+                }
+              }
+            }
+          ]
         }
       };
 
-      this.ws.send(JSON.stringify(sessionConfig));
-      console.log('[DEBUG] 7a. OpenAI session configuration sent');
+      await this.sendWebSocketMessage(this.openAiWs, sessionConfig, 'Session configuration to OpenAI');
     } catch (error) {
       console.error('[DEBUG] Error configuring OpenAI session:', error);
     }
@@ -481,32 +522,25 @@ export class RealtimeAgentService {
       const welcomeMessage = await this.getWelcomeMessage(this.state.businessId!);
       console.log('[DEBUG] 7d. Welcome message retrieved:', welcomeMessage);
 
-      if (this.ws?.readyState === 1) {
-        const textEvent = {
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [{
-              type: 'input_text',
-              text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
-            }]
-          }
-        };
-
-        this.ws.send(JSON.stringify(textEvent));
-        console.log('[DEBUG] 7e. Welcome message sent to OpenAI');
-
-        // Wait for message to be processed before creating response
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        if (this.ws?.readyState === 1) {
-          this.ws.send(JSON.stringify({ type: 'response.create' }));
-          console.log('[DEBUG] 7f. Response creation triggered');
+      const textEvent = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+          }]
         }
+      };
 
-        this.state.welcomeMessageDelivered = true;
-      }
+      await this.sendWebSocketMessage(this.openAiWs, textEvent, 'Welcome message to OpenAI');
+
+      // Wait for message to be processed before creating response
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await this.sendWebSocketMessage(this.openAiWs, { type: 'response.create' }, 'Response creation to OpenAI');
+      this.state.welcomeMessageDelivered = true;
     } catch (error) {
       console.error('[DEBUG] Error triggering greeting:', error);
     }
@@ -554,6 +588,7 @@ export class RealtimeAgentService {
 
     console.log('[DEBUG] 8c. Closing WebSocket connections...');
     this.ws?.close();
+    this.openAiWs?.close();
     console.log('[DEBUG] 8d. Cleanup complete');
   }
 
