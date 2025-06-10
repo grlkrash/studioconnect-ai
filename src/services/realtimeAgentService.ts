@@ -458,7 +458,7 @@ export class RealtimeAgentService {
             prefix_padding_ms: 300,
             silence_duration_ms: 500
           },
-          audio: {
+          output_audio: {
             enabled: true,
             format: 'g711_ulaw',
             voice: business.agentConfig.openaiVoice || 'alloy',
