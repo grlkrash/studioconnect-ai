@@ -259,6 +259,14 @@ async function initializeRedis() {
 // Start server
 const httpServer = http.createServer(app)
 
+// Add upgrade event listener for WebSocket debugging
+httpServer.on('upgrade', (request, socket, head) => {
+  console.log('--- HTTP UPGRADE REQUEST RECEIVED ---')
+  console.log('Request URL:', request.url)
+  console.log('Request Headers:', JSON.stringify(request.headers, null, 2))
+  console.log('------------------------------------')
+})
+
 // Create Twilio WebSocket server for real-time audio streaming
 let twilioWsServer: TwilioWebSocketServer | null = null
 
