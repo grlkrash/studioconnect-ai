@@ -269,7 +269,7 @@ export class RealtimeAgentService {
     console.log(`[RealtimeAgent] Configuring OpenAI session for call ${this.callSid}.`);
 
     let businessInstructions = 'You are a helpful AI assistant. Respond naturally and helpfully. Keep responses concise and conversational.';
-    let openaiVoice = 'NOVA'; // Default voice
+    let openaiVoice = 'nova'; // Default voice - lowercase as per API spec
     let openaiModel = 'tts-1'; // Default TTS model
 
     try {
@@ -292,7 +292,10 @@ export class RealtimeAgentService {
           
           // Get the configured voice and model
           if (business.agentConfig?.openaiVoice) {
-            openaiVoice = business.agentConfig.openaiVoice;
+            // Convert to lowercase and validate
+            const configuredVoice = business.agentConfig.openaiVoice.toLowerCase();
+            const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+            openaiVoice = validVoices.includes(configuredVoice) ? configuredVoice : 'nova';
             console.log(`[RealtimeAgent] Using configured OpenAI voice: ${openaiVoice}`);
           }
           if (business.agentConfig?.openaiModel) {
@@ -343,10 +346,13 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       session: {
         modalities: ['text', 'audio'],
         instructions: businessInstructions,
-        voice: openaiVoice.toLowerCase(),
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: { model: 'whisper-1' },
+        voice: openaiVoice,
+        input_audio_format: 'mulaw',
+        output_audio_format: 'mulaw',
+        input_audio_transcription: { 
+          model: 'whisper-1',
+          language: 'en'
+        },
         turn_detection: {
           type: 'server_vad',
           threshold: 0.5,
@@ -361,23 +367,42 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
     };
 
     console.log(`[RealtimeAgent] Sending session configuration for call ${this.callSid}`);
-    this.openAiWs.send(JSON.stringify(sessionConfig));
-    console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
+    try {
+      this.openAiWs.send(JSON.stringify(sessionConfig));
+      console.log(`[RealtimeAgent] OpenAI session configured for call ${this.callSid} with business-specific instructions`);
+    } catch (error) {
+      console.error(`[RealtimeAgent] Failed to send session configuration:`, error);
+      this.cleanup('OpenAI');
+      return;
+    }
 
     // Wait for session creation before triggering greeting
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Session creation timeout'));
+      }, 10000);
+
       const handler = (event: { data: any }) => {
         try {
           const response = JSON.parse(event.data.toString());
           if (response.type === 'session.created') {
+            clearTimeout(timeout);
             this.openAiWs!.removeEventListener('message', handler);
             resolve();
+          } else if (response.type === 'session.error') {
+            clearTimeout(timeout);
+            this.openAiWs!.removeEventListener('message', handler);
+            reject(new Error(`Session error: ${response.error}`));
           }
         } catch (error) {
           console.error(`[RealtimeAgent] Error handling session creation response:`, error);
         }
       };
       this.openAiWs!.addEventListener('message', handler);
+    }).catch(error => {
+      console.error(`[RealtimeAgent] Session creation failed:`, error);
+      this.cleanup('OpenAI');
+      return;
     });
 
     // Now trigger the greeting after session is created
@@ -385,32 +410,64 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
   }
 
   private handleOpenAiAudio(audioB64: string) {
-    // Add audio to queue for processing
-    this.state.audioQueue.push(audioB64);
-    this.processAudioQueue();
+    try {
+      // Validate audio data
+      if (!audioB64 || typeof audioB64 !== 'string') {
+        console.error(`[RealtimeAgent] Invalid audio data received for call ${this.callSid}`);
+        return;
+      }
+
+      // Add audio to queue for processing
+      this.state.audioQueue.push(audioB64);
+      this.processAudioQueue();
+    } catch (error) {
+      console.error(`[RealtimeAgent] Error handling OpenAI audio:`, error);
+    }
   }
 
-     private processAudioQueue() {
-     // Only process audio if both connections are ready
-     if (!this.state.isTwilioReady || !this.state.streamSid || !this.twilioWs) {
-       console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}`);
-       return;
-     }
+  private processAudioQueue() {
+    // Only process audio if both connections are ready
+    if (!this.state.isTwilioReady || !this.state.streamSid || !this.twilioWs) {
+      console.log(`[RealtimeAgent] Not ready to process audio queue for call ${this.callSid}`);
+      return;
+    }
 
-     // Process all queued audio chunks
-     while (this.state.audioQueue.length > 0) {
-       const audioChunk = this.state.audioQueue.shift();
-       if (audioChunk && this.twilioWs.readyState === WebSocket.OPEN) {
-         const twilioMsg = {
-           event: "media",
-           streamSid: this.state.streamSid,
-           media: { payload: audioChunk },
-         };
-         console.log(`[RealtimeAgent] Forwarding queued audio to Twilio for call ${this.callSid}`);
-         this.twilioWs.send(JSON.stringify(twilioMsg));
-       }
-     }
-   }
+    // Process all queued audio chunks
+    while (this.state.audioQueue.length > 0) {
+      try {
+        const audioChunk = this.state.audioQueue.shift();
+        if (!audioChunk) continue;
+
+        if (this.twilioWs.readyState === WebSocket.OPEN) {
+          const twilioMsg = {
+            event: "media",
+            streamSid: this.state.streamSid,
+            media: { payload: audioChunk },
+          };
+          
+          // Send mark message to keep stream alive
+          const markMsg = {
+            event: "mark",
+            streamSid: this.state.streamSid,
+            mark: { name: `audio_processed_${Date.now()}` }
+          };
+
+          // Send both messages
+          this.twilioWs.send(JSON.stringify(twilioMsg));
+          this.twilioWs.send(JSON.stringify(markMsg));
+          
+          console.log(`[RealtimeAgent] Forwarded audio chunk to Twilio for call ${this.callSid}`);
+        } else {
+          console.error(`[RealtimeAgent] Twilio WebSocket not open for call ${this.callSid}`);
+          this.cleanup('Twilio');
+          return;
+        }
+      } catch (error) {
+        console.error(`[RealtimeAgent] Error processing audio chunk for call ${this.callSid}:`, error);
+        // Don't break the loop, try to process remaining chunks
+      }
+    }
+  }
 
   /**
    * Sends a message to the OpenAI Realtime API
