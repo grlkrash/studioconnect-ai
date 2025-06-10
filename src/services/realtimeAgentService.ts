@@ -319,14 +319,17 @@ export class RealtimeAgentService {
 
     let retryCount = 0;
     const maxRetries = 3;
+    const retryDelay = 1000; // Start with 1 second delay
 
     const connect = () => {
       if (this.openAiWs) {
+        console.log('[DEBUG] Closing existing OpenAI WebSocket connection');
         this.openAiWs.close();
       }
+
+      console.log(`[DEBUG] Attempting OpenAI connection (attempt ${retryCount + 1}/${maxRetries})`);
       this.openAiWs = new WebSocket(url, { headers });
       this.setupOpenAIListeners();
-      console.log('[DEBUG] 4a. OpenAI WebSocket connection initiated.');
     };
 
     connect();
@@ -335,9 +338,23 @@ export class RealtimeAgentService {
       console.error('[DEBUG] OpenAI WebSocket error:', error);
       if (retryCount < maxRetries) {
         retryCount++;
-        console.log(`[DEBUG] Retrying OpenAI connection (${retryCount}/${maxRetries})...`);
-        setTimeout(connect, 1000 * retryCount);
+        const delay = retryDelay * Math.pow(2, retryCount - 1); // Exponential backoff
+        console.log(`[DEBUG] Retrying OpenAI connection in ${delay}ms (${retryCount}/${maxRetries})...`);
+        setTimeout(connect, delay);
       } else {
+        console.error('[DEBUG] Max retries reached for OpenAI connection');
+        this.cleanup('OpenAI', error);
+      }
+    });
+
+    this.openAiWs?.on('close', (code, reason) => {
+      console.log(`[DEBUG] OpenAI WebSocket closed with code ${code} and reason: ${reason}`);
+      if (retryCount < maxRetries && !this.state.isCleaningUp) {
+        retryCount++;
+        const delay = retryDelay * Math.pow(2, retryCount - 1);
+        console.log(`[DEBUG] Attempting reconnection in ${delay}ms (${retryCount}/${maxRetries})...`);
+        setTimeout(connect, delay);
+      } else if (!this.state.isCleaningUp) {
         console.error('[DEBUG] Max retries reached for OpenAI connection');
         this.cleanup('OpenAI');
       }
@@ -448,11 +465,11 @@ export class RealtimeAgentService {
       }
 
       // Get the configured voice and validate it
-      const validVoices = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const;
-      const configuredVoice = business.agentConfig.openaiVoice?.toLowerCase() || 'alloy';
+      const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as const;
+      const configuredVoice = (business.agentConfig.openaiVoice || 'nova').toLowerCase();
       const openaiVoice = validVoices.includes(configuredVoice as typeof validVoices[number]) 
         ? configuredVoice 
-        : 'alloy';
+        : 'nova';
       
       console.log(`[DEBUG] Configured voice from database: ${configuredVoice}, using: ${openaiVoice}`);
 
@@ -480,11 +497,6 @@ export class RealtimeAgentService {
             silence_duration_ms: 500,
             min_speech_duration_ms: 100,
             max_speech_duration_ms: 30000
-          },
-          response_format: {
-            type: 'verbose_json',
-            include_audio: true,
-            include_text: true
           }
         }
       };
