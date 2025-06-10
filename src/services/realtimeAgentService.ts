@@ -389,8 +389,8 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         modalities: ['text', 'audio'],
         instructions: businessInstructions,
         voice: openaiVoice,
-        input_audio_format: 'mulaw',
-        output_audio_format: 'mulaw',
+        input_audio_format: 'g711_ulaw',
+        output_audio_format: 'g711_ulaw',
         input_audio_transcription: { 
           model: 'whisper-1',
           language: 'en'
