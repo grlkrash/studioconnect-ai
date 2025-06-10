@@ -340,6 +340,13 @@ export class RealtimeAgentService {
         console.log('[DEBUG] 6. Received OpenAI message:', response.type);
 
         switch (response.type) {
+          case 'session.updated':
+            console.log('[DEBUG] 6a. Session configuration confirmed');
+            if (!this.state.welcomeMessageDelivered && this.state.businessId) {
+              this.triggerGreeting();
+            }
+            break;
+
           case 'response.audio.delta':
             if (this.ws?.readyState === 1 && this.state.streamSid) {
               const twilioMessage = {
@@ -348,7 +355,7 @@ export class RealtimeAgentService {
                 media: { payload: response.delta }
               };
               this.ws.send(JSON.stringify(twilioMessage));
-              console.log('[DEBUG] 6a. Audio forwarded to Twilio');
+              console.log('[DEBUG] 6b. Audio forwarded to Twilio');
             }
             break;
 
@@ -418,11 +425,6 @@ export class RealtimeAgentService {
 
     this.ws.send(JSON.stringify(sessionConfig));
     console.log('[DEBUG] 7a. OpenAI session configuration sent');
-
-    if (!this.state.welcomeMessageDelivered && this.state.businessId) {
-      console.log('[DEBUG] 7b. Triggering welcome message...');
-      await this.triggerGreeting();
-    }
   }
 
   private async triggerGreeting(): Promise<void> {
