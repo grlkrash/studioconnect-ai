@@ -451,7 +451,6 @@ export class RealtimeAgentService {
         session: {
           model: 'gpt-4o-realtime-preview-2024-10-01',
           temperature: 0.7,
-          max_tokens: 150,
           modalities: ['text', 'audio'],
           system_prompt: 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
           instructions: business.agentConfig.personaPrompt || 'You are a helpful AI assistant for a business. Respond naturally and helpfully to customer inquiries. Keep responses concise and conversational.',
@@ -482,31 +481,7 @@ export class RealtimeAgentService {
               voice: business.agentConfig.openaiVoice || 'alloy',
               model: 'tts-1-hd'
             }
-          },
-          tools: [
-            {
-              type: 'function',
-              function: {
-                name: 'detect_emergency',
-                description: 'Detect if the user is reporting an emergency situation',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    is_emergency: {
-                      type: 'boolean',
-                      description: 'Whether the user is reporting an emergency'
-                    },
-                    emergency_type: {
-                      type: 'string',
-                      description: 'Type of emergency if detected',
-                      enum: ['medical', 'fire', 'security', 'other']
-                    }
-                  },
-                  required: ['is_emergency']
-                }
-              }
-            }
-          ]
+          }
         }
       };
 
