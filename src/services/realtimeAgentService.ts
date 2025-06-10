@@ -34,6 +34,7 @@ interface ConnectionState {
   isCallActive: boolean;
   welcomeMessageDelivered: boolean;
   welcomeMessageAttempts: number;
+  isCleaningUp: boolean;
 }
 
 /**
@@ -72,6 +73,7 @@ export class RealtimeAgentService {
       isCallActive: false,
       welcomeMessageDelivered: false,
       welcomeMessageAttempts: 0,
+      isCleaningUp: false,
     };
 
     // Set up Twilio WebSocket listeners immediately
@@ -404,6 +406,7 @@ ${questions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
 
 CRITICAL RULES:
 BUSINESS IDENTITY: You work EXCLUSIVELY for ${businessName}. NEVER suggest competitors.
+CONFIRMATION: After capturing critical information (like a name, phone number, or email), ALWAYS repeat it back to the user to confirm accuracy. For example: "Okay, I have the name as James. Is that correct?" or "So that's an email of J-A-M-E-S at example dot com. Did I get that right?"
 KNOWLEDGE BOUNDARIES: Only use information explicitly provided. NEVER invent details.
 FORBIDDEN: Do NOT restart conversations, repeat greetings mid-call, or invent information.
 VOICE OPTIMIZATION: Keep responses under 25 seconds when spoken. Use natural, conversational language.
@@ -430,7 +433,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
           type: 'server_vad',
           threshold: 0.5,
           prefix_padding_ms: 300,
-          silence_duration_ms: 500
+          silence_duration_ms: 800
         }
       }
     };
@@ -844,17 +847,19 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
     }
   }
 
-  public cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
+  public async cleanup(source: 'Twilio' | 'OpenAI' | 'Other' = 'Other') {
+    if (this.state.isCleaningUp) return;
+    this.state.isCleaningUp = true;
     console.log(`[RealtimeAgent] Cleanup triggered by ${source} for call ${this.callSid}.`);
-    console.log(`[RealtimeAgent] Current WebSocket states:`, {
-      openAiWsState: this.openAiWs?.readyState,
-      twilioWsState: this.twilioWs?.readyState
-    });
+    
+    // Wait for 2 seconds to allow any final in-flight messages to be processed
+    console.log(`[RealtimeAgent] Delaying cleanup for 2 seconds to ensure final data is processed...`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Process lead creation before cleanup if we have conversation data
     if (this.state.conversationHistory.length > 0 && this.state.businessId) {
       console.log(`[RealtimeAgent] Processing lead creation before cleanup for call ${this.callSid}`);
-      this.processLeadCreation().catch(error => {
+      await this.processLeadCreation().catch(error => {
         console.error(`[RealtimeAgent] Error processing lead creation during cleanup:`, error);
       });
     }
@@ -882,6 +887,7 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
       isCallActive: false,
       welcomeMessageDelivered: false,
       welcomeMessageAttempts: 0,
+      isCleaningUp: false,
     };
   }
 
