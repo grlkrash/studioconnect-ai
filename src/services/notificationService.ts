@@ -1,3 +1,4 @@
+// Updated: Added emergency voice call functionality and improved email notifications
 import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
