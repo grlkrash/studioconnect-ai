@@ -351,9 +351,7 @@ export class RealtimeAgentService {
           
           businessInstructions = `You are a professional AI receptionist for ${businessName}. Your ONLY goal is to serve callers on behalf of this specific business.
 
-START THE CONVERSATION BY SAYING: "${welcomeMessage}"
-
-AFTER the greeting, listen to the user and respond accordingly.
+AFTER the initial greeting, listen to the user and respond accordingly.
 
 EMERGENCY DETECTION PROTOCOL:
 FIRST, detect if the caller's message indicates an EMERGENCY (burst pipe, flooding, no heat in freezing weather, gas leak, electrical hazard, water damage):
@@ -952,13 +950,16 @@ CONVERSATION FLOW: ONLY respond when the user has clearly spoken. If you detect 
         throw new Error('OpenAI WebSocket not ready');
       }
 
-      // Send the welcome message as a text event
+      // Send the welcome message as a text event with user role and clear instruction
       const textEvent = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: welcomeMessage }]
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: `Please say this exact welcome message to the caller: "${welcomeMessage}"`
+          }]
         }
       };
 
