@@ -546,30 +546,67 @@ export class RealtimeAgentService {
   }
 
   public async cleanup(source: string, error?: Error): Promise<void> {
-    if (this.state.isCleaningUp) {
-      console.log('[DEBUG] Cleanup already in progress, skipping');
-      return;
+    console.log(`[DEBUG] Cleanup initiated from ${source}${error ? ` with error: ${error.message}` : ''}`)
+    
+    // Only trigger fallback once for an active call
+    if (this.state.isTwilioReady && this.state.callSid && !this.state.isCleaningUp) {
+      try {
+        console.log(`[Fallback] ${source} connection failed. Redirecting call ${this.state.callSid} to fallback handler.`)
+        
+        // Create fallback TwiML
+        const fallbackTwiml = new twilio.twiml.VoiceResponse()
+        fallbackTwiml.say({ voice: 'alice' }, 'We are experiencing difficulties with our AI voice service. Please wait while we connect you to our standard system.')
+        fallbackTwiml.redirect({ method: 'POST' }, '/api/voice/fallback-handler')
+
+        // Update the live call to use fallback handler
+        this.state.isCleaningUp = true
+        await twilioClient.calls(this.state.callSid).update({
+          twiml: fallbackTwiml.toString()
+        })
+      } catch (fallbackError) {
+        console.error('[Fallback] Failed to redirect call:', fallbackError)
+      }
     }
 
-    console.log(`[DEBUG] 8. Cleanup triggered by: ${source}`);
-    if (error) console.error('[DEBUG] Cleanup reason:', error);
-
-    this.state.isCleaningUp = true;
-
-    console.log('[DEBUG] 8a. Delaying cleanup for 2 seconds...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    if (this.state.conversationHistory.length > 0 && this.state.businessId) {
-      console.log('[DEBUG] 8b. Processing lead creation...');
-      await this.processLeadCreation();
-    } else {
-      console.log('[DEBUG] 8b. Skipping lead creation (no history or businessId)');
+    // Clean up WebSocket connections
+    if (this.openAiWs) {
+      this.openAiWs.close()
+      this.openAiWs = null
     }
-
-    console.log('[DEBUG] 8c. Closing WebSocket connections...');
-    this.twilioWs?.close();
-    this.openAiWs?.close();
-    console.log('[DEBUG] 8d. Cleanup complete');
+    
+    if (this.twilioWs) {
+      this.twilioWs.close()
+      this.twilioWs = null
+    }
+    
+    // Clear intervals
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval)
+      this.pingInterval = null
+    }
+    
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+      this.cleanupInterval = null
+    }
+    
+    // Reset state
+    this.state = {
+      isTwilioReady: false,
+      isAiReady: false,
+      streamSid: null,
+      audioQueue: [],
+      conversationHistory: [],
+      businessId: null,
+      leadCaptureTriggered: false,
+      hasCollectedLeadInfo: false,
+      isCallActive: false,
+      welcomeMessageDelivered: false,
+      welcomeMessageAttempts: 0,
+      isCleaningUp: true,
+      callSid: null,
+      lastActivity: Date.now()
+    }
   }
 
   private async processLeadCreation(): Promise<void> {

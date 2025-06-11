@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import twilio from 'twilio'
 import { RealtimeAgentService } from '../services/realtimeAgentService'
+import { processMessage } from '../core/aiHandler'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -97,6 +98,55 @@ router.get('/status', async (req, res) => {
       message: 'Failed to check voice system status',
       timestamp: new Date().toISOString()
     })
+  }
+})
+
+// POST /fallback-handler - Standard Twilio TwiML fallback handler
+router.post('/fallback-handler', customValidateTwilioRequest, async (req, res) => {
+  try {
+    const twiml = new VoiceResponse()
+    const speechResult = req.body.SpeechResult
+    const businessId = req.body.businessId
+
+    if (speechResult) {
+      // Process the speech input with AI
+      const response = await processMessage(
+        speechResult,
+        [], // Empty conversation history for now
+        businessId,
+        null,
+        req.body.CallSid,
+        'VOICE'
+      )
+
+      // Speak the AI response
+      twiml.say({ voice: 'alice' }, response.reply)
+    } else {
+      // First time being redirected here
+      twiml.say({ voice: 'alice' }, 'Now connecting to our standard service.')
+    }
+
+    // Add Gather verb to collect user input
+    const gather = twiml.gather({
+      input: ['speech'],
+      action: '/api/voice/fallback-handler',
+      method: 'POST',
+      speechTimeout: 'auto',
+      language: 'en-US',
+      enhanced: true
+    })
+
+    // Add a fallback message if no speech is detected
+    gather.say({ voice: 'alice' }, 'I didn\'t catch that. Could you please repeat?')
+
+    res.type('text/xml')
+    res.send(twiml.toString())
+  } catch (error) {
+    console.error('[FALLBACK HANDLER] Error:', error)
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: 'alice' }, 'We\'re experiencing technical difficulties. Please try your call again later.')
+    res.type('text/xml')
+    res.send(twiml.toString())
   }
 })
 
