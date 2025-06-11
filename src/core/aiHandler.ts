@@ -47,6 +47,9 @@ const DEFAULT_EMERGENCY_QUESTIONS: Omit<ExtendedLeadCaptureQuestion, 'id' | 'con
   }
 ]
 
+// Add new nextAction type
+type NextAction = 'CONTINUE' | 'HANGUP' | 'TRANSFER' | 'VOICEMAIL' | 'AWAITING_CALLBACK_CONFIRMATION';
+
 /**
  * Creates a refined system prompt for natural voice interactions with strict business rules
  */
@@ -524,12 +527,13 @@ export const processMessage = async (
   conversationHistory: any[],
   businessId: string,
   currentActiveFlow?: string | null,
-  callSid?: string
+  callSid?: string,
+  channel: 'VOICE' | 'CHAT' = 'VOICE' // Add channel parameter
 ): Promise<{ 
   reply: string; 
   currentFlow?: string | null; 
   showBranding?: boolean; 
-  nextVoiceAction?: 'CONTINUE' | 'HANGUP' | 'TRANSFER' | 'VOICEMAIL';
+  nextAction?: NextAction;
   [key: string]: any 
 }> => {
   try {
@@ -549,7 +553,7 @@ export const processMessage = async (
       return { 
         reply: "Sorry, I'm having trouble finding configuration for this business.",
         showBranding: true, // Default to showing branding if business not found
-        nextVoiceAction: 'HANGUP'
+        nextAction: 'HANGUP'
       }
     }
 
@@ -626,7 +630,7 @@ export const processMessage = async (
           reply: fallbackClarification,
           currentFlow: 'FAQ_CLARIFYING',
           showBranding,
-          nextVoiceAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
+          nextAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
         }
       }
       
@@ -691,7 +695,7 @@ export const processMessage = async (
           reply: "Absolutely! I'm connecting you to our emergency line right now. Please hold while I transfer your call. Help is on the way!",
           currentFlow: null,
           showBranding,
-          nextVoiceAction: 'TRANSFER' // This would need to be implemented in the voice system
+          nextAction: 'TRANSFER' // This would need to be implemented in the voice system
         }
              } else {
          console.log('User chose to answer quick questions first')
@@ -861,7 +865,7 @@ Classify as: LEAD_CAPTURE, FAQ, END_CALL, or OTHER`
           reply: clarifyingQuestion,
           currentFlow: 'FAQ_CLARIFYING',
           showBranding,
-          nextVoiceAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
+          nextAction: determineNextVoiceAction('FAQ', 'FAQ_CLARIFYING')
         }
       }
       
@@ -888,7 +892,7 @@ User's Question: ${message}`
           reply: cleanedResponse || "I'm having trouble accessing my knowledge base right now. Please try again later.",
           currentFlow: null,
           showBranding,
-          nextVoiceAction: determineNextVoiceAction('FAQ', null)
+          nextAction: determineNextVoiceAction('FAQ', null)
         }
       } else {
         // No relevant knowledge found - offer to take details for follow-up
@@ -897,7 +901,7 @@ User's Question: ${message}`
           reply: "Hmm, I checked my information but couldn't find specific details on that. Would you like me to take down your contact information so someone from our team can get back to you with the answer you need?",
           currentFlow: null,
           showBranding,
-          nextVoiceAction: 'CONTINUE' // Continue to see if they want to provide details
+          nextAction: 'CONTINUE' // Continue to see if they want to provide details
         }
       }
       
@@ -917,7 +921,7 @@ User's Question: ${message}`
         reply: endCallMessage,
         currentFlow: null,
         showBranding,
-        nextVoiceAction: 'HANGUP'
+        nextAction: 'HANGUP'
       }
       
     } else if (intent === 'LEAD_CAPTURE') {
@@ -961,7 +965,7 @@ User's Question: ${message}`
           reply: "It looks like our lead capture system isn't set up yet. How else can I assist?",
           currentFlow: null,
           showBranding,
-          nextVoiceAction: 'CONTINUE'
+          nextAction: 'CONTINUE'
         }
       }
 
@@ -1034,7 +1038,7 @@ User's Question: ${message}`
                 reply: escalationOffer,
                 currentFlow: 'EMERGENCY_ESCALATION_OFFER',
                 showBranding,
-                nextVoiceAction: 'CONTINUE'
+                nextAction: 'AWAITING_CALLBACK_CONFIRMATION'
               }
             } else {
               console.log(`Moderate emergency (${severityScore}/10), proceeding with streamlined questions`)
@@ -1088,7 +1092,7 @@ User's Question: ${message}`
                 reply: clarifyingQuestion,
                 currentFlow: clarificationFlow,
                 showBranding,
-                nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', clarificationFlow)
+                nextAction: determineNextVoiceAction('LEAD_CAPTURE', clarificationFlow)
               }
             }
             
@@ -1159,7 +1163,7 @@ Generate a natural way to ask this question that flows well in the conversation.
               reply: leadQuestionReply,
               currentFlow: 'LEAD_CAPTURE',
               showBranding,
-              nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+              nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
             }
           }
         }
@@ -1175,7 +1179,7 @@ Generate a natural way to ask this question that flows well in the conversation.
             reply: confirmationResponse,
             currentFlow: 'LEAD_CAPTURE_CONFIRM_ADDRESS',
             showBranding,
-            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_ADDRESS')
+            nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_ADDRESS')
           }
         }
 
@@ -1194,7 +1198,7 @@ Generate a natural way to ask this question that flows well in the conversation.
               reply: confirmationResponse,
               currentFlow: 'LEAD_CAPTURE_CONFIRM_PHONE',
               showBranding,
-              nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_PHONE')
+              nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_PHONE')
             }
           }
         }
@@ -1210,7 +1214,7 @@ Generate a natural way to ask this question that flows well in the conversation.
             reply: confirmationResponse,
             currentFlow: 'LEAD_CAPTURE_CONFIRM_NAME',
             showBranding,
-            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_NAME')
+            nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE_CONFIRM_NAME')
           }
         }
         
@@ -1238,7 +1242,7 @@ Generate a natural way to ask this question that flows well in the conversation.
           reply: leadQuestionReply,
           currentFlow: 'LEAD_CAPTURE',
           showBranding,
-          nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+          nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
         }
       } else {
         // All questions answered - create lead
@@ -1486,7 +1490,7 @@ Generate a natural way to ask this question that flows well in the conversation.
             reply: emergencyMessage,
             currentFlow: null,
             showBranding,
-            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', null)
+            nextAction: determineNextVoiceAction('LEAD_CAPTURE', null)
           }
         } else {
           // Use custom completion message if available, otherwise use default
@@ -1503,7 +1507,7 @@ Generate a natural way to ask this question that flows well in the conversation.
             reply: completionMessage,
             currentFlow: null,
             showBranding,
-            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', null)
+            nextAction: determineNextVoiceAction('LEAD_CAPTURE', null)
           }
         }
       }
@@ -1544,7 +1548,7 @@ Respond with only YES or NO.`
            reply: "No problem at all! Is there anything else I can help you with today? I'm here to assist with any questions you might have.",
            currentFlow: null,
            showBranding,
-           nextVoiceAction: determineNextVoiceAction('OTHER', null)
+           nextAction: determineNextVoiceAction('OTHER', null)
          }
        }
      }
@@ -1555,7 +1559,7 @@ Respond with only YES or NO.`
           reply: agentConfig.welcomeMessage,
           currentFlow: null,
           showBranding,
-          nextVoiceAction: determineNextVoiceAction('OTHER', null)
+          nextAction: determineNextVoiceAction('OTHER', null)
         }
       }
       
@@ -1579,7 +1583,7 @@ User's message: ${message}`
         reply: cleanedResponse || "How can I help you today?",
         currentFlow: null,
         showBranding,
-        nextVoiceAction: determineNextVoiceAction('OTHER', null)
+        nextAction: determineNextVoiceAction('OTHER', null)
       }
     }
     
@@ -1602,7 +1606,7 @@ User's message: ${message}`
             reply: `I apologize for the confusion. Let me ask again: ${retryQuestion?.questionText}`,
             currentFlow: 'LEAD_CAPTURE',
             showBranding,
-            nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+            nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
           }
         }
       }
@@ -1612,7 +1616,18 @@ User's message: ${message}`
         reply: "Thank you for confirming. Let's continue.",
         currentFlow: 'LEAD_CAPTURE',
         showBranding,
-        nextVoiceAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+        nextAction: determineNextVoiceAction('LEAD_CAPTURE', 'LEAD_CAPTURE')
+      }
+    }
+    
+    // Update emergency detection to handle chat channel
+    if (isEmergency && channel === 'CHAT') {
+      console.log('Emergency detected in chat channel, offering callback')
+      return {
+        reply: "I understand this is an emergency. I can have our system call you right now to connect you with our emergency response team. Would you like me to do that?",
+        currentFlow: 'EMERGENCY_ESCALATION_OFFER',
+        showBranding,
+        nextAction: 'AWAITING_CALLBACK_CONFIRMATION'
       }
     }
     
@@ -1622,7 +1637,7 @@ User's message: ${message}`
       reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact us directly.",
       currentFlow: null,
       showBranding: true, // Default to showing branding in error cases
-      nextVoiceAction: 'HANGUP'
+      nextAction: 'HANGUP'
     }
   }
 } 

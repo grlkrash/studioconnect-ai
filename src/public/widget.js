@@ -766,6 +766,125 @@
     }
   }
 
+  // Add phone number validation function
+  function isValidPhoneNumber(phone) {
+    // Basic phone number validation (can be enhanced)
+    const phoneRegex = /^\+?[\d\s-()]{10,}$/
+    return phoneRegex.test(phone)
+  }
+
+  // Add phone number collection UI
+  function showPhoneNumberInput() {
+    const inputArea = document.querySelector('.smb-chat-input-area')
+    const existingInput = document.querySelector('.smb-chat-input')
+    const existingSend = document.querySelector('.smb-chat-send')
+    
+    // Create phone input container
+    const phoneContainer = document.createElement('div')
+    phoneContainer.className = 'smb-chat-phone-input'
+    phoneContainer.style.cssText = `
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 8px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    `
+    
+    // Create phone input
+    const phoneInput = document.createElement('input')
+    phoneInput.type = 'tel'
+    phoneInput.placeholder = 'Enter your phone number'
+    phoneInput.className = 'smb-chat-input'
+    phoneInput.style.cssText = `
+      flex: 1;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+    `
+    
+    // Create call button
+    const callButton = document.createElement('button')
+    callButton.className = 'smb-chat-send'
+    callButton.innerHTML = 'Call Me'
+    callButton.style.cssText = `
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    `
+    
+    // Add event listeners
+    callButton.addEventListener('click', async () => {
+      const phoneNumber = phoneInput.value.trim()
+      
+      if (!isValidPhoneNumber(phoneNumber)) {
+        addMessageToChat('Please enter a valid phone number.', 'ai')
+        return
+      }
+      
+      // Show loading state
+      callButton.disabled = true
+      callButton.textContent = 'Initiating call...'
+      
+      try {
+        // Call the initiate-call endpoint
+        const response = await fetch(`${API_BASE_URL}/api/chat/initiate-call`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phoneNumber,
+            businessId,
+            conversationHistory
+          })
+        })
+        
+        const data = await response.json()
+        
+        if (response.ok) {
+          addMessageToChat('Great! I\'ve initiated the call. You should receive a call from our team shortly.', 'ai')
+          // Remove phone input UI
+          phoneContainer.remove()
+          // Re-enable regular chat
+          existingInput.disabled = false
+          existingSend.disabled = false
+        } else {
+          throw new Error(data.error || 'Failed to initiate call')
+        }
+      } catch (error) {
+        console.error('Error initiating call:', error)
+        addMessageToChat('I apologize, but I\'m having trouble initiating the call. Please try again or contact us directly.', 'ai')
+        // Remove phone input UI
+        phoneContainer.remove()
+        // Re-enable regular chat
+        existingInput.disabled = false
+        existingSend.disabled = false
+      }
+    })
+    
+    // Add elements to container
+    phoneContainer.appendChild(phoneInput)
+    phoneContainer.appendChild(callButton)
+    
+    // Add container to input area
+    inputArea.insertBefore(phoneContainer, inputArea.firstChild)
+    
+    // Disable regular chat input
+    existingInput.disabled = true
+    existingSend.disabled = true
+    
+    // Focus phone input
+    phoneInput.focus()
+  }
+
+  // Update sendMessageToApi to handle emergency escalation
   async function sendMessageToApi(messageText) {
     // Show typing indicator
     showTypingIndicator();
@@ -872,6 +991,19 @@
       console.log('AI Reply:', aiReply);
       console.log('Final currentFlowState:', currentFlowState);
       console.log('Updated ConversationHistory:', JSON.stringify(conversationHistory, null, 2));
+
+      // Handle emergency escalation
+      if (data.nextAction === 'AWAITING_CALLBACK_CONFIRMATION') {
+        // Check if user wants to be called
+        const wantsCall = messageText.toLowerCase().includes('yes') || 
+                         messageText.toLowerCase().includes('call') ||
+                         messageText.toLowerCase().includes('please') ||
+                         messageText.toLowerCase().includes('sure')
+        
+        if (wantsCall) {
+          showPhoneNumberInput()
+        }
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);

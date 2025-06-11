@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { processMessage } from '../core/aiHandler'
+import { initiateClickToCall } from '../services/notificationService'
 
 const router = Router()
 
@@ -106,6 +107,60 @@ router.post('/', async (req, res) => {
 
   } catch (error) {
     console.error('Error in chat route:', error)
+    res.status(500).json({ error: 'An internal server error occurred.' })
+  }
+})
+
+// POST /initiate-call route for handling chat-to-call escalation
+router.post('/initiate-call', async (req, res) => {
+  try {
+    const { phoneNumber, businessId, conversationHistory } = req.body
+
+    // Basic validation
+    if (!phoneNumber || !businessId) {
+      return res.status(400).json({ error: 'Missing required fields: phoneNumber and businessId' })
+    }
+
+    // Get business details
+    const { PrismaClient } = await import('@prisma/client')
+    const prisma = new PrismaClient()
+    
+    try {
+      const business = await prisma.business.findUnique({
+        where: { id: businessId }
+      })
+      
+      if (!business) {
+        return res.status(404).json({ error: 'Business not found' })
+      }
+
+      if (!business.notificationPhoneNumber) {
+        return res.status(400).json({ error: 'Business has no notification phone number configured' })
+      }
+
+      // Initiate the call
+      const callResult = await initiateClickToCall(
+        phoneNumber,
+        business.notificationPhoneNumber,
+        business.name,
+        conversationHistory
+      )
+
+      res.status(200).json({
+        success: true,
+        message: 'Call initiated successfully',
+        callSid: callResult.callSid
+      })
+
+    } catch (error) {
+      console.error('[Chat API] Error initiating call:', error)
+      res.status(500).json({ error: 'Failed to initiate call' })
+    } finally {
+      await prisma.$disconnect()
+    }
+
+  } catch (error) {
+    console.error('Error in initiate-call route:', error)
     res.status(500).json({ error: 'An internal server error occurred.' })
   }
 })

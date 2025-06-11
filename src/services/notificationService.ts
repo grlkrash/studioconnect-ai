@@ -4,6 +4,7 @@ import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
 import sgTransport from 'nodemailer-sendgrid-transport'
 import { PrismaClient } from '@prisma/client'
+import VoiceResponse = require('twilio/lib/twiml/VoiceResponse')
 
 // Initialize Twilio client
 const twilioClient = twilio(
@@ -318,7 +319,7 @@ export async function initiateEmergencyVoiceCall(
       `Check your email for complete details.`
 
     // Create TwiML response using Twilio VoiceResponse class
-    const twiml = new twilio.twiml.VoiceResponse()
+    const twiml = new VoiceResponse()
     twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay)
 
     try {
@@ -480,6 +481,77 @@ export async function sendLeadConfirmationToCustomer(
     console.log(`Confirmation email sent successfully to ${customerEmail}`)
   } catch (error) {
     console.error('Failed to send customer confirmation email:', error)
+    throw error
+  }
+}
+
+export async function initiateClickToCall({
+  phoneNumber,
+  businessId,
+  conversationHistory
+}: {
+  phoneNumber: string
+  businessId: string
+  conversationHistory: any[]
+}) {
+  try {
+    // Get business details
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: {
+        notificationPhoneNumber: true,
+        name: true
+      }
+    })
+
+    if (!business?.notificationPhoneNumber) {
+      throw new Error('Business notification number not configured')
+    }
+
+    // Format conversation history for context
+    const formattedHistory = conversationHistory
+      .map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n')
+
+    // Create TwiML for the call
+    const twiml = new VoiceResponse()
+    twiml.say({
+      voice: 'Polly.Amy',
+      language: 'en-GB'
+    }, `You have an emergency call request from a chat user. Here's the conversation history: ${formattedHistory}`)
+
+    // Initiate the call using Twilio
+    const call = await twilioClient.calls.create({
+      to: business.notificationPhoneNumber,
+      from: process.env.TWILIO_PHONE_NUMBER as string,
+      twiml: twiml.toString(),
+      statusCallback: `${process.env.API_BASE_URL}/api/calls/status`,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      statusCallbackMethod: 'POST'
+    })
+
+    // Log the call initiation
+    await prisma.callLog.create({
+      data: {
+        businessId,
+        callSid: call.sid,
+        from: process.env.TWILIO_PHONE_NUMBER as string,
+        to: business.notificationPhoneNumber,
+        direction: 'OUTBOUND',
+        status: call.status,
+        source: 'CHAT_ESCALATION',
+        metadata: {
+          conversationHistory: formattedHistory
+        }
+      }
+    })
+
+    return {
+      success: true,
+      callSid: call.sid
+    }
+  } catch (error) {
+    console.error('Error initiating click-to-call:', error)
     throw error
   }
 }

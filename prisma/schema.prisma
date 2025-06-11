@@ -26,6 +26,7 @@ model Business {
   knowledgeBase           KnowledgeBase[]
   leads                   Lead[]
   users                   User[]
+  callLogs                CallLog[]
 
   @@map("businesses")
 }
@@ -132,6 +133,23 @@ model Conversation {
   leadId     String?
 
   @@map("conversations")
+}
+
+model CallLog {
+  id          String   @id @default(cuid())
+  businessId  String
+  callSid     String   @unique
+  from        String
+  to          String
+  direction   String
+  status      String
+  source      String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("call_logs")
 }
 
 enum OpenAiVoice {
