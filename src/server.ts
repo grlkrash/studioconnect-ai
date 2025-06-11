@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
+import OpenAI from 'openai'
 
 // Load environment variables
 dotenv.config()
@@ -136,6 +137,40 @@ app.get('/test-realtime', async (req, res) => {
       error: "Failed to check WebSocket server status",
       message: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Test route for OpenAI API key validation
+app.get('/test-key', async (req, res) => {
+  console.log('[KEY TEST] Starting OpenAI API Key test...');
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error('[KEY TEST] Test failed: OPENAI_API_KEY is not set in the environment.');
+      return res.status(500).json({ status: 'error', message: 'OPENAI_API_KEY is not set.' });
+    }
+
+    // Use a fresh OpenAI client to ensure no other configurations interfere
+    const openai = new OpenAI({ apiKey: apiKey });
+
+    // Make the simplest possible, lightweight API call
+    await openai.models.list(); 
+    
+    console.log('[KEY TEST] SUCCESS: The API Key is valid and successfully connected to OpenAI.');
+    res.status(200).json({ status: 'success', message: 'API Key is valid and operational.' });
+
+  } catch (error: any) {
+    console.error('[KEY TEST] FAILURE: The API Key test failed.', error);
+    const statusCode = error.status || 500;
+    res.status(statusCode).json({
+      status: 'error',
+      message: 'The API Key test failed.',
+      errorDetails: {
+        message: error.message,
+        status: error.status,
+        type: error.type,
+      }
     });
   }
 });
