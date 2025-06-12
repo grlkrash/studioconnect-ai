@@ -1,5 +1,58 @@
 import { prisma } from '../services/db'
 import { getEmbedding } from '../services/openai'
+import { getChatCompletion } from '../services/openai'
+
+interface SearchContext {
+  isExistingClient?: boolean
+  clientId?: string
+  intent?: string
+}
+
+/**
+ * Extracts project keywords from a user query
+ */
+const extractProjectKeywords = async (userQuery: string): Promise<string> => {
+  const projectSearchQuery = `Extract the project name or keywords from: "${userQuery}". Respond with only the key phrase.`
+  const extractedKeywords = await getChatCompletion(projectSearchQuery, "You are a project keyword extraction expert.")
+  return extractedKeywords || 'UNCLEAR'
+}
+
+/**
+ * Searches for project-specific information
+ */
+const searchProjectData = async (
+  clientId: string,
+  projectKeywords: string
+): Promise<Array<{ id: string; content: string; sourceURL: string | null; similarity: number }> | null> => {
+  try {
+    const relevantProjects = await prisma.project.findMany({
+      where: {
+        clientId,
+        OR: [
+          { name: { contains: projectKeywords, mode: 'insensitive' } },
+          { details: { contains: projectKeywords, mode: 'insensitive' } }
+        ]
+      },
+      orderBy: { lastSyncedAt: 'desc' },
+      take: 1
+    })
+
+    if (relevantProjects.length > 0) {
+      const project = relevantProjects[0]
+      console.log(`[RAG Service] Found relevant project: ${project.name}`)
+      return [{
+        id: project.id,
+        content: `Project Name: ${project.name}. Current Status: ${project.status}. Last Updated: ${project.lastSyncedAt?.toLocaleString() || 'N/A'}. Details: ${project.details || 'No additional details provided.'}`,
+        sourceURL: null,
+        similarity: 1.0
+      }]
+    }
+    return null
+  } catch (error) {
+    console.error('[RAG Service] Error searching project data:', error)
+    return null
+  }
+}
 
 /**
  * Generates an embedding vector for a knowledge base entry and stores it in the database.
@@ -53,16 +106,24 @@ export const generateAndStoreEmbedding = async (knowledgeBaseId: string): Promis
 export const findRelevantKnowledge = async (
   userQuery: string,
   businessId: string,
-  limit: number = 3
+  limit: number = 3,
+  context?: SearchContext
 ): Promise<Array<{ id: string; content: string; sourceURL: string | null; similarity: number }>> => {
   try {
-    // Generate embedding vector for the user's query
+    // Priority 1: Search for project status if intent is 'PROJECT_STATUS_INQUIRY' and client is known
+    if (context?.isExistingClient && context?.clientId && context?.intent === 'PROJECT_STATUS_INQUIRY') {
+      const projectKeywords = await extractProjectKeywords(userQuery)
+      
+      if (projectKeywords && projectKeywords !== 'UNCLEAR') {
+        const projectResults = await searchProjectData(context.clientId, projectKeywords)
+        if (projectResults) return projectResults
+      }
+    }
+
+    // Priority 2: Search general knowledge base
     const queryEmbeddingVector = await getEmbedding(userQuery)
-    
-    // Convert the embedding array to a string format for pgvector
     const vectorString = JSON.stringify(queryEmbeddingVector)
-    
-    // Perform vector similarity search using raw SQL with pgvector
+
     const results = await prisma.$queryRaw<
       Array<{ id: string; content: string; sourceURL: string | null; similarity: number }>
     >`
@@ -81,7 +142,7 @@ export const findRelevantKnowledge = async (
     // Optionally filter by minimum similarity threshold
     // For now, returning all results up to the limit
     
-    console.log(`Found ${results.length} relevant knowledge entries for query: "${userQuery}"`)
+    console.log(`[RAG Service] Found ${results.length} relevant knowledge entries for query: "${userQuery}"`)
     
     return results
   } catch (error) {

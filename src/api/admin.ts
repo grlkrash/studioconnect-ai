@@ -4,6 +4,14 @@ import jsonwebtoken from 'jsonwebtoken'
 import { prisma } from '../services/db'
 import { authMiddleware, UserPayload } from './authMiddleware'
 import { generateAndStoreEmbedding } from '../core/ragService'
+import { NextApiRequest, NextApiResponse } from 'next'
+import { getSession } from 'next-auth/react'
+import { PrismaClient, Client, Project, Integration, SubscriptionTier } from '@prisma/client'
+import { z } from 'zod'
+import { createRouter } from 'next-connect'
+import { validateRequest } from '@/lib/middleware/validateRequest'
+import { requireAuth } from '@/lib/middleware/requireAuth'
+import { requireSubscription } from '@/lib/middleware/requireSubscription'
 
 const router = Router()
 
@@ -929,4 +937,200 @@ router.put('/business/notifications', authMiddleware, async (req, res) => {
   }
 })
 
-export default router 
+// Client Management Routes
+router.get('/clients', async (req, res) => {
+  const session = await getSession({ req })
+  const clients = await prisma.client.findMany({
+    where: { businessId: session?.user?.businessId },
+    include: { projects: true }
+  })
+  res.json(clients)
+})
+
+router.post('/clients', async (req, res) => {
+  const session = await getSession({ req })
+  const data = clientSchema.parse(req.body)
+  
+  const client = await prisma.client.create({
+    data: {
+      ...data,
+      businessId: session?.user?.businessId
+    }
+  })
+  res.json(client)
+})
+
+router.put('/clients/:clientId', async (req, res) => {
+  const { clientId } = req.query
+  const data = clientSchema.parse(req.body)
+  
+  const client = await prisma.client.update({
+    where: { id: clientId as string },
+    data
+  })
+  res.json(client)
+})
+
+router.delete('/clients/:clientId', async (req, res) => {
+  const { clientId } = req.query
+  await prisma.client.delete({
+    where: { id: clientId as string }
+  })
+  res.status(204).end()
+})
+
+// Project Management Routes (Enterprise only)
+router.get('/projects', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const session = await getSession({ req })
+  const { clientId } = req.query
+  
+  const projects = await prisma.project.findMany({
+    where: {
+      businessId: session?.user?.businessId,
+      ...(clientId && { clientId: clientId as string })
+    },
+    include: {
+      client: true,
+      integration: true
+    }
+  })
+  res.json(projects)
+})
+
+router.post('/projects', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const session = await getSession({ req })
+  const data = projectSchema.parse(req.body)
+  
+  const project = await prisma.project.create({
+    data: {
+      ...data,
+      businessId: session?.user?.businessId
+    },
+    include: {
+      client: true,
+      integration: true
+    }
+  })
+  res.json(project)
+})
+
+router.put('/projects/:projectId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const { projectId } = req.query
+  const data = projectSchema.parse(req.body)
+  
+  const project = await prisma.project.update({
+    where: { id: projectId as string },
+    data,
+    include: {
+      client: true,
+      integration: true
+    }
+  })
+  res.json(project)
+})
+
+router.delete('/projects/:projectId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const { projectId } = req.query
+  await prisma.project.delete({
+    where: { id: projectId as string }
+  })
+  res.status(204).end()
+})
+
+// Integration Management Routes (Enterprise only)
+router.get('/integrations', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const session = await getSession({ req })
+  const integrations = await prisma.integration.findMany({
+    where: { businessId: session?.user?.businessId }
+  })
+  res.json(integrations)
+})
+
+router.post('/integrations', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const session = await getSession({ req })
+  const data = integrationSchema.parse(req.body)
+  
+  const integration = await prisma.integration.create({
+    data: {
+      ...data,
+      businessId: session?.user?.businessId
+    }
+  })
+  res.json(integration)
+})
+
+router.put('/integrations/:integrationId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const { integrationId } = req.query
+  const data = integrationSchema.parse(req.body)
+  
+  const integration = await prisma.integration.update({
+    where: { id: integrationId as string },
+    data
+  })
+  res.json(integration)
+})
+
+router.delete('/integrations/:integrationId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const { integrationId } = req.query
+  await prisma.integration.delete({
+    where: { id: integrationId as string }
+  })
+  res.status(204).end()
+})
+
+// Manual sync trigger (Enterprise only)
+router.post('/integrations/sync-now', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
+  const session = await getSession({ req })
+  const { integrationId } = req.query
+  
+  const integration = await prisma.integration.findUnique({
+    where: { id: integrationId as string }
+  })
+  
+  if (!integration) {
+    return res.status(404).json({ error: 'Integration not found' })
+  }
+  
+  // Trigger sync based on integration type
+  try {
+    switch (integration.type) {
+      case 'ASANA':
+        await syncAsanaProjects(integration)
+        break
+      case 'JIRA':
+        await syncJiraProjects(integration)
+        break
+      case 'TRELLO':
+        await syncTrelloProjects(integration)
+        break
+      default:
+        throw new Error(`Unsupported integration type: ${integration.type}`)
+    }
+    
+    res.json({ message: 'Sync initiated successfully' })
+  } catch (error) {
+    console.error('Sync error:', error)
+    res.status(500).json({ error: 'Failed to initiate sync' })
+  }
+})
+
+// Helper functions for sync operations
+async function syncAsanaProjects(integration: Integration) {
+  // Implement Asana sync logic
+  // This would use the Asana API to fetch projects and tasks
+  // and update the local database
+}
+
+async function syncJiraProjects(integration: Integration) {
+  // Implement Jira sync logic
+  // This would use the Jira API to fetch projects and issues
+  // and update the local database
+}
+
+async function syncTrelloProjects(integration: Integration) {
+  // Implement Trello sync logic
+  // This would use the Trello API to fetch boards and cards
+  // and update the local database
+}
+
+export default router.handler() 

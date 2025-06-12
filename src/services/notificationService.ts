@@ -117,26 +117,26 @@ export async function sendLeadNotificationEmail(
     return;
   }
 
-  const fromEmail = process.env.FROM_EMAIL || '"AI Lead Agent" <noreply@example.com>';
+  const fromEmail = process.env.FROM_EMAIL || '"AI Studio Manager" <noreply@example.com>';
   const contactName = leadDetails.contactName || (leadDetails.capturedData && leadDetails.capturedData["What is your full name, please?"]) || "N/A";
-  const subject = `New ${leadPriority || 'NORMAL'} Priority Lead for ${businessName}: ${contactName}`;
+  const subject = `New Lead for ${businessName}: ${contactName} (Priority: ${leadPriority || 'NORMAL'})`;
 
   // --- Start Building Human-Readable HTML Body ---
   let htmlBody = `<p>Hello ${businessName} team,</p>`;
   
-  // URGENT ALERT SECTION - Make emergency transcription highly visible at the top
+  // CRITICAL PROJECT ISSUE SECTION
   if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
     htmlBody += `
       <div style="background-color: #fef2f2; border: 3px solid #ef4444; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 URGENT EMERGENCY ALERT 🚨</h2>
+        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 Critical Project Issue Detected 🚨</h2>
         <p style="font-size: 18px; font-weight: bold; color: #991b1b; margin: 0; line-height: 1.4;">
-          Customer Stated: "${leadDetails.capturedData.emergency_notes}"
+          Client Reported: "${leadDetails.capturedData.emergency_notes}"
         </p>
       </div>
     `;
   }
   
-  htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> lead captured by your AI Assistant.</p>`;
+  htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> lead captured by your AI Studio Manager.</p>`;
   
   htmlBody += `<h3>Lead Details:</h3>`;
   htmlBody += "<ul>";
@@ -149,8 +149,17 @@ export async function sendLeadNotificationEmail(
   if (leadDetails.contactPhone) {
     htmlBody += `<li><strong>Contact Phone:</strong> ${leadDetails.contactPhone}</li>`;
   }
+  if (leadDetails.projectType) {
+    htmlBody += `<li><strong>Project Type:</strong> ${leadDetails.projectType}</li>`;
+  }
+  if (leadDetails.budget) {
+    htmlBody += `<li><strong>Budget Range:</strong> ${leadDetails.budget}</li>`;
+  }
+  if (leadDetails.timeline) {
+    htmlBody += `<li><strong>Timeline:</strong> ${leadDetails.timeline}</li>`;
+  }
   if (leadDetails.notes) {
-    htmlBody += `<li><strong>Notes/Description:</strong> ${leadDetails.notes}</li>`;
+    htmlBody += `<li><strong>Project Description:</strong> ${leadDetails.notes}</li>`;
   }
   htmlBody += `<li><strong>Status:</strong> ${leadDetails.status || 'NEW'}</li>`;
   htmlBody += `<li><strong>Captured At:</strong> ${new Date(leadDetails.createdAt).toLocaleString()}</li>`;
@@ -158,12 +167,17 @@ export async function sendLeadNotificationEmail(
 
   // Format Captured Data (the Q&A from lead capture flow)
   if (leadDetails.capturedData && typeof leadDetails.capturedData === 'object') {
-    htmlBody += `<h3>All Captured Information:</h3>`;
+    htmlBody += `<h3>Project Requirements:</h3>`;
     htmlBody += "<ul>";
     for (const [question, answer] of Object.entries(leadDetails.capturedData)) {
-      // Skip internal notes if you don't want them repeated here
       if (question !== 'emergency_notes') {
-         htmlBody += `<li><strong>${question.replace(/_/g, ' ')}:</strong> ${answer}</li>`;
+        const formattedQuestion = question
+          .replace(/_/g, ' ')
+          .replace(/^what is your/i, '')
+          .replace(/^please tell us about/i, '')
+          .replace(/^can you describe/i, '')
+          .trim();
+        htmlBody += `<li><strong>${formattedQuestion}:</strong> ${answer}</li>`;
       }
     }
     htmlBody += "</ul>";
@@ -172,28 +186,27 @@ export async function sendLeadNotificationEmail(
   // Format Conversation Transcript
   if (leadDetails.conversationTranscript) {
     try {
-      const transcript = JSON.parse(leadDetails.conversationTranscript); // It's stored as a JSON string
+      const transcript = JSON.parse(leadDetails.conversationTranscript);
       if (Array.isArray(transcript) && transcript.length > 0) {
-        htmlBody += `<h3>Conversation Snippet:</h3>`;
+        htmlBody += `<h3>Initial Consultation Notes:</h3>`;
         htmlBody += "<div style='border:1px solid #eee; padding:10px; max-height:300px; overflow-y:auto;'>";
         transcript.forEach((entry: { role: string, content: string }) => {
           if (entry.role === 'user') {
-            htmlBody += `<p><strong>User:</strong> ${entry.content}</p>`;
+            htmlBody += `<p><strong>Client:</strong> ${entry.content}</p>`;
           } else if (entry.role === 'assistant') {
-            htmlBody += `<p><em>Assistant:</em> ${entry.content}</p>`;
+            htmlBody += `<p><em>AI Studio Manager:</em> ${entry.content}</p>`;
           }
         });
         htmlBody += "</div>";
       }
     } catch (e) {
       console.error("Could not parse conversation transcript for email:", e);
-      htmlBody += `<p><em>Conversation transcript was not available in a readable format.</em></p>`;
+      htmlBody += `<p><em>Initial consultation notes were not available in a readable format.</em></p>`;
     }
   }
   
   htmlBody += `<p>Please log in to your dashboard to view full details and manage this lead.</p>`;
-  htmlBody += `<p>Thank you,<br>Your AI Lead Agent</p>`;
-  // --- End Building Human-Readable HTML Body ---
+  htmlBody += `<p>Best regards,<br>Your AI Studio Manager</p>`;
 
   const mailOptions = {
     from: fromEmail,
@@ -204,14 +217,14 @@ export async function sendLeadNotificationEmail(
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`HSP lead notification email sent. Full info object:`, JSON.stringify(info, null, 2));
-    if (info && (info.messageId || (info.message && info.message.includes('success')) || (info.response && info.response.includes('250')) )) { // Broader check for success
-      console.log(`HSP Email successfully processed by provider. Message ID (if available from info object): ${info.messageId}`);
+    console.log(`Studio lead notification email sent. Full info object:`, JSON.stringify(info, null, 2));
+    if (info && (info.messageId || (info.message && info.message.includes('success')) || (info.response && info.response.includes('250')) )) {
+      console.log(`Studio Email successfully processed by provider. Message ID: ${info.messageId}`);
     } else {
-      console.warn('HSP Email processed by provider, but messageId might be missing or in a different field. Response:', info);
+      console.warn('Studio Email processed by provider, but messageId might be missing or in a different field. Response:', info);
     }
   } catch (error) {
-    console.error(`Error sending HSP notification email to ${toEmail}:`, error);
+    console.error(`Error sending studio notification email to ${toEmail}:`, error);
   }
 }
 
@@ -247,18 +260,8 @@ export async function initiateEmergencyVoiceCall(
 ): Promise<void> {
   try {
     // Validate required environment variables
-    const requiredEnvVars = {
-      TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
-      TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
-      TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER
-    };
-
-    const missingVars = Object.entries(requiredEnvVars)
-      .filter(([_, value]) => !value)
-      .map(([key]) => key);
-
-    if (missingVars.length > 0) {
-      console.error(`[Emergency Call] Missing required environment variables: ${missingVars.join(', ')}`);
+    if (!validateTwilioConfig()) {
+      console.error('[Emergency Call] Twilio configuration validation failed');
       return;
     }
 
@@ -279,11 +282,8 @@ export async function initiateEmergencyVoiceCall(
       console.error('[Emergency Call] Error fetching AgentConfig:', configError);
     }
 
-    // Configure voice settings with fallbacks - prioritize ENV var for HSP alerts
-    // Note: Using hardcoded defaults since we've migrated to OpenAI for voice customization
-    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || 'alice') as any
-    const languageToUse = 'en-US' as any
-    console.log('[Emergency Call] Voice settings:', { voice: voiceToUse, language: languageToUse })
+    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || 'alice') as any;
+    const languageToUse = 'en-US' as any;
 
     // Enhanced XML escaping function for safe text insertion in SSML
     const escapeXml = (unsafe: string): string => {
@@ -299,37 +299,34 @@ export async function initiateEmergencyVoiceCall(
       })
     }
 
-    // Escape the dynamic content
-    const safeBusinessName = escapeXml(businessName)
-    const safeLeadSummary = escapeXml(leadSummary)
+    const safeBusinessName = escapeXml(businessName);
+    const safeLeadSummary = escapeXml(leadSummary);
 
-    // Create enhanced SSML message with strategic pauses, emphasis, and professional urgency
+    // Create enhanced SSML message for agency context
     const messageToSay = 
-      `<prosody rate="fast"><emphasis level="strong">Urgent Alert!</emphasis></prosody>` +
+      `<prosody rate="fast"><emphasis level="strong">Urgent Project Alert!</emphasis></prosody>` +
       `<break strength="medium"/>` +
-      `This is an emergency <phoneme alphabet="ipa" ph="liːd">lead</phoneme> notification for ${safeBusinessName}.` +
+      `This is an urgent notification for ${safeBusinessName}.` +
       `<break strength="medium"/>` +
-      `A customer has reported an emergency. Issue stated: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
+      `A client has reported a critical project issue. Details: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
       `<break strength="medium"/>` +
-      `Please check your email or dashboard immediately for full details and contact information.` +
+      `Please check your email or dashboard immediately for full details and client contact information.` +
       `<break strength="strong"/>` +
       `Repeating: <break time="300ms"/> ` +
-      `<emphasis level="strong">Urgent</emphasis> emergency <phoneme alphabet="ipa" ph="liːd">lead</phoneme> for ${safeBusinessName}. ` +
+      `<emphasis level="strong">Urgent</emphasis> project issue for ${safeBusinessName}. ` +
       `Issue: <emphasis level="moderate">${safeLeadSummary}</emphasis>. ` +
       `Check your email for complete details.`
 
-    // Create TwiML response using Twilio VoiceResponse class
-    const twiml = new VoiceResponse()
-    twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay)
+    // Create TwiML response
+    const twiml = new VoiceResponse();
+    twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay);
 
     try {
-      // Validate Twilio client
       if (!twilioClient) {
         console.error('Twilio client not initialized');
         return;
       }
 
-      // Log emergency call attempt
       console.log('[Emergency Call] Initiating call with details:', {
         to: toPhoneNumber,
         from: twilioPhoneNumber,
@@ -338,21 +335,18 @@ export async function initiateEmergencyVoiceCall(
         timestamp: new Date().toISOString()
       });
 
-      // Create the call with error handling
       const call = await twilioClient.calls.create({
         twiml: twiml.toString(),
         to: toPhoneNumber,
         from: twilioPhoneNumber
       });
 
-      // Log successful call creation
       console.log('[Emergency Call] Call created successfully:', {
         callSid: call.sid,
         status: call.status,
         timestamp: new Date().toISOString()
       });
 
-      // Add call status monitoring
       const callStatus = await call.fetch();
       console.log('[Emergency Call] Initial call status:', {
         callSid: call.sid,
