@@ -2,6 +2,7 @@ import { Router } from 'express'
 import twilio from 'twilio'
 import { RealtimeAgentService } from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
+import { getBusinessIdFromPhoneNumber } from '../services/businessService'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -35,29 +36,49 @@ const customValidateTwilioRequest = (req: any, res: any, next: any) => {
 router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
   try {
     const callSid = req.body.CallSid
-    console.log(`[VOICE STREAM] Incoming call received: ${callSid}`)
+    const toPhoneNumber = req.body.To
+    console.log(`[VOICE STREAM] Incoming call received: ${callSid} to ${toPhoneNumber}`)
+
+    // Get business ID from phone number if not provided
+    let businessId = req.body.businessId
+    if (!businessId) {
+      businessId = await getBusinessIdFromPhoneNumber(toPhoneNumber)
+      if (!businessId) {
+        console.error(`[VOICE STREAM] No business found for phone number: ${toPhoneNumber}`)
+        const response = new VoiceResponse()
+        response.say('We are sorry, but this number is not associated with any business. Please contact the business directly.')
+        response.hangup()
+        res.type('text/xml')
+        return res.send(response.toString())
+      }
+    }
 
     // Determine WebSocket URL - prioritize APP_PRIMARY_URL if available
     const host = process.env.APP_PRIMARY_URL || `https://${req.hostname}`
     const wsUrl = host.replace(/^https?:\/\//, 'wss://')
     
-    console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl}`)
+    console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl} for business: ${businessId}`)
 
     const response = new VoiceResponse()
     const connect = response.connect()
     const stream = connect.stream({ url: wsUrl })
     
-    // Add the CallSid as a parameter
+    // Add required parameters for client identification
     stream.parameter({
       name: 'callSid',
       value: callSid
     })
 
-    // Add business ID if available
-    if (req.body.businessId) {
+    stream.parameter({
+      name: 'businessId',
+      value: businessId
+    })
+
+    // Add caller's phone number for client lookup
+    if (req.body.From) {
       stream.parameter({
-        name: 'businessId',
-        value: req.body.businessId
+        name: 'fromPhoneNumber',
+        value: req.body.From
       })
     }
     
