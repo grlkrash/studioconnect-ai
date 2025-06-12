@@ -1,8 +1,9 @@
 import { prisma } from './db';
+import { Business, AgentConfig } from '@prisma/client';
 
 export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise<string | null> {
   const business = await prisma.business.findFirst({
-    where: { phone: phoneNumber },
+    where: { twilioPhoneNumber: phoneNumber },
     select: { id: true }
   });
   return business?.id || null;
@@ -11,7 +12,7 @@ export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise
 export async function getBusinessWelcomeMessage(businessId: string): Promise<string> {
   const business = await prisma.business.findUnique({
     where: { id: businessId },
-    select: { welcomeMessage: true }
+    include: { agentConfig: true }
   });
-  return business?.welcomeMessage || 'Welcome to our service!';
+  return business?.agentConfig?.welcomeMessage || 'Welcome to our service!';
 } 

@@ -98,7 +98,7 @@ app.use(cors(corsOptions))
 // Body parsing middleware - MUST BE BEFORE ROUTES
 app.use(express.json({ 
   limit: '10mb',
-  verify: (req, res, buf) => {
+  verify: (req: express.Request, res: express.Response, buf: Buffer) => {
     try {
       JSON.parse(buf.toString())
     } catch (e) {

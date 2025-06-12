@@ -15,20 +15,33 @@ router.get('/login', (req, res) => {
 // Protected dashboard route
 router.get('/dashboard', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const userWithBusiness = await prisma.user.findUnique({
-      where: { id: req.user.userId },
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
       include: {
-        business: true
+        agentConfig: true,
+        leads: { 
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        },
+        conversations: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: {
+            callLogs: true
+          }
+        }
       }
     })
 
-    if (!userWithBusiness) {
-      console.error('Dashboard: User from token not found in DB:', req.user.userId)
+    if (!business) {
+      console.error('Dashboard: Business not found:', req.user.businessId)
       return res.redirect('/admin/login')
     }
 
     res.render('dashboard', {
-      user: userWithBusiness
+      user: req.user,
+      business,
+      agentConfig: business.agentConfig
     })
   } catch (error) {
     console.error("Error rendering dashboard:", error)
@@ -39,20 +52,27 @@ router.get('/dashboard', requireAuth, async (req: AuthenticatedRequest, res) => 
 // Protected agent settings route
 router.get('/settings', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const businessId = req.user.businessId
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        agentConfig: {
+          include: {
+            questions: true
+          }
+        }
+      }
+    })
     
-    const [business, agentConfig] = await Promise.all([
-      prisma.business.findUnique({
-        where: { id: businessId }
-      }),
-      prisma.agentConfig.findUnique({
-        where: { businessId }
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
       })
-    ])
+    }
     
     res.render('agent-settings', {
-      agentConfig: agentConfig || null,
-      business: business || null,
+      agentConfig: business.agentConfig,
+      business,
       user: req.user,
       successMessage: req.query.success
     })
@@ -66,27 +86,30 @@ router.get('/settings', requireAuth, async (req: AuthenticatedRequest, res) => {
 })
 
 // Protected lead questions route
-router.get('/lead-questions', requireAuth, async (req, res) => {
+router.get('/lead-questions', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    const businessId = req.user.businessId
-    
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId }
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        agentConfig: {
+          include: {
+            questions: {
+              orderBy: { order: 'asc' }
+            }
+          }
+        }
+      }
     })
     
-    const questions = agentConfig 
-      ? await prisma.leadCaptureQuestion.findMany({ 
-          where: { configId: agentConfig.id }, 
-          orderBy: { order: 'asc' } 
-        }) 
-      : []
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
     
     res.render('lead-questions', { 
-      questions, 
+      questions: business.agentConfig?.questions || [], 
       user: req.user 
     })
   } catch (error) {
@@ -101,13 +124,24 @@ router.get('/lead-questions', requireAuth, async (req, res) => {
 // Protected knowledge base route
 router.get('/knowledge-base', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const knowledgeEntries = await prisma.knowledgeBase.findMany({ 
-      where: { businessId: req.user.businessId }, 
-      orderBy: { createdAt: 'desc' } 
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        knowledgeBase: {
+          orderBy: { createdAt: 'desc' }
+        }
+      }
     })
     
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
     res.render('knowledge-base', { 
-      knowledgeEntries, 
+      knowledgeEntries: business.knowledgeBase, 
       user: req.user 
     })
   } catch (error) {
@@ -122,13 +156,24 @@ router.get('/knowledge-base', requireAuth, async (req: AuthenticatedRequest, res
 // Protected leads route
 router.get('/leads', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const leads = await prisma.lead.findMany({ 
-      where: { businessId: req.user.businessId }, 
-      orderBy: { createdAt: 'desc' } 
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        leads: {
+          orderBy: { createdAt: 'desc' }
+        }
+      }
     })
     
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
     res.render('view-leads', { 
-      leads, 
+      leads: business.leads, 
       user: req.user 
     })
   } catch (error) {
@@ -141,16 +186,10 @@ router.get('/leads', requireAuth, async (req: AuthenticatedRequest, res) => {
 })
 
 // Protected notification settings route
-router.get('/notifications', requireAuth, async (req, res) => {
+router.get('/notifications', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    const businessId = req.user.businessId
-    
     const business = await prisma.business.findUnique({
-      where: { id: businessId },
+      where: { id: req.user.businessId },
       select: {
         id: true,
         name: true,
@@ -182,25 +221,29 @@ router.get('/notifications', requireAuth, async (req, res) => {
 })
 
 // Protected clients route
-router.get('/clients', requireAuth, async (req, res) => {
+router.get('/clients', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    const businessId = req.user.businessId
-    
-    // Fetch all clients for this business
-    const clients = await prisma.client.findMany({ 
-      where: { businessId }, 
-      orderBy: { createdAt: 'desc' },
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
       include: {
-        projects: true // Include related projects
+        clients: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            projects: true
+          }
+        }
       }
     })
     
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
     res.render('clients', { 
-      clients, 
+      clients: business.clients, 
       user: req.user,
       successMessage: req.query.success
     })
@@ -214,25 +257,29 @@ router.get('/clients', requireAuth, async (req, res) => {
 })
 
 // Protected projects route - Enterprise plan only
-router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    const businessId = req.user.businessId
-    
-    // Fetch all projects for this business
-    const projects = await prisma.project.findMany({ 
-      where: { businessId }, 
-      orderBy: { createdAt: 'desc' },
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
       include: {
-        client: true // Include related client
+        projects: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            client: true
+          }
+        }
       }
     })
     
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
     res.render('projects', { 
-      projects, 
+      projects: business.projects, 
       user: req.user,
       successMessage: req.query.success
     })
@@ -246,21 +293,26 @@ router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req, res)
 })
 
 // Protected integrations route - Enterprise plan only
-router.get('/integrations', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+router.get('/integrations', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    const businessId = req.user.businessId
-    
-    const integrations = await prisma.integration.findMany({ 
-      where: { businessId }, 
-      orderBy: { createdAt: 'desc' }
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        integrations: {
+          orderBy: { createdAt: 'desc' }
+        }
+      }
     })
     
+    if (!business) {
+      return res.status(404).render('error', { 
+        message: 'Business not found',
+        user: req.user 
+      })
+    }
+    
     res.render('integrations', { 
-      integrations, 
+      integrations: business.integrations, 
       user: req.user,
       successMessage: req.query.success
     })

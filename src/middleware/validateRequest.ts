@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
 import { AnyZodObject, ZodError } from 'zod'
-import { AuthenticatedRequest } from '../api/authMiddleware'
+import { UserPayload } from '../api/authMiddleware'
 
 export const validateRequest = (schema: AnyZodObject) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request & { user?: UserPayload }, res: Response, next: NextFunction) => {
     try {
       const validatedData = await schema.parseAsync({
         body: req.body,

@@ -1,16 +1,27 @@
-import { Router } from 'express'
+import { Router, Request, Response, RequestHandler } from 'express'
 import bcrypt from 'bcrypt'
 import jsonwebtoken from 'jsonwebtoken'
 import { prisma } from '../services/db'
-import { requireAuth, AuthenticatedRequest, UserPayload } from './authMiddleware'
+import { requireAuth, UserPayload, isAuthenticatedRequest } from './authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
 import { validateRequest } from '../middleware/validateRequest'
 import { generateAndStoreEmbedding } from '../core/ragService'
 import { NextApiRequest, NextApiResponse } from 'next'
 import { getSession } from 'next-auth/react'
-import { PrismaClient, Client, Project, Integration, PlanTier } from '@prisma/client'
+import { PrismaClient, Client, Project, Integration, PlanTier, Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { createRouter } from 'next-connect'
+import { ParsedQs } from 'qs'
+import { ParamsDictionary } from 'express-serve-static-core'
+
+// Custom type for authenticated request handlers
+type AuthenticatedRequestHandler = RequestHandler<
+  ParamsDictionary,
+  any,
+  any,
+  ParsedQs,
+  { user: UserPayload }
+>
 
 const router = Router()
 
@@ -35,7 +46,7 @@ const integrationSchema = z.object({
   type: z.string(),
   apiKey: z.string().optional(),
   webhookSecret: z.string().optional(),
-  settings: z.record(z.unknown()).optional(),
+  config: z.record(z.unknown()).optional(),
   isEnabled: z.boolean().optional(),
   businessId: z.string()
 })
@@ -552,12 +563,15 @@ router.post('/knowledgebase', requireAuth, async (req, res) => {
 })
 
 // Get All Knowledge Base Entries for the Business
-router.get('/knowledgebase', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/knowledgebase', requireAuth, async (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const entries = await prisma.knowledgeBase.findMany({
     where: { businessId: req.user.businessId },
     orderBy: { createdAt: 'desc' }
-  })
-  res.json(entries)
+  });
+  res.json(entries);
 })
 
 // Get All Leads for the Business
@@ -838,23 +852,26 @@ router.put('/knowledgebase/:kbId', requireAuth, async (req, res) => {
 })
 
 // Delete Knowledge Base Entry
-router.delete('/knowledgebase/:kbId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const kbId = req.params.kbId
+router.delete('/knowledgebase/:kbId', requireAuth, async (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const kbId = req.params.kbId;
   const kbEntry = await prisma.knowledgeBase.findUnique({
     where: { id: kbId }
-  })
+  });
 
   if (!kbEntry || kbEntry.businessId !== req.user.businessId) {
     return res.status(404).json({ 
       error: 'Knowledge base entry not found or you do not have permission to delete it' 
-    })
+    });
   }
 
   await prisma.knowledgeBase.delete({
     where: { id: kbId }
-  })
+  });
 
-  res.status(204).send()
+  res.status(204).send();
 })
 
 // Get Business Notification Settings
@@ -950,19 +967,25 @@ router.put('/business/notifications', requireAuth, async (req, res) => {
 })
 
 // Client Management Routes
-router.get('/clients', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/clients', requireAuth, async (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const clients = await prisma.client.findMany({
     where: { businessId: req.user.businessId }
-  })
-  res.json(clients)
+  });
+  res.json(clients);
 })
 
 router.post(
   '/clients',
   validateRequest(clientSchema),
   requireAuth,
-  async (req: AuthenticatedRequest, res) => {
+  async (req: Request, res: Response) => {
     try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
       const { name, email, phone, externalId } = req.body
       
       if (!name) {
@@ -1006,7 +1029,10 @@ router.delete('/clients/:clientId', async (req, res) => {
 })
 
 // Project Management Routes (Enterprise only)
-router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
+router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const { clientId } = req.query
   
   const projects = await prisma.project.findMany({
@@ -1026,8 +1052,11 @@ router.post(
   validateRequest(projectSchema),
   requireAuth,
   requirePlan('ENTERPRISE'),
-  async (req: AuthenticatedRequest, res) => {
+  async (req: Request, res: Response) => {
     try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
       const { name, status, clientId, details, externalId } = req.body
 
       if (!name || !status || !clientId) {
@@ -1067,53 +1096,145 @@ router.post(
   }
 )
 
-router.put('/projects/:projectId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
-  const { projectId } = req.params
-  const data = projectSchema.parse(req.body)
-  
-  const project = await prisma.project.update({
-    where: { id: projectId },
-    data,
-    include: projectInclude
-  })
-  res.json(project)
-})
+router.get(
+  '/projects/:projectId',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { projectId } = req.params
+      const project = await prisma.project.findFirst({
+        where: { 
+          id: projectId,
+          businessId: req.user.businessId
+        },
+        include: {
+          client: true
+        }
+      })
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' })
+      }
+      res.json(project)
+    } catch (error) {
+      console.error('Error fetching project:', error)
+      res.status(500).json({ error: 'Failed to fetch project' })
+    }
+  }
+)
 
-router.delete('/projects/:projectId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
-  const { projectId } = req.params
-  await prisma.project.delete({
-    where: { id: projectId }
-  })
-  res.status(204).end()
-})
+router.put(
+  '/projects/:projectId',
+  requireAuth,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { projectId } = req.params
+      const { name, status, clientId, details, externalId } = req.body
+
+      if (!name || !status || !clientId) {
+        return res.status(400).json({ error: 'Project name, status, and client ID are required' })
+      }
+
+      // Verify client exists for the business
+      const clientExists = await prisma.client.findFirst({
+        where: { 
+          id: clientId,
+          businessId: req.user.businessId
+        }
+      })
+
+      if (!clientExists) {
+        return res.status(400).json({ error: 'Invalid client ID for this business' })
+      }
+
+      const project = await prisma.project.update({
+        where: { 
+          id: projectId,
+          businessId: req.user.businessId
+        },
+        data: {
+          name,
+          status,
+          details,
+          externalId,
+          clientId
+        },
+        include: {
+          client: true
+        }
+      })
+      res.json(project)
+    } catch (error) {
+      console.error('Error updating project:', error)
+      res.status(500).json({ error: 'Failed to update project' })
+    }
+  }
+)
+
+router.delete(
+  '/projects/:projectId',
+  requireAuth,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { projectId } = req.params
+      await prisma.project.delete({
+        where: { 
+          id: projectId,
+          businessId: req.user.businessId
+        }
+      })
+      res.status(204).send()
+    } catch (error) {
+      console.error('Error deleting project:', error)
+      res.status(500).json({ error: 'Failed to delete project' })
+    }
+  }
+)
 
 // Integration Management Routes (Enterprise only)
-router.get('/integrations', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
-  const integrations = await prisma.integration.findMany({
-    where: { businessId: req.user.businessId }
-  })
-  res.json(integrations)
-})
+router.get(
+  '/integrations',
+  requireAuth,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const integrations = await prisma.integration.findMany({
+        where: { businessId: req.user.businessId }
+      })
+      res.json(integrations)
+    } catch (error) {
+      console.error('Error fetching integrations:', error)
+      res.status(500).json({ error: 'Failed to fetch integrations' })
+    }
+  }
+)
 
 router.post(
   '/integrations',
-  validateRequest(integrationSchema),
   requireAuth,
   requirePlan('ENTERPRISE'),
-  async (req: AuthenticatedRequest, res) => {
+  async (req: Request, res: Response) => {
     try {
-      const { type, apiKey, webhookSecret, settings, isEnabled } = req.body
-
-      if (!type) {
-        return res.status(400).json({ error: 'Integration type is required' })
+      if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
+      const { type, apiKey, webhookSecret, settings } = req.body
 
-      // Validate integration type
-      const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS']
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ 
-          error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
-        })
+      if (!type || !apiKey) {
+        return res.status(400).json({ error: 'Integration type and API key are required' })
       }
 
       const integration = await prisma.integration.create({
@@ -1122,7 +1243,6 @@ router.post(
           apiKey,
           webhookSecret,
           settings,
-          isEnabled: isEnabled ?? false,
           businessId: req.user.businessId
         }
       })
@@ -1134,16 +1254,41 @@ router.post(
   }
 )
 
-router.put('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
-  const { integrationId } = req.params
-  const data = integrationSchema.parse(req.body)
-  
-  const integration = await prisma.integration.update({
-    where: { id: integrationId },
-    data
-  })
-  res.json(integration)
-})
+router.put('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req: Request, res: Response) => {
+  try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { integrationId } = req.params;
+    const { type, apiKey, webhookSecret, config, isEnabled } = req.body;
+
+    // Validate integration type if provided
+    if (type) {
+      const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ 
+          error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
+        });
+      }
+    }
+
+    const integration = await prisma.integration.update({
+      where: { id: integrationId },
+      data: {
+        type,
+        apiKey,
+        webhookSecret,
+        isEnabled,
+        settings: config ? config : undefined
+      }
+    });
+    res.json(integration);
+  } catch (error) {
+    console.error('Error updating integration:', error);
+    res.status(500).json({ error: 'Failed to update integration' });
+  }
+});
 
 router.delete('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
   const { integrationId } = req.params
@@ -1205,5 +1350,86 @@ async function syncTrelloProjects(integration: Integration) {
   // This would use the Trello API to fetch boards and cards
   // and update the local database
 }
+
+router.get('/business', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        users: true,
+        agentConfig: true
+      }
+    })
+    res.json(business)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch business' })
+  }
+})
+
+router.put('/business', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { name, planTier } = req.body
+    const business = await prisma.business.update({
+      where: { id: req.user.businessId },
+      data: { name, planTier }
+    })
+    res.json(business)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update business' })
+  }
+})
+
+router.get('/users', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const users = await prisma.user.findMany({
+      where: { businessId: req.user.businessId }
+    })
+    res.json(users)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch users' })
+  }
+})
+
+router.post('/users', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!isAuthenticatedRequest(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { email, role, password } = req.body
+
+    if (!email || !role || !password) {
+      return res.status(400).json({ error: 'Email, role, and password are required' })
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email } })
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this email already exists' })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        role,
+        businessId: req.user.businessId,
+        passwordHash
+      }
+    })
+    res.status(201).json(user)
+  } catch (error) {
+    console.error('Error creating user:', error)
+    res.status(500).json({ error: 'Failed to create user' })
+  }
+})
 
 export default router 

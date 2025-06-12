@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { processMessage } from '../core/aiHandler'
 import { initiateClickToCall } from '../services/notificationService'
 import { PlanManager } from '../utils/planUtils'
+import { CallDirection, CallType } from '@prisma/client'
 
 const router = Router()
 
@@ -17,52 +18,50 @@ const messageSchema = z.object({
   businessId: z.string()
 })
 
-const chatSessionSchema = z.object({
+const conversationSchema = z.object({
   clientId: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
   businessId: z.string()
 })
 
-// Chat session management
+// Conversation management
 router.get('/sessions', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const sessions = await prisma.chatSession.findMany({
+    const conversations = await prisma.conversation.findMany({
       where: { businessId: req.user.businessId },
       include: {
-        messages: {
+        callLogs: {
           orderBy: { createdAt: 'asc' }
         },
         client: true
       },
       orderBy: { updatedAt: 'desc' }
     })
-    res.json(sessions)
+    res.json(conversations)
   } catch (error) {
-    console.error('Error fetching chat sessions:', error)
-    res.status(500).json({ error: 'Failed to fetch chat sessions' })
+    console.error('Error fetching conversations:', error)
+    res.status(500).json({ error: 'Failed to fetch conversations' })
   }
 })
 
 router.post(
   '/sessions',
-  validateRequest(chatSessionSchema),
+  validateRequest(conversationSchema),
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
-      const session = await prisma.chatSession.create({
+      const conversation = await prisma.conversation.create({
         data: {
-          ...req.body,
-          businessId: req.user.businessId
-        },
-        include: {
-          messages: true,
-          client: true
+          businessId: req.user.businessId,
+          clientId: req.body.clientId || null,
+          metadata: req.body.metadata || {},
+          sessionId: crypto.randomUUID()
         }
       })
-      res.json(session)
+      res.json(conversation)
     } catch (error) {
-      console.error('Error creating chat session:', error)
-      res.status(500).json({ error: 'Failed to create chat session' })
+      console.error('Error creating conversation:', error)
+      res.status(500).json({ error: 'Failed to create conversation' })
     }
   }
 )
@@ -74,30 +73,55 @@ router.post(
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
-      const message = await prisma.message.create({
+      // First create or get the conversation
+      const conversation = await prisma.conversation.findFirst({
+        where: { businessId: req.user.businessId },
+        orderBy: { updatedAt: 'desc' }
+      }) || await prisma.conversation.create({
         data: {
-          ...req.body,
-          businessId: req.user.businessId
+          businessId: req.user.businessId,
+          sessionId: crypto.randomUUID(),
+          metadata: {}
         }
       })
-      res.json(message)
+
+      const callLog = await prisma.callLog.create({
+        data: {
+          businessId: req.user.businessId,
+          content: req.body.content,
+          type: CallType.CHAT,
+          direction: req.body.role === 'user' ? CallDirection.INBOUND : CallDirection.OUTBOUND,
+          callSid: crypto.randomUUID(),
+          from: 'SYSTEM',
+          to: 'SYSTEM',
+          status: 'COMPLETED',
+          source: 'CHAT',
+          conversation: {
+            connect: { id: conversation.id }
+          }
+        }
+      })
+      res.json(callLog)
     } catch (error) {
-      console.error('Error creating message:', error)
-      res.status(500).json({ error: 'Failed to create message' })
+      console.error('Error creating call log:', error)
+      res.status(500).json({ error: 'Failed to create call log' })
     }
   }
 )
 
-// Chat widget configuration (PRO plan only)
+// Agent configuration (PRO plan only)
 router.get('/widget-config', requireAuth, requirePlan('PRO'), async (req: AuthenticatedRequest, res) => {
   try {
-    const config = await prisma.widgetConfig.findUnique({
-      where: { businessId: req.user.businessId }
+    const business = await prisma.business.findUnique({
+      where: { id: req.user.businessId },
+      include: {
+        agentConfig: true
+      }
     })
-    res.json(config || {})
+    res.json(business?.agentConfig || {})
   } catch (error) {
-    console.error('Error fetching widget config:', error)
-    res.status(500).json({ error: 'Failed to fetch widget configuration' })
+    console.error('Error fetching agent config:', error)
+    res.status(500).json({ error: 'Failed to fetch agent configuration' })
   }
 })
 
@@ -107,7 +131,7 @@ router.post(
   requirePlan('PRO'),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const config = await prisma.widgetConfig.upsert({
+      const config = await prisma.agentConfig.upsert({
         where: { businessId: req.user.businessId },
         update: req.body,
         create: {
@@ -117,8 +141,8 @@ router.post(
       })
       res.json(config)
     } catch (error) {
-      console.error('Error updating widget config:', error)
-      res.status(500).json({ error: 'Failed to update widget configuration' })
+      console.error('Error updating agent config:', error)
+      res.status(500).json({ error: 'Failed to update agent configuration' })
     }
   }
 )
@@ -142,9 +166,6 @@ router.post('/', async (req, res) => {
     // Handle empty message as welcome message request
     if (!message || message.trim() === '') {
       console.log('[Chat API] Empty message detected, treating as welcome message request')
-      
-      const { PrismaClient } = await import('@prisma/client')
-      const prisma = new PrismaClient()
       
       try {
         const business = await prisma.business.findUnique({
@@ -178,8 +199,6 @@ router.post('/', async (req, res) => {
       } catch (error) {
         console.error('[Chat API] Error fetching welcome configuration:', error)
         return res.status(500).json({ error: 'Error loading welcome message' })
-      } finally {
-        await prisma.$disconnect()
       }
     }
 
@@ -198,29 +217,20 @@ router.post('/', async (req, res) => {
 
     // For first message (empty conversation history), include welcome message with business name template replacement
     if (!conversationHistory || conversationHistory.length === 0) {
-      const { PrismaClient } = await import('@prisma/client')
-      const prisma = new PrismaClient()
-      
       try {
         const business = await prisma.business.findUnique({
-          where: { id: businessId }
+          where: { id: businessId },
+          include: {
+            agentConfig: true
+          }
         })
         
-        if (business) {
-          const agentConfig = await prisma.agentConfig.findUnique({
-            where: { businessId: businessId }
-          })
-          
-          // Add configured welcome message with business name replacement
-          if (agentConfig?.welcomeMessage) {
-            const welcomeMessageWithBusinessName = agentConfig.welcomeMessage.replace(/\{businessName\}/gi, business.name)
-            aiResponse.configuredWelcomeMessage = welcomeMessageWithBusinessName
-          }
+        if (business?.agentConfig?.welcomeMessage) {
+          const welcomeMessageWithBusinessName = business.agentConfig.welcomeMessage.replace(/\{businessName\}/gi, business.name)
+          aiResponse.configuredWelcomeMessage = welcomeMessageWithBusinessName
         }
       } catch (error) {
         console.error('[Chat API] Error fetching welcome message:', error)
-      } finally {
-        await prisma.$disconnect()
       }
     }
 
@@ -242,47 +252,115 @@ router.post('/initiate-call', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: phoneNumber and businessId' })
     }
 
-    // Get business details
-    const { PrismaClient } = await import('@prisma/client')
-    const prisma = new PrismaClient()
-    
     try {
       const business = await prisma.business.findUnique({
-        where: { id: businessId }
+        where: { id: businessId },
+        include: {
+          agentConfig: true
+        }
       })
       
       if (!business) {
         return res.status(404).json({ error: 'Business not found' })
       }
 
-      if (!business.notificationPhoneNumber) {
-        return res.status(400).json({ error: 'Business has no notification phone number configured' })
-      }
-
-      // Initiate the call
-      const callResult = await initiateClickToCall(
-        phoneNumber,
-        business.notificationPhoneNumber,
-        business.name,
-        conversationHistory
-      )
-
-      res.status(200).json({
-        success: true,
-        message: 'Call initiated successfully',
-        callSid: callResult.callSid
+      // Create a new conversation for the call
+      const conversation = await prisma.conversation.create({
+        data: {
+          businessId,
+          sessionId: crypto.randomUUID(),
+          metadata: {
+            source: 'CHAT_ESCALATION',
+            chatHistory: conversationHistory
+          }
+        }
       })
 
-    } catch (error) {
-      console.error('[Chat API] Error initiating call:', error)
-      res.status(500).json({ error: 'Failed to initiate call' })
-    } finally {
-      await prisma.$disconnect()
-    }
+      // Initiate the call
+      const callResult = await initiateClickToCall({
+        phoneNumber,
+        businessId,
+        conversationHistory
+      })
 
+      res.json(callResult)
+    } catch (error) {
+      console.error('Error initiating call:', error)
+      res.status(500).json({ error: 'Failed to initiate call' })
+    }
   } catch (error) {
     console.error('Error in initiate-call route:', error)
     res.status(500).json({ error: 'An internal server error occurred.' })
+  }
+})
+
+router.get('/chats', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const conversations = await prisma.conversation.findMany({
+      where: { businessId: req.user.businessId },
+      include: {
+        callLogs: true
+      }
+    })
+    res.json(conversations)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch conversations' })
+  }
+})
+
+router.post('/chats', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { title } = req.body
+    const conversation = await prisma.conversation.create({
+      data: {
+        businessId: req.user.businessId,
+        sessionId: crypto.randomUUID(),
+        metadata: { title }
+      }
+    })
+    res.json(conversation)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create conversation' })
+  }
+})
+
+router.get('/chats/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: req.params.id },
+      include: {
+        callLogs: true
+      }
+    })
+    if (!conversation || conversation.businessId !== req.user.businessId) {
+      return res.status(404).json({ error: 'Conversation not found' })
+    }
+    res.json(conversation)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch conversation' })
+  }
+})
+
+router.post('/chats/:id/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { content } = req.body
+    const callLog = await prisma.callLog.create({
+      data: {
+        content,
+        conversationId: req.params.id,
+        type: CallType.CHAT,
+        direction: CallDirection.OUTBOUND,
+        businessId: req.user.businessId,
+        callSid: crypto.randomUUID(),
+        from: 'SYSTEM',
+        to: 'SYSTEM',
+        status: 'COMPLETED',
+        source: 'CHAT'
+      }
+    })
+    res.json(callLog)
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create message' })
   }
 })
 

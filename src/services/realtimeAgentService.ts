@@ -11,8 +11,8 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
-import { getBusinessWelcomeMessage } from '../services/businessService';
-import { getClientByPhoneNumber } from '../services/clientService';
+import { getBusinessWelcomeMessage } from './businessService';
+import { getClientByPhoneNumber } from './clientService';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -39,11 +39,18 @@ interface ConnectionState {
   fromPhoneNumber?: string;
   clientId?: string;
   conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>;
+  currentFlow: string | null;
 }
 
 interface Question {
   questionText: string;
   order: number;
+}
+
+interface TwilioMedia {
+  payload?: string;
+  event?: string;
+  streamSid?: string;
 }
 
 // Types
@@ -182,13 +189,14 @@ export class RealtimeAgentService {
       callSid,
       businessId,
       fromPhoneNumber: fromPhoneNumber || undefined,
-      conversationHistory: []
+      conversationHistory: [],
+      currentFlow: null
     };
 
     // Try to identify client if phone number is available
     if (fromPhoneNumber) {
       try {
-        const client = await getClientByPhoneNumber(businessId, fromPhoneNumber);
+        const client = await getClientByPhoneNumber(fromPhoneNumber);
         if (client) {
           state.clientId = client.id;
           console.log(`[REALTIME AGENT] Identified client ${client.id} for call ${callSid}`);
@@ -226,17 +234,17 @@ export class RealtimeAgentService {
   }
 
   private setupTwilioListeners(state: ConnectionState): void {
-    const { callSid, businessId, clientId } = state;
+    const { callSid, businessId } = state;
 
     // Handle start event
-    this.twilioClient.calls(callSid)
+    (this.twilioClient.calls(callSid) as any)
       .on('start', async () => {
         console.log(`[REALTIME AGENT] Call ${callSid} started`);
       });
 
     // Handle media stream
-    this.twilioClient.calls(callSid)
-      .on('media', async (media) => {
+    (this.twilioClient.calls(callSid) as any)
+      .on('media', async (media: TwilioMedia) => {
         if (!media.payload) return;
 
         try {
@@ -244,16 +252,17 @@ export class RealtimeAgentService {
             media.payload,
             state.conversationHistory,
             businessId,
-            clientId,
+            state.currentFlow || null,
             callSid,
             'VOICE'
           );
 
-          // Update conversation history
+          // Update conversation history and current flow
           state.conversationHistory.push(
             { role: 'user', content: media.payload },
             { role: 'assistant', content: response.reply }
           );
+          state.currentFlow = response.currentFlow || null;
 
           // Keep conversation history at a reasonable size
           if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
@@ -268,7 +277,7 @@ export class RealtimeAgentService {
       });
 
     // Handle end event
-    this.twilioClient.calls(callSid)
+    (this.twilioClient.calls(callSid) as any)
       .on('end', () => {
         console.log(`[REALTIME AGENT] Call ${callSid} ended`);
         this.cleanup(callSid);

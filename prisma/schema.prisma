@@ -32,6 +32,7 @@ model Business {
   clients                 Client[]
   projects                Project[]
   integrations            Integration[]
+  conversations           Conversation[]
 
   @@map("businesses")
 }
@@ -135,30 +136,44 @@ model Lead {
 }
 
 model Conversation {
-  id         String    @id @default(cuid())
-  businessId String
-  sessionId  String    @unique
-  messages   Json      @default("[]")
-  startedAt  DateTime  @default(now())
-  endedAt    DateTime?
-  leadId     String?
+  id           String    @id @default(cuid())
+  businessId   String
+  sessionId    String    @unique
+  messages     Json      @default("[]")
+  metadata     Json?     @default("{}")
+  phoneNumber  String?
+  clientId     String?
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  leadId       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client       Client?   @relation(fields: [clientId], references: [id])
+  callLogs     CallLog[]
 
   @@map("conversations")
 }
 
 model CallLog {
-  id          String   @id @default(cuid())
-  businessId  String
-  callSid     String   @unique
-  from        String
-  to          String
-  direction   String
-  status      String
-  source      String
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id             String        @id @default(cuid())
+  businessId     String
+  conversationId String
+  callSid        String        @unique
+  from           String
+  to             String
+  direction      CallDirection
+  type           CallType
+  status         String
+  source         String
+  content        String?
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@map("call_logs")
 }
@@ -176,6 +191,7 @@ model Client {
   business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   projects     Project[]
   leads        Lead[]    // A lead can become a client (optional)
+  conversations Conversation[]
 
   @@map("clients")
 }
@@ -266,4 +282,14 @@ enum LeadPriority {
   NORMAL
   HIGH
   URGENT
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallType {
+  VOICE
+  CHAT
 }

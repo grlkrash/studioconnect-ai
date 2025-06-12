@@ -5,6 +5,7 @@ import twilio from 'twilio'
 import sgTransport from 'nodemailer-sendgrid-transport'
 import { PrismaClient } from '@prisma/client'
 import VoiceResponse = require('twilio/lib/twiml/VoiceResponse')
+import crypto from 'crypto'
 
 // Initialize Twilio client
 const twilioClient = twilio(
@@ -532,10 +533,20 @@ export async function initiateClickToCall({
         from: process.env.TWILIO_PHONE_NUMBER as string,
         to: business.notificationPhoneNumber,
         direction: 'OUTBOUND',
+        type: 'VOICE',
         status: call.status,
         source: 'CHAT_ESCALATION',
         metadata: {
           conversationHistory: formattedHistory
+        },
+        conversation: {
+          create: {
+            businessId,
+            sessionId: crypto.randomUUID(),
+            metadata: {
+              conversationHistory: formattedHistory
+            }
+          }
         }
       }
     })
