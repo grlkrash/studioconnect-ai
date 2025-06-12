@@ -1,8 +1,127 @@
 import { Router } from 'express'
+import { requireAuth, AuthenticatedRequest } from './authMiddleware'
+import { requirePlan } from '../middleware/planMiddleware'
+import { validateRequest } from '../middleware/validateRequest'
+import { prisma } from '../services/db'
+import { z } from 'zod'
 import { processMessage } from '../core/aiHandler'
 import { initiateClickToCall } from '../services/notificationService'
+import { PlanManager } from '../utils/planUtils'
 
 const router = Router()
+
+// Schema definitions
+const messageSchema = z.object({
+  content: z.string().min(1),
+  role: z.enum(['user', 'assistant']),
+  businessId: z.string()
+})
+
+const chatSessionSchema = z.object({
+  clientId: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  businessId: z.string()
+})
+
+// Chat session management
+router.get('/sessions', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const sessions = await prisma.chatSession.findMany({
+      where: { businessId: req.user.businessId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' }
+        },
+        client: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    })
+    res.json(sessions)
+  } catch (error) {
+    console.error('Error fetching chat sessions:', error)
+    res.status(500).json({ error: 'Failed to fetch chat sessions' })
+  }
+})
+
+router.post(
+  '/sessions',
+  validateRequest(chatSessionSchema),
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const session = await prisma.chatSession.create({
+        data: {
+          ...req.body,
+          businessId: req.user.businessId
+        },
+        include: {
+          messages: true,
+          client: true
+        }
+      })
+      res.json(session)
+    } catch (error) {
+      console.error('Error creating chat session:', error)
+      res.status(500).json({ error: 'Failed to create chat session' })
+    }
+  }
+)
+
+// Message handling
+router.post(
+  '/messages',
+  validateRequest(messageSchema),
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const message = await prisma.message.create({
+        data: {
+          ...req.body,
+          businessId: req.user.businessId
+        }
+      })
+      res.json(message)
+    } catch (error) {
+      console.error('Error creating message:', error)
+      res.status(500).json({ error: 'Failed to create message' })
+    }
+  }
+)
+
+// Chat widget configuration (PRO plan only)
+router.get('/widget-config', requireAuth, requirePlan('PRO'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const config = await prisma.widgetConfig.findUnique({
+      where: { businessId: req.user.businessId }
+    })
+    res.json(config || {})
+  } catch (error) {
+    console.error('Error fetching widget config:', error)
+    res.status(500).json({ error: 'Failed to fetch widget configuration' })
+  }
+})
+
+router.post(
+  '/widget-config',
+  requireAuth,
+  requirePlan('PRO'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const config = await prisma.widgetConfig.upsert({
+        where: { businessId: req.user.businessId },
+        update: req.body,
+        create: {
+          ...req.body,
+          businessId: req.user.businessId
+        }
+      })
+      res.json(config)
+    } catch (error) {
+      console.error('Error updating widget config:', error)
+      res.status(500).json({ error: 'Failed to update widget configuration' })
+    }
+  }
+)
 
 // POST / route for handling chat messages
 router.post('/', async (req, res) => {
@@ -39,8 +158,8 @@ router.post('/', async (req, res) => {
           return res.status(404).json({ error: 'Business not found' })
         }
 
-        // Determine if branding should be shown
-        const showBranding = business.planTier === 'FREE' || business.planTier === 'BASIC'
+        // Determine if branding should be shown using PlanManager
+        const showBranding = PlanManager.shouldShowBranding(business.planTier)
         
         // Get configured welcome message with business name replacement
         let welcomeMessage = "Hey! How can I help you today?"
@@ -69,7 +188,9 @@ router.post('/', async (req, res) => {
       message, 
       conversationHistory || [], 
       businessId, 
-      currentFlow
+      currentFlow,
+      undefined, // No callSid for chat
+      'CHAT'     // Specify channel as CHAT
     )
 
     console.log(`[Chat API] AI Response currentFlow: ${aiResponse.currentFlow}`)

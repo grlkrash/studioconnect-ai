@@ -2,18 +2,61 @@ import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import jsonwebtoken from 'jsonwebtoken'
 import { prisma } from '../services/db'
-import { authMiddleware, UserPayload } from './authMiddleware'
+import { requireAuth, AuthenticatedRequest, UserPayload } from './authMiddleware'
+import { requirePlan } from '../middleware/planMiddleware'
+import { validateRequest } from '../middleware/validateRequest'
 import { generateAndStoreEmbedding } from '../core/ragService'
 import { NextApiRequest, NextApiResponse } from 'next'
 import { getSession } from 'next-auth/react'
-import { PrismaClient, Client, Project, Integration, SubscriptionTier } from '@prisma/client'
+import { PrismaClient, Client, Project, Integration, PlanTier } from '@prisma/client'
 import { z } from 'zod'
 import { createRouter } from 'next-connect'
-import { validateRequest } from '@/lib/middleware/validateRequest'
-import { requireAuth } from '@/lib/middleware/requireAuth'
-import { requireSubscription } from '@/lib/middleware/requireSubscription'
 
 const router = Router()
+
+const clientSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  externalId: z.string().optional(),
+  businessId: z.string()
+})
+
+const projectSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(['NEW', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD']),
+  details: z.string().optional(),
+  clientId: z.string(),
+  businessId: z.string(),
+  externalId: z.string().optional()
+})
+
+const integrationSchema = z.object({
+  type: z.string(),
+  apiKey: z.string().optional(),
+  webhookSecret: z.string().optional(),
+  settings: z.record(z.unknown()).optional(),
+  isEnabled: z.boolean().optional(),
+  businessId: z.string()
+})
+
+// Update the session type to include businessId
+interface Session {
+  user: {
+    id: string
+    businessId: string
+    name?: string | null
+    email?: string | null
+    image?: string | null
+  }
+}
+
+// Update project includes
+const projectInclude = {
+  client: true,
+  tasks: true,
+  integrations: true,
+} as const
 
 router.post('/login', async (req, res) => {
   try {
@@ -111,7 +154,7 @@ router.post('/login', async (req, res) => {
 })
 
 // NEW: Add a protected /me route
-router.get('/me', authMiddleware, (req, res) => {
+router.get('/me', requireAuth, (req, res) => {
   // If authMiddleware passes, req.user will be populated by our extended Request type
   // The UserPayload interface is exported from authMiddleware.ts,
   // and the Express.Request interface was extended there too.
@@ -125,7 +168,7 @@ router.get('/me', authMiddleware, (req, res) => {
 })
 
 // Get Agent Configuration
-router.get('/config', authMiddleware, async (req, res) => {
+router.get('/config', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -153,7 +196,7 @@ router.get('/config', authMiddleware, async (req, res) => {
 })
 
 // Create/Update Agent Configuration
-router.post('/config', authMiddleware, async (req, res) => {
+router.post('/config', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -248,7 +291,7 @@ router.post('/config', authMiddleware, async (req, res) => {
 })
 
 // Get Lead Capture Questions for Agent Configuration
-router.get('/config/questions', authMiddleware, async (req, res) => {
+router.get('/config/questions', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -283,7 +326,7 @@ router.get('/config/questions', authMiddleware, async (req, res) => {
 })
 
 // Create New Lead Capture Question
-router.post('/config/questions', authMiddleware, async (req, res) => {
+router.post('/config/questions', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -353,7 +396,7 @@ router.post('/config/questions', authMiddleware, async (req, res) => {
 })
 
 // Update Lead Capture Question
-router.put('/config/questions/:questionId', authMiddleware, async (req, res) => {
+router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -425,7 +468,7 @@ router.put('/config/questions/:questionId', authMiddleware, async (req, res) => 
 })
 
 // Delete Lead Capture Question
-router.delete('/config/questions/:questionId', authMiddleware, async (req, res) => {
+router.delete('/config/questions/:questionId', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -461,7 +504,7 @@ router.delete('/config/questions/:questionId', authMiddleware, async (req, res) 
 })
 
 // Create New Knowledge Base Entry
-router.post('/knowledgebase', authMiddleware, async (req, res) => {
+router.post('/knowledgebase', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -509,32 +552,16 @@ router.post('/knowledgebase', authMiddleware, async (req, res) => {
 })
 
 // Get All Knowledge Base Entries for the Business
-router.get('/knowledgebase', authMiddleware, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-
-    // Fetch all knowledge base entries for this business
-    // Order by createdAt descending (newest first)
-    const knowledgeBaseEntries = await prisma.knowledgeBase.findMany({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' }
-    })
-
-    // Send back the array of knowledge base entries with 200 OK status
-    // This will be an empty array if no entries exist yet
-    res.status(200).json(knowledgeBaseEntries)
-
-  } catch (error) {
-    console.error('Error fetching knowledge base entries:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while fetching knowledge base entries' 
-    })
-  }
+router.get('/knowledgebase', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const entries = await prisma.knowledgeBase.findMany({
+    where: { businessId: req.user.businessId },
+    orderBy: { createdAt: 'desc' }
+  })
+  res.json(entries)
 })
 
 // Get All Leads for the Business
-router.get('/leads', authMiddleware, async (req, res) => {
+router.get('/leads', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -559,7 +586,7 @@ router.get('/leads', authMiddleware, async (req, res) => {
 })
 
 // Update Lead Status
-router.put('/leads/:leadId/status', authMiddleware, async (req, res) => {
+router.put('/leads/:leadId/status', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -604,7 +631,7 @@ router.put('/leads/:leadId/status', authMiddleware, async (req, res) => {
 })
 
 // Update Lead Notes
-router.put('/leads/:leadId', authMiddleware, async (req, res) => {
+router.put('/leads/:leadId', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -654,7 +681,7 @@ router.get('/logout', (req, res) => {
 })
 
 // Test SendGrid configuration endpoint
-router.post('/test-sendgrid', authMiddleware, async (req, res) => {
+router.post('/test-sendgrid', requireAuth, async (req, res) => {
   try {
     const { testEmail } = req.body
     
@@ -750,7 +777,7 @@ This is an automated test email. You can safely delete it.
 })
 
 // Update Knowledge Base Entry
-router.put('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
+router.put('/knowledgebase/:kbId', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -811,42 +838,27 @@ router.put('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
 })
 
 // Delete Knowledge Base Entry
-router.delete('/knowledgebase/:kbId', authMiddleware, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-    const kbId = req.params.kbId
+router.delete('/knowledgebase/:kbId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const kbId = req.params.kbId
+  const kbEntry = await prisma.knowledgeBase.findUnique({
+    where: { id: kbId }
+  })
 
-    // Find the KB entry and verify ownership
-    const kbEntry = await prisma.knowledgeBase.findUnique({
-      where: { id: kbId }
-    })
-
-    // Check if KB entry exists and belongs to the business
-    if (!kbEntry || kbEntry.businessId !== businessId) {
-      return res.status(404).json({ 
-        error: 'Knowledge base entry not found or you do not have permission to delete it' 
-      })
-    }
-
-    // Delete the KB entry
-    await prisma.knowledgeBase.delete({
-      where: { id: kbId }
-    })
-
-    // Send success response with 204 No Content
-    res.status(204).send()
-
-  } catch (error) {
-    console.error('Error deleting knowledge base entry:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while deleting knowledge base entry' 
+  if (!kbEntry || kbEntry.businessId !== req.user.businessId) {
+    return res.status(404).json({ 
+      error: 'Knowledge base entry not found or you do not have permission to delete it' 
     })
   }
+
+  await prisma.knowledgeBase.delete({
+    where: { id: kbId }
+  })
+
+  res.status(204).send()
 })
 
 // Get Business Notification Settings
-router.get('/business/notifications', authMiddleware, async (req, res) => {
+router.get('/business/notifications', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -881,7 +893,7 @@ router.get('/business/notifications', authMiddleware, async (req, res) => {
 })
 
 // Update Business Notification Settings
-router.put('/business/notifications', authMiddleware, async (req, res) => {
+router.put('/business/notifications', requireAuth, async (req, res) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -938,27 +950,41 @@ router.put('/business/notifications', authMiddleware, async (req, res) => {
 })
 
 // Client Management Routes
-router.get('/clients', async (req, res) => {
-  const session = await getSession({ req })
+router.get('/clients', requireAuth, async (req: AuthenticatedRequest, res) => {
   const clients = await prisma.client.findMany({
-    where: { businessId: session?.user?.businessId },
-    include: { projects: true }
+    where: { businessId: req.user.businessId }
   })
   res.json(clients)
 })
 
-router.post('/clients', async (req, res) => {
-  const session = await getSession({ req })
-  const data = clientSchema.parse(req.body)
-  
-  const client = await prisma.client.create({
-    data: {
-      ...data,
-      businessId: session?.user?.businessId
+router.post(
+  '/clients',
+  validateRequest(clientSchema),
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const { name, email, phone, externalId } = req.body
+      
+      if (!name) {
+        return res.status(400).json({ error: 'Client name is required' })
+      }
+
+      const client = await prisma.client.create({
+        data: {
+          name,
+          email,
+          phone,
+          externalId,
+          businessId: req.user.businessId
+        }
+      })
+      res.status(201).json(client)
+    } catch (error) {
+      console.error('Error creating client:', error)
+      res.status(500).json({ error: 'Failed to create client' })
     }
-  })
-  res.json(client)
-})
+  }
+)
 
 router.put('/clients/:clientId', async (req, res) => {
   const { clientId } = req.query
@@ -980,107 +1006,155 @@ router.delete('/clients/:clientId', async (req, res) => {
 })
 
 // Project Management Routes (Enterprise only)
-router.get('/projects', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const session = await getSession({ req })
+router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
   const { clientId } = req.query
   
   const projects = await prisma.project.findMany({
     where: {
-      businessId: session?.user?.businessId,
+      businessId: req.user.businessId,
       ...(clientId && { clientId: clientId as string })
     },
     include: {
-      client: true,
-      integration: true
+      client: true
     }
   })
   res.json(projects)
 })
 
-router.post('/projects', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const session = await getSession({ req })
-  const data = projectSchema.parse(req.body)
-  
-  const project = await prisma.project.create({
-    data: {
-      ...data,
-      businessId: session?.user?.businessId
-    },
-    include: {
-      client: true,
-      integration: true
-    }
-  })
-  res.json(project)
-})
+router.post(
+  '/projects',
+  validateRequest(projectSchema),
+  requireAuth,
+  requirePlan('ENTERPRISE'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const { name, status, clientId, details, externalId } = req.body
 
-router.put('/projects/:projectId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const { projectId } = req.query
+      if (!name || !status || !clientId) {
+        return res.status(400).json({ error: 'Project name, status, and client ID are required' })
+      }
+
+      // Verify client exists for the business
+      const clientExists = await prisma.client.findFirst({
+        where: { 
+          id: clientId,
+          businessId: req.user.businessId
+        }
+      })
+
+      if (!clientExists) {
+        return res.status(400).json({ error: 'Invalid client ID for this business' })
+      }
+
+      const project = await prisma.project.create({
+        data: {
+          name,
+          status,
+          details,
+          externalId,
+          clientId,
+          businessId: req.user.businessId
+        },
+        include: {
+          client: true
+        }
+      })
+      res.status(201).json(project)
+    } catch (error) {
+      console.error('Error creating project:', error)
+      res.status(500).json({ error: 'Failed to create project' })
+    }
+  }
+)
+
+router.put('/projects/:projectId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+  const { projectId } = req.params
   const data = projectSchema.parse(req.body)
   
   const project = await prisma.project.update({
-    where: { id: projectId as string },
+    where: { id: projectId },
     data,
-    include: {
-      client: true,
-      integration: true
-    }
+    include: projectInclude
   })
   res.json(project)
 })
 
-router.delete('/projects/:projectId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const { projectId } = req.query
+router.delete('/projects/:projectId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+  const { projectId } = req.params
   await prisma.project.delete({
-    where: { id: projectId as string }
+    where: { id: projectId }
   })
   res.status(204).end()
 })
 
 // Integration Management Routes (Enterprise only)
-router.get('/integrations', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const session = await getSession({ req })
+router.get('/integrations', requireAuth, requirePlan('ENTERPRISE'), async (req: AuthenticatedRequest, res) => {
   const integrations = await prisma.integration.findMany({
-    where: { businessId: session?.user?.businessId }
+    where: { businessId: req.user.businessId }
   })
   res.json(integrations)
 })
 
-router.post('/integrations', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const session = await getSession({ req })
-  const data = integrationSchema.parse(req.body)
-  
-  const integration = await prisma.integration.create({
-    data: {
-      ...data,
-      businessId: session?.user?.businessId
-    }
-  })
-  res.json(integration)
-})
+router.post(
+  '/integrations',
+  validateRequest(integrationSchema),
+  requireAuth,
+  requirePlan('ENTERPRISE'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const { type, apiKey, webhookSecret, settings, isEnabled } = req.body
 
-router.put('/integrations/:integrationId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const { integrationId } = req.query
+      if (!type) {
+        return res.status(400).json({ error: 'Integration type is required' })
+      }
+
+      // Validate integration type
+      const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS']
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ 
+          error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
+        })
+      }
+
+      const integration = await prisma.integration.create({
+        data: {
+          type,
+          apiKey,
+          webhookSecret,
+          settings,
+          isEnabled: isEnabled ?? false,
+          businessId: req.user.businessId
+        }
+      })
+      res.status(201).json(integration)
+    } catch (error) {
+      console.error('Error creating integration:', error)
+      res.status(500).json({ error: 'Failed to create integration' })
+    }
+  }
+)
+
+router.put('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+  const { integrationId } = req.params
   const data = integrationSchema.parse(req.body)
   
   const integration = await prisma.integration.update({
-    where: { id: integrationId as string },
+    where: { id: integrationId },
     data
   })
   res.json(integration)
 })
 
-router.delete('/integrations/:integrationId', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const { integrationId } = req.query
+router.delete('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
+  const { integrationId } = req.params
   await prisma.integration.delete({
-    where: { id: integrationId as string }
+    where: { id: integrationId }
   })
   res.status(204).end()
 })
 
 // Manual sync trigger (Enterprise only)
-router.post('/integrations/sync-now', requireSubscription(SubscriptionTier.ENTERPRISE), async (req, res) => {
-  const session = await getSession({ req })
+router.post('/integrations/sync-now', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
   const { integrationId } = req.query
   
   const integration = await prisma.integration.findUnique({
@@ -1091,7 +1165,6 @@ router.post('/integrations/sync-now', requireSubscription(SubscriptionTier.ENTER
     return res.status(404).json({ error: 'Integration not found' })
   }
   
-  // Trigger sync based on integration type
   try {
     switch (integration.type) {
       case 'ASANA':
@@ -1133,4 +1206,4 @@ async function syncTrelloProjects(integration: Integration) {
   // and update the local database
 }
 
-export default router.handler() 
+export default router 

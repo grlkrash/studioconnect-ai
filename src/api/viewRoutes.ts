@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { authMiddleware } from './authMiddleware'
-import { prisma } from '../services/db'
+import { requireAuth, AuthenticatedRequest } from './authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
+import { prisma } from '../services/db'
 
 const router = Router()
 
@@ -13,60 +13,43 @@ router.get('/login', (req, res) => {
 })
 
 // Protected dashboard route
-router.get('/dashboard', authMiddleware, async (req, res) => {
+router.get('/dashboard', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    if (!req.user) {
-      // This should ideally be handled by authMiddleware redirecting for views
-      // or a dedicated view auth middleware.
-      return res.redirect('/admin/login');
-    }
-
-    // Fetch the full user details, AND INCLUDE the related business
     const userWithBusiness = await prisma.user.findUnique({
       where: { id: req.user.userId },
       include: {
-        business: true, // This line is key!
-      },
-    });
+        business: true
+      }
+    })
 
     if (!userWithBusiness) {
-      console.error('Dashboard: User from token not found in DB:', req.user.userId);
-      return res.redirect('/admin/login');
+      console.error('Dashboard: User from token not found in DB:', req.user.userId)
+      return res.redirect('/admin/login')
     }
 
-    // Now userWithBusiness contains user details AND userWithBusiness.business has the business info
     res.render('dashboard', {
-      user: userWithBusiness, // Pass the user object which now includes the business
-    });
-
+      user: userWithBusiness
+    })
   } catch (error) {
-    console.error("Error rendering dashboard:", error);
-    return res.status(500).send("Error loading dashboard.");
+    console.error("Error rendering dashboard:", error)
+    return res.status(500).send("Error loading dashboard.")
   }
 })
 
 // Protected agent settings route
-router.get('/settings', authMiddleware, async (req, res) => {
+router.get('/settings', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    // authMiddleware ensures req.user exists, but TypeScript needs assurance
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    // Get businessId from authenticated user
     const businessId = req.user.businessId
     
-    // Fetch Business for plan tier checking
-    const business = await prisma.business.findUnique({
-      where: { id: businessId }
-    })
+    const [business, agentConfig] = await Promise.all([
+      prisma.business.findUnique({
+        where: { id: businessId }
+      }),
+      prisma.agentConfig.findUnique({
+        where: { businessId }
+      })
+    ])
     
-    // Fetch AgentConfig for this business
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId }
-    })
-    
-    // Render the agent settings page
     res.render('agent-settings', {
       agentConfig: agentConfig || null,
       business: business || null,
@@ -83,22 +66,18 @@ router.get('/settings', authMiddleware, async (req, res) => {
 })
 
 // Protected lead questions route
-router.get('/lead-questions', authMiddleware, async (req, res) => {
+router.get('/lead-questions', requireAuth, async (req, res) => {
   try {
-    // authMiddleware ensures req.user exists, but TypeScript needs assurance
     if (!req.user) {
       return res.status(401).redirect('/admin/login')
     }
     
-    // Get businessId from authenticated user
     const businessId = req.user.businessId
     
-    // Fetch AgentConfig for this business
     const agentConfig = await prisma.agentConfig.findUnique({
       where: { businessId }
     })
     
-    // Fetch all LeadCaptureQuestion records for this config
     const questions = agentConfig 
       ? await prisma.leadCaptureQuestion.findMany({ 
           where: { configId: agentConfig.id }, 
@@ -106,7 +85,6 @@ router.get('/lead-questions', authMiddleware, async (req, res) => {
         }) 
       : []
     
-    // Render the lead questions page
     res.render('lead-questions', { 
       questions, 
       user: req.user 
@@ -121,23 +99,13 @@ router.get('/lead-questions', authMiddleware, async (req, res) => {
 })
 
 // Protected knowledge base route
-router.get('/knowledge-base', authMiddleware, async (req, res) => {
+router.get('/knowledge-base', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    // authMiddleware ensures req.user exists, but TypeScript needs assurance
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    // Get businessId from authenticated user
-    const businessId = req.user.businessId
-    
-    // Fetch all KnowledgeBase records for this business
     const knowledgeEntries = await prisma.knowledgeBase.findMany({ 
-      where: { businessId }, 
+      where: { businessId: req.user.businessId }, 
       orderBy: { createdAt: 'desc' } 
     })
     
-    // Render the knowledge base page
     res.render('knowledge-base', { 
       knowledgeEntries, 
       user: req.user 
@@ -152,23 +120,13 @@ router.get('/knowledge-base', authMiddleware, async (req, res) => {
 })
 
 // Protected leads route
-router.get('/leads', authMiddleware, async (req, res) => {
+router.get('/leads', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    // authMiddleware ensures req.user exists, but TypeScript needs assurance
-    if (!req.user) {
-      return res.status(401).redirect('/admin/login')
-    }
-    
-    // Get businessId from authenticated user
-    const businessId = req.user.businessId
-    
-    // Fetch all Lead records for this business
     const leads = await prisma.lead.findMany({ 
-      where: { businessId }, 
+      where: { businessId: req.user.businessId }, 
       orderBy: { createdAt: 'desc' } 
     })
     
-    // Render the view leads page
     res.render('view-leads', { 
       leads, 
       user: req.user 
@@ -183,17 +141,14 @@ router.get('/leads', authMiddleware, async (req, res) => {
 })
 
 // Protected notification settings route
-router.get('/notifications', authMiddleware, async (req, res) => {
+router.get('/notifications', requireAuth, async (req, res) => {
   try {
-    // authMiddleware ensures req.user exists, but TypeScript needs assurance
     if (!req.user) {
       return res.status(401).redirect('/admin/login')
     }
     
-    // Get businessId from authenticated user
     const businessId = req.user.businessId
     
-    // Fetch business notification settings
     const business = await prisma.business.findUnique({
       where: { id: businessId },
       select: {
@@ -212,7 +167,6 @@ router.get('/notifications', authMiddleware, async (req, res) => {
       })
     }
     
-    // Render the notification settings page
     res.render('notification-settings', { 
       business, 
       user: req.user,
@@ -228,7 +182,7 @@ router.get('/notifications', authMiddleware, async (req, res) => {
 })
 
 // Protected clients route
-router.get('/clients', authMiddleware, async (req, res) => {
+router.get('/clients', requireAuth, async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).redirect('/admin/login')
@@ -260,7 +214,7 @@ router.get('/clients', authMiddleware, async (req, res) => {
 })
 
 // Protected projects route - Enterprise plan only
-router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req, res) => {
+router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).redirect('/admin/login')
@@ -273,8 +227,7 @@ router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req, r
       where: { businessId }, 
       orderBy: { createdAt: 'desc' },
       include: {
-        client: true, // Include related client
-        tasks: true // Include related tasks
+        client: true // Include related client
       }
     })
     
@@ -293,7 +246,7 @@ router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req, r
 })
 
 // Protected integrations route - Enterprise plan only
-router.get('/integrations', authMiddleware, requirePlan('ENTERPRISE'), async (req, res) => {
+router.get('/integrations', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).redirect('/admin/login')
@@ -301,7 +254,6 @@ router.get('/integrations', authMiddleware, requirePlan('ENTERPRISE'), async (re
     
     const businessId = req.user.businessId
     
-    // Fetch integration settings for this business
     const integrations = await prisma.integration.findMany({ 
       where: { businessId }, 
       orderBy: { createdAt: 'desc' }

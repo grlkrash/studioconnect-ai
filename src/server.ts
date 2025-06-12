@@ -6,6 +6,7 @@ import path from 'path'
 import fs from 'fs'
 import http from 'http'
 import OpenAI from 'openai'
+import { UserPayload } from './api/authMiddleware'
 
 // Load environment variables
 dotenv.config()
@@ -94,10 +95,32 @@ const corsOptions = {
 // Apply CORS middleware first
 app.use(cors(corsOptions))
 
-// Then other middleware
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true }))
+// Body parsing middleware - MUST BE BEFORE ROUTES
+app.use(express.json({ 
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    try {
+      JSON.parse(buf.toString())
+    } catch (e) {
+      res.status(400).json({ error: 'Invalid JSON' })
+      throw new Error('Invalid JSON')
+    }
+  }
+}))
+app.use(express.urlencoded({ 
+  extended: true,
+  limit: '10mb'
+}))
 app.use(cookieParser())
+
+// Type augmentation for Express Request
+declare global {
+  namespace Express {
+    interface Request {
+      user?: UserPayload
+    }
+  }
+}
 
 // Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
 app.post('/test-voice', (req, res) => {

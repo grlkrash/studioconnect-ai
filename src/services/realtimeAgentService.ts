@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import twilio from 'twilio';
+import twilio, { Twilio } from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
@@ -11,7 +11,6 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
-import { Twilio } from 'twilio';
 import { getBusinessWelcomeMessage } from '../services/businessService';
 import { getClientByPhoneNumber } from '../services/clientService';
 
@@ -39,7 +38,7 @@ interface ConnectionState {
   businessId: string;
   fromPhoneNumber?: string;
   clientId?: string;
-  conversationHistory: Array<{ role: string; content: string }>;
+  conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>;
 }
 
 interface Question {
@@ -84,7 +83,7 @@ const activeAgents = new Map<string, AgentState>();
 let cleanupInterval: NodeJS.Timeout;
 
 // Initialize cleanup interval
-function startCleanupInterval() {
+function startCleanupInterval(): void {
   if (cleanupInterval) clearInterval(cleanupInterval);
   
   cleanupInterval = setInterval(() => {
@@ -116,14 +115,14 @@ function startCleanupInterval() {
 startCleanupInterval();
 
 // Helper functions
-function logMemoryUsage(context: string) {
+function logMemoryUsage(context: string): void {
   const usage = process.memoryUsage();
-  const formatBytes = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
+  const formatBytes = (bytes: number): number => Math.round(bytes / 1024 / 1024 * 100) / 100;
   
   console.log(`[Memory ${context}] RSS: ${formatBytes(usage.rss)}MB, Heap Used: ${formatBytes(usage.heapUsed)}MB`);
 }
 
-async function cleanupTempFile(filePath: string) {
+async function cleanupTempFile(filePath: string): Promise<void> {
   try {
     if (fs.existsSync(filePath)) {
       await fs.promises.unlink(filePath);
@@ -142,6 +141,7 @@ export class RealtimeAgentService {
   private static instance: RealtimeAgentService;
   private connections: Map<string, ConnectionState>;
   private twilioClient: Twilio;
+  private callSid: string | null = null;
 
   private constructor() {
     this.connections = new Map();
@@ -158,7 +158,11 @@ export class RealtimeAgentService {
     return RealtimeAgentService.instance;
   }
 
-  public async handleNewConnection(ws: WebSocket, params: URLSearchParams) {
+  public getCallSid(): string | null {
+    return this.callSid;
+  }
+
+  public async handleNewConnection(ws: WebSocket, params: URLSearchParams): Promise<void> {
     const callSid = params.get('callSid');
     const businessId = params.get('businessId');
     const fromPhoneNumber = params.get('fromPhoneNumber');
@@ -169,6 +173,7 @@ export class RealtimeAgentService {
       return;
     }
 
+    this.callSid = callSid;
     console.log(`[REALTIME AGENT] New connection for call ${callSid} to business ${businessId}`);
 
     // Initialize connection state
@@ -220,14 +225,13 @@ export class RealtimeAgentService {
     }
   }
 
-  private setupTwilioListeners(state: ConnectionState) {
+  private setupTwilioListeners(state: ConnectionState): void {
     const { callSid, businessId, clientId } = state;
 
     // Handle start event
     this.twilioClient.calls(callSid)
       .on('start', async () => {
         console.log(`[REALTIME AGENT] Call ${callSid} started`);
-        // State is already initialized with businessId and callSid
       });
 
     // Handle media stream
@@ -252,8 +256,8 @@ export class RealtimeAgentService {
           );
 
           // Keep conversation history at a reasonable size
-          if (state.conversationHistory.length > 10) {
-            state.conversationHistory = state.conversationHistory.slice(-10);
+          if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
+            state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY);
           }
 
           this.sendTwilioMessage(callSid, response.reply);
@@ -267,39 +271,41 @@ export class RealtimeAgentService {
     this.twilioClient.calls(callSid)
       .on('end', () => {
         console.log(`[REALTIME AGENT] Call ${callSid} ended`);
-        this.cleanupConnection(callSid);
+        this.cleanup(callSid);
       });
   }
 
-  private setupWebSocketListeners(state: ConnectionState) {
+  private setupWebSocketListeners(state: ConnectionState): void {
     const { ws, callSid } = state;
 
     ws.on('close', () => {
       console.log(`[REALTIME AGENT] WebSocket closed for call ${callSid}`);
-      this.cleanupConnection(callSid);
+      this.cleanup(callSid);
     });
 
     ws.on('error', (error) => {
       console.error(`[REALTIME AGENT] WebSocket error for call ${callSid}:`, error);
-      this.cleanupConnection(callSid);
+      this.cleanup(callSid);
     });
   }
 
-  private cleanupConnection(callSid: string) {
-    const state = this.connections.get(callSid);
-    if (!state) return;
-
-    try {
-      state.ws.close();
-    } catch (error) {
-      console.error(`[REALTIME AGENT] Error closing WebSocket:`, error);
+  public cleanup(reason: string): void {
+    if (this.callSid) {
+      const state = this.connections.get(this.callSid);
+      if (state) {
+        try {
+          state.ws.close();
+        } catch (error) {
+          console.error(`[REALTIME AGENT] Error closing WebSocket:`, error);
+        }
+        this.connections.delete(this.callSid);
+        console.log(`[REALTIME AGENT] Cleaned up connection for call ${this.callSid}: ${reason}`);
+      }
     }
-
-    this.connections.delete(callSid);
-    console.log(`[REALTIME AGENT] Cleaned up connection for call ${callSid}`);
+    this.callSid = null;
   }
 
-  private sendTwilioMessage(callSid: string, message: string) {
+  private sendTwilioMessage(callSid: string, message: string): void {
     try {
       this.twilioClient.calls(callSid)
         .update({ twiml: `<Response><Say>${message}</Say></Response>` });

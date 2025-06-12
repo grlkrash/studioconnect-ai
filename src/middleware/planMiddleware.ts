@@ -1,63 +1,32 @@
 import { Request, Response, NextFunction } from 'express'
 import { PlanTier } from '@prisma/client'
-
-interface AuthenticatedRequest extends Request {
-  user: {
-    id: string
-    businessId: string
-    business: {
-      planTier: PlanTier
-    }
-  }
-}
+import { AuthenticatedRequest } from '../api/authMiddleware'
 
 export class PlanManager {
-  static readonly PLAN_HIERARCHY = {
-    PRO: 1,
-    ENTERPRISE: 2
-  }
-
   static isPlanSufficient(userPlan: PlanTier, requiredPlan: PlanTier): boolean {
-    return this.PLAN_HIERARCHY[userPlan] >= this.PLAN_HIERARCHY[requiredPlan]
-  }
-
-  static getAvailableFeatures(planTier: PlanTier): string[] {
-    switch (planTier) {
-      case 'PRO':
-        return [
-          'chat_widget',
-          'voice_agent',
-          'premium_voices',
-          'emergency_voice_calls',
-          'basic_analytics',
-          'session_management',
-          'voice_configuration',
-          'priority_support'
-        ]
-      
-      case 'ENTERPRISE':
-        return [
-          'all_pro_features',
-          'project_management_integration',
-          'client_management',
-          'advanced_analytics',
-          'branding_removal',
-          'custom_integrations',
-          'dedicated_support',
-          'team_collaboration'
-        ]
-      
-      default:
-        return []
+    const planHierarchy = {
+      FREE: 0,
+      PRO: 1,
+      ENTERPRISE: 2
     }
+    return planHierarchy[userPlan] >= planHierarchy[requiredPlan]
   }
 
-  static canAccessVoiceFeatures(planTier: PlanTier): boolean {
-    return planTier === 'PRO' || planTier === 'ENTERPRISE'
+  static canAccessVoiceFeatures(plan: PlanTier): boolean {
+    return plan === 'PRO' || plan === 'ENTERPRISE'
   }
 
-  static shouldShowBranding(planTier: PlanTier): boolean {
-    return planTier !== 'ENTERPRISE'
+  static getAvailableFeatures(plan: PlanTier): string[] {
+    const features = {
+      FREE: ['Basic Chat', 'Knowledge Base'],
+      PRO: ['Basic Chat', 'Knowledge Base', 'Voice Calls', 'Custom Branding'],
+      ENTERPRISE: ['Basic Chat', 'Knowledge Base', 'Voice Calls', 'Custom Branding', 'Project Management', 'API Access']
+    }
+    return features[plan]
+  }
+
+  static shouldShowBranding(plan: PlanTier): boolean {
+    return plan === 'FREE'
   }
 }
 

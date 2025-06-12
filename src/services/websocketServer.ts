@@ -29,8 +29,15 @@ export class TwilioWebSocketServer {
     this.wss.on('connection', (ws: WebSocket) => {
       console.log('[WebSocket Server] New Twilio connection established.');
 
-      const agent = new RealtimeAgentService();
-      agent.connect(ws);
+      // Get the singleton instance
+      const agent = RealtimeAgentService.getInstance();
+      
+      // Parse URL parameters
+      const url = new URL(ws.url || '', 'ws://localhost');
+      const params = url.searchParams;
+      
+      // Handle the new connection
+      agent.handleNewConnection(ws, params);
 
       const tempConnectionId = `temp_${Date.now()}`;
       this.activeConnections.set(tempConnectionId, {
@@ -38,15 +45,6 @@ export class TwilioWebSocketServer {
         createdAt: new Date(),
         lastPing: new Date(),
       });
-
-      agent.onCallSidReceived = (callSid: string) => {
-        const state = this.activeConnections.get(tempConnectionId);
-        if (state) {
-          this.activeConnections.delete(tempConnectionId);
-          this.activeConnections.set(callSid, state);
-          console.log(`[WebSocket Server] Audio bridge established for call: ${callSid}`);
-        }
-      };
 
       ws.on('close', () => {
         const callSid = agent.getCallSid();
@@ -86,7 +84,7 @@ export class TwilioWebSocketServer {
     const state = this.activeConnections.get(key);
     if (state) {
       this.log(`Cleaning up connection ${key}: ${reason}`);
-      state.agent.cleanup('WebSocket Server');
+      state.agent.cleanup(reason);
       this.activeConnections.delete(key);
     }
   }

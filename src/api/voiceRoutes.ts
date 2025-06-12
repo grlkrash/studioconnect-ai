@@ -3,13 +3,14 @@ import twilio from 'twilio'
 import { RealtimeAgentService } from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
 import { getBusinessIdFromPhoneNumber } from '../services/businessService'
+import { requireAuth, AuthenticatedRequest } from './authMiddleware'
+import { requirePlan } from '../middleware/planMiddleware'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
 
 // Custom Twilio request validation middleware
-const customValidateTwilioRequest = (req: any, res: any, next: any) => {
-  // Only validate in production
+const validateTwilioRequest = (req: any, res: any, next: any) => {
   if (process.env.NODE_ENV !== 'production') return next()
 
   const authToken = process.env.TWILIO_AUTH_TOKEN
@@ -33,7 +34,7 @@ const customValidateTwilioRequest = (req: any, res: any, next: any) => {
 }
 
 // POST /incoming - Handle incoming Twilio voice calls (Real-time Media Stream)
-router.post('/incoming', customValidateTwilioRequest, async (req, res) => {
+router.post('/incoming', validateTwilioRequest, async (req, res) => {
   try {
     const callSid = req.body.CallSid
     const toPhoneNumber = req.body.To
@@ -123,7 +124,7 @@ router.get('/status', async (req, res) => {
 })
 
 // POST /fallback-handler - Standard Twilio TwiML fallback handler
-router.post('/fallback-handler', customValidateTwilioRequest, async (req, res) => {
+router.post('/fallback-handler', validateTwilioRequest, async (req, res) => {
   try {
     const twiml = new VoiceResponse()
     const speechResult = req.body.SpeechResult
@@ -168,6 +169,53 @@ router.post('/fallback-handler', customValidateTwilioRequest, async (req, res) =
     twiml.say({ voice: 'alice' }, 'We\'re experiencing technical difficulties. Please try your call again later.')
     res.type('text/xml')
     res.send(twiml.toString())
+  }
+})
+
+// Voice call handling routes
+router.post('/call', validateTwilioRequest, async (req, res) => {
+  const twiml = new VoiceResponse()
+  
+  try {
+    const businessId = await getBusinessIdFromPhoneNumber(req.body.To)
+    if (!businessId) {
+      twiml.say('Sorry, this number is not configured for voice calls.')
+      twiml.hangup()
+      return res.type('text/xml').send(twiml.toString())
+    }
+
+    // Start the call with the AI agent
+    twiml.say('Welcome to our AI assistant. Please wait while we connect you.')
+    twiml.connect().stream({
+      url: `wss://${req.headers.host}/voice/stream/${businessId}`
+    })
+
+    res.type('text/xml').send(twiml.toString())
+  } catch (error) {
+    console.error('Error in voice call handling:', error)
+    twiml.say('Sorry, there was an error processing your call.')
+    twiml.hangup()
+    res.type('text/xml').send(twiml.toString())
+  }
+})
+
+// Protected voice settings route
+router.get('/settings', requireAuth, requirePlan('PRO'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const voiceConfig = await prisma.voiceConfig.findUnique({
+      where: { businessId: req.user.businessId }
+    })
+
+    res.render('voice-settings', {
+      voiceConfig: voiceConfig || null,
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error fetching voice config:', error)
+    res.status(500).render('error', {
+      message: 'Failed to load voice settings',
+      user: req.user
+    })
   }
 })
 

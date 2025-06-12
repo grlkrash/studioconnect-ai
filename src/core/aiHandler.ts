@@ -5,6 +5,9 @@ import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirma
 import { LeadCaptureQuestion, PlanTier } from '@prisma/client'
 import VoiceSessionService from '../services/voiceSessionService'
 import twilio from 'twilio'
+import { requireAuth } from '../api/authMiddleware'
+import { requirePlan } from '../middleware/planMiddleware'
+import { validateRequest } from '../middleware/validateRequest'
 
 // Extend the LeadCaptureQuestion type to include isEssentialForEmergency
 type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
@@ -49,6 +52,12 @@ const DEFAULT_EMERGENCY_QUESTIONS: Omit<ExtendedLeadCaptureQuestion, 'id' | 'con
 
 // Add new nextAction type
 type NextAction = 'CONTINUE' | 'HANGUP' | 'TRANSFER' | 'VOICEMAIL' | 'AWAITING_CALLBACK_CONFIRMATION';
+
+// Add type for client lookup
+type ClientLookup = {
+  businessId: string
+  phone: string
+}
 
 /**
  * Creates a refined system prompt for natural voice interactions with strict business rules
@@ -519,6 +528,15 @@ const getCallerId = async (callSid: string): Promise<string | null> => {
 }
 
 /**
+ * Determines the next voice action based on intent and current flow
+ */
+const determineNextVoiceAction = (intent: string, currentFlow: string | null): NextAction => {
+  if (intent === 'END_CALL') return 'HANGUP'
+  if (currentFlow === 'EMERGENCY_ESCALATION_OFFER') return 'TRANSFER'
+  return 'CONTINUE'
+}
+
+/**
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
@@ -575,7 +593,7 @@ export const processMessage = async (
     if (callSid) {
       fromNumber = await getCallerId(callSid)
       if (fromNumber) {
-        client = await prisma.client.findUnique({ 
+        client = await prisma.client.findFirst({ 
           where: { 
             businessId,
             phone: fromNumber 
@@ -659,14 +677,14 @@ export const processMessage = async (
       const projectQueryPrompt = `The client (${client?.name}) is asking about a project. What specific project are they asking about? If unclear, ask a clarifying question.
       Client message: "${message}"
       Respond with only the project name (e.g., "Website Redesign") or "UNCLEAR" if you cannot determine the project.`
-      const projectName = cleanVoiceResponse(await getChatCompletion(projectQueryPrompt, "You are a project name extraction expert."))
+      const projectName = cleanVoiceResponse(await getChatCompletion(projectQueryPrompt, "You are a project name extraction expert.") || '')
 
       if (projectName === 'UNCLEAR' || !projectName) {
         return {
-          reply: `I can help with project updates. Could you please tell me which project you're asking about, for example, your "Website Redesign" or "Branding Campaign"?`,
-          currentFlow: 'PROJECT_STATUS_CLARIFYING',
+          reply: "I'm not sure how to help with that. Would you like me to connect you with our team?",
+          currentFlow: 'NEW_LEAD_QUALIFICATION',
           showBranding,
-          nextAction: determineNextVoiceAction('PROJECT_STATUS_INQUIRY', 'PROJECT_STATUS_CLARIFYING')
+          nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
         }
       }
 
@@ -753,44 +771,20 @@ export const processMessage = async (
         const rawResponse = await getChatCompletion(faqUserPrompt, voiceSystemPrompt)
         const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null
         return {
-          reply: cleanedResponse || "I'm having trouble finding that specific information. Is there anything else I can help with?",
+          reply: cleanedResponse || "I'm having trouble finding that specific information. Could you rephrase your question?",
           currentFlow: null,
           showBranding,
           nextAction: determineNextVoiceAction('AGENCY_GENERAL_FAQ', null)
         }
       } else {
         return {
-          reply: "I couldn't find a specific answer to that. Would you like me to take down your contact information so someone from our team can get back to you with the answer you need?",
+          reply: "I couldn't find a specific answer to that in our agency knowledge base. Can I get a message to our team to follow up with you on this?",
           currentFlow: 'NEW_LEAD_QUALIFICATION',
           showBranding,
           nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
         }
       }
-    } else if (intent === 'END_CALL') {
-      console.log('Entering END_CALL flow...')
-      
-      // Use custom end call message if available, otherwise use default
-      let endCallMessage = agentConfig?.voiceEndCallMessage || 
-        "Thank you for contacting us! Have a great day and feel free to reach out anytime if you need assistance. Goodbye!"
-      
-      // Replace {businessName} template variable if present
-      if (business?.name) {
-        endCallMessage = endCallMessage.replace(/\{businessName\}/gi, business.name)
-      }
-      
-      return { 
-        reply: endCallMessage,
-        currentFlow: null,
-        showBranding,
-        nextAction: 'HANGUP'
-      }
-    } else {
-      // OTHER/Fallback Flow (handle generic greetings, unclear queries)
-      // ... (existing OTHER/fallback logic remains)
     }
-
-    // ... (rest of the function remains unchanged)
-
   } catch (error) {
     console.error('Error in processMessage:', error)
     return {
@@ -800,7 +794,15 @@ export const processMessage = async (
       nextAction: 'HANGUP'
     }
   }
-} 
+  
+  // Default return if no other conditions are met
+  return {
+    reply: "I'm not sure how to help with that. Would you like me to connect you with our team?",
+    currentFlow: 'NEW_LEAD_QUALIFICATION',
+    showBranding: true,
+    nextAction: 'CONTINUE'
+  }
+}
 
 /**
  * Generate a graceful, empathetic recovery response for critical voice processing errors
@@ -817,5 +819,4 @@ export const generateRecoveryResponse = (): string => {
   // Return a random recovery message for more natural variation
   const randomIndex = Math.floor(Math.random() * recoveryMessages.length)
   return recoveryMessages[randomIndex]
-} 
-} 
+}
