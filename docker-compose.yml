@@ -1,6 +1,6 @@
 services:
   app:
-    container_name: leads-support-agent-app
+    container_name: studioconnect-ai-app
     # Build the image from the Dockerfile in the current directory (.)
     build: .
     ports:
@@ -34,7 +34,7 @@ services:
     command: sh -c "yarn prisma:generate && yarn dev"
 
   db:
-    container_name: leads-support-agent-db
+    container_name: studioconnect-ai-db
     # Use an image that comes with PostgreSQL and pgvector pre-installed
     image: pgvector/pgvector:pg16 
     ports:

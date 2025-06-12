@@ -1,13 +1,14 @@
 {
-  "name": "leads-support-agent-smb",
+  "name": "studioconnect-ai",
   "version": "1.0.0",
-  "description": "",
+  "description": "AI-powered client communication and lead qualification platform for creative agencies",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"No tests specified for StudioConnect AI yet\" && exit 0",
     "dev": "nodemon src/server.ts",
     "build": "npx prisma generate && tsc",
     "start": "node dist/server.js",
+    "start:prod": "NODE_ENV=production node dist/server.js",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:generate": "npx prisma generate"
   },

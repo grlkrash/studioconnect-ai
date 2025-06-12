@@ -1,36 +1,35 @@
-# AI Agent Assistant for SMBs
-**Version 4.2** | *OpenAI Realtime API & WebSocket Implementation*
+# StudioConnect AI
+**Version 1.0** | *AI-powered Client Communication for Creative Agencies*
 
 ## Overview
-Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Businesses, featuring OpenAI Realtime API integration, bidirectional audio streaming, and plan-based feature tiers.
+StudioConnect AI transforms client communication from an operational bottleneck into a competitive advantage for creative agencies. Our platform starts as a professional front door for lead capture and evolves into an AI Account Manager that handles client service inquiries autonomously, deeply integrated with your agency's workflow.
 
 ## Key Features
 
-### Advanced Voice Agent System
-- **🎵 Dynamic Audio Processing**: Real-time speech-to-speech with OpenAI's `gpt-4o-realtime-preview-2024-10-01` model
-- **🎯 Voice Activity Detection**: Server-side VAD with intelligent interruption handling
-- **🔄 WebSocket Architecture**: Low-latency audio bridge between Twilio and OpenAI
-- **🎙️ Dynamic Business Greetings**: Context-aware greeting generation
+### PRO Plan: AI Studio Manager
+- **🎯 24/7 Lead Capture**: Professional handling of all inbound calls
+- **🎙️ Customizable Voice & Persona**: Brand-aligned AI communication
+- **📝 Lead Qualification**: Configurable question flows for potential clients
+- **📧 Call Summaries**: Email notifications with transcripts and lead details
+
+### ENTERPRISE Plan: AI Account Manager
+- **🔄 Project Management Integration**: One-way sync with Asana/Jira
+- **📊 Real-time Project Updates**: Webhook-based status synchronization
+- **👥 Client Recognition**: Personalized experience for existing clients
+- **📚 Knowledge Base**: Custom FAQ for agency-specific information
+- **🎵 Dynamic Audio Processing**: Real-time speech-to-speech with OpenAI
+- **🎯 Voice Activity Detection**: Intelligent interruption handling
+- **🔄 WebSocket Architecture**: Low-latency audio bridge
 
 ### Session Management
 - **💾 Redis with Fallback**: Primary Redis storage with in-memory fallback
-- **📊 Basic Analytics**: Session tracking and metrics
-- **🔍 Health Monitoring**: Redis connectivity checks and status reporting
-
-### Plan-Based Feature Tiers
-- **FREE**: Basic chat functionality
-- **BASIC**: Enhanced lead capture
-- **PRO**: Full voice agent access
-
-### Enhanced Emergency System
-- **🚨 Cross-Channel Detection**: Works across chat and voice
-- **📞 Priority Notifications**: Real-time voice alerts for emergencies
-- **📝 Context Preservation**: Full conversation history maintained
+- **📊 Advanced Analytics**: Project-specific metrics and client insights
+- **🔍 Health Monitoring**: System-wide status tracking
 
 ### Production-Ready Infrastructure
 - **🔧 Health Monitoring**: System status tracking
-- **🧹 Resource Management**: Basic cleanup systems
-- **📈 Performance Tracking**: WebSocket metrics
+- **🧹 Resource Management**: Automatic cleanup systems
+- **📈 Performance Tracking**: WebSocket and PM tool metrics
 
 ## Technology Stack
 - **Runtime**: Node.js 20.x
@@ -41,6 +40,7 @@ Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Business
 - **ORM**: Prisma 5.x
 - **AI**: OpenAI Realtime API (`gpt-4o-realtime-preview-2024-10-01`)
 - **Voice**: Twilio Media Streams with bidirectional WebSocket
+- **PM Integration**: Asana/Jira API with webhook support
 - **Authentication**: JWT with plan-aware middleware
 - **View Engine**: EJS with plan-based conditional rendering
 - **Containerization**: Docker & Docker Compose
@@ -50,7 +50,7 @@ Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Business
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-│   SMB Website   │   │ Voice Callers   │   │ Admin Dashboard │
+│  Agency Website │   │ Voice Callers   │   │ Admin Dashboard │
 │   (widget.js)   │   │ (Twilio PSTN)   │   │  (EJS Views)    │
 └────────┬────────┘   └────────┬────────┘   └────────┬────────┘
          │                     │                     │
@@ -84,6 +84,12 @@ Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Business
                     │OpenAI Realtime  │◄──────────►│Twilio Media  │
                     │API (WebSocket)  │            │Streams (WS)  │
                     └─────────────────┘            └──────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Project Mgmt   │
+                    │  Integration    │
+                    │  (Asana/Jira)   │
+                    └─────────────────┘
 ```
 
 ## Quick Start
@@ -95,11 +101,12 @@ Advanced Voice-Enabled Multi-Channel Platform for Small to Medium-Sized Business
 - Redis 7.x
 - OpenAI API key with Realtime API access
 - Twilio account with voice capabilities and Media Streams
+- Asana/Jira account (for Enterprise plan)
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-org/leads-support-agent-smb.git
-cd leads-support-agent-smb
+git clone https://github.com/your-org/studioconnect-ai.git
+cd studioconnect-ai
 ```
 
 ### 2. Environment Setup
@@ -128,6 +135,11 @@ OPENAI_API_KEY="sk-your-key-here"
 TWILIO_ACCOUNT_SID="AC_your_account_sid"
 TWILIO_AUTH_TOKEN="your_auth_token"
 TWILIO_WEBHOOK_BASE_URL="https://your-domain.com"
+
+# Project Management Integration (Enterprise)
+ASANA_API_KEY="your_asana_api_key"
+JIRA_API_TOKEN="your_jira_api_token"
+JIRA_EMAIL="your_jira_email"
 
 # Email Notifications (SendGrid)
 SENDGRID_API_KEY="SG.your-sendgrid-api-key"
@@ -158,8 +170,9 @@ npm run dev
 
 ### 4. Access the Application
 - **Admin Dashboard**: http://localhost:3000/admin
-- **Notification Settings**: http://localhost:3000/admin/notifications
-- **Chat Widget Demo**: http://localhost:3000/demo
+- **Lead Capture Settings**: http://localhost:3000/admin/leads
+- **Project Integration**: http://localhost:3000/admin/integrations
+- **Knowledge Base**: http://localhost:3000/admin/knowledge
 - **Health Monitoring**: http://localhost:3000/health
 - **WebSocket Server**: ws://localhost:3000/ (for Twilio Media Streams)
 
@@ -196,18 +209,56 @@ setTimeout(() => {
 }, 300);
 ```
 
-**Features:**
-- Server-side Voice Activity Detection (VAD)
-- Intelligent interruption with 300ms confirmation delay
-- Noise filtering to prevent false interruptions
-- Configurable thresholds for speech detection
-- Automatic turn-taking based on silence duration
+### 📊 Project Management Integration
 
-**Dynamic Business Greetings:**
+**Asana/Jira Sync:**
 ```typescript
-// Context-aware greetings based on business configuration
-const greeting = await fetchBusinessGreeting(phoneNumber);
-await triggerAIGreeting(greeting); // AI speaks the greeting automatically
+// One-way sync of project data
+const projectSync = new ProjectSyncService(agencyId);
+await projectSync.syncProjects();
+
+// Webhook-based real-time updates
+app.post('/webhooks/asana', async (req, res) => {
+  await projectSync.handleWebhook(req.body);
+  res.status(200).send('OK');
+});
+```
+
+**Client Recognition:**
+```typescript
+// Identify existing clients by phone number
+const client = await clientService.identifyClient(phoneNumber);
+if (client) {
+  await aiService.setClientContext(client);
+}
+```
+
+### 🔔 Knowledge Base Management
+
+**Admin Panel Setup:**
+```bash
+# Navigate to knowledge base settings
+http://localhost:3000/admin/knowledge
+```
+
+**Configure Knowledge Base:**
+1. Add agency-specific FAQs
+2. Set up project status templates
+3. Configure billing information
+4. Add team member details
+
+**API Endpoints:**
+```typescript
+// Get knowledge base entries
+GET /api/admin/knowledge
+
+// Update knowledge base
+PUT /api/admin/knowledge
+{
+  "category": "billing",
+  "question": "When are invoices due?",
+  "answer": "Invoices are due within 30 days..."
+}
 ```
 
 ### 📊 Enterprise Session Management
@@ -291,17 +342,20 @@ GET /health
 
 ## 🎛️ Plan Tiers
 
-| Feature | FREE | BASIC | PRO |
-|---------|------|-------|-----|
-| Chat Widget | ✅ Basic | ✅ Enhanced | ✅ Full |
-| Lead Capture Questions | 5 max | Unlimited | Unlimited |
-| Voice Agent (Realtime) | ❌ | ❌ | ✅ Full |
-| OpenAI Realtime API | ❌ | ❌ | ✅ |
-| Emergency Voice Calls | ❌ | ❌ | ✅ |
-| Advanced Analytics | ❌ | Basic | ✅ Full |
-| Health Monitoring | ❌ | ❌ | ✅ Full |
-| WebSocket Monitoring | ❌ | ❌ | ✅ Full |
-| Branding | Visible | Visible | Hidden |
+| Feature | PRO | ENTERPRISE |
+|---------|-----|------------|
+| 24/7 Lead Capture | ✅ | ✅ |
+| Custom Voice & Persona | ✅ | ✅ |
+| Lead Qualification | ✅ | ✅ |
+| Call Summaries | ✅ | ✅ |
+| Project Management Integration | ❌ | ✅ |
+| Real-time Project Updates | ❌ | ✅ |
+| Client Recognition | ❌ | ✅ |
+| Knowledge Base | ❌ | ✅ |
+| Advanced Analytics | ❌ | ✅ |
+| Health Monitoring | ✅ | ✅ |
+| WebSocket Monitoring | ✅ | ✅ |
+| Branding | Visible | Hidden |
 
 ## 🔧 Development
 
@@ -318,6 +372,18 @@ npm run test:websocket
 
 # Test Redis session management
 npm run test:sessions
+```
+
+### Project Management Integration Testing
+```bash
+# Test Asana integration
+npm run test:asana
+
+# Test Jira integration
+npm run test:jira
+
+# Test webhook handling
+npm run test:webhooks
 ```
 
 ### Health Monitoring
@@ -352,6 +418,7 @@ npm run websocket:stats
 - **Cache**: Redis 7.x with persistence
 - **SSL**: HTTPS/WSS certificates for WebSocket support
 - **Voice**: Twilio account with Media Streams enabled
+- **PM Tools**: Asana/Jira API access (Enterprise plan)
 
 ### Environment Configuration
 ```bash
@@ -361,6 +428,7 @@ MAX_MEMORY_USAGE_MB=3072
 ENABLE_MEMORY_MONITORING=true
 REDIS_HEALTH_CHECK_INTERVAL=60000
 WEBSOCKET_PING_INTERVAL=30000
+PM_SYNC_INTERVAL=300000  # 5 minutes
 ```
 
 ### WebSocket Configuration
@@ -388,14 +456,14 @@ npm run test:realtime-integration
 npm run test:websocket
 ```
 
+### Project Management Integration Tests
+```bash
+npm run test:pm-integration
+```
+
 ### Session Management Tests
 ```bash
 npm run test:sessions
-```
-
-### Emergency Detection Tests
-```bash
-npm run test:emergency
 ```
 
 ## 📚 Documentation
@@ -406,6 +474,7 @@ npm run test:emergency
 - **[🎯 Configuration Guide](./docs/configuration.md)**: Environment and feature configuration
 - **[❤️ Health Monitoring Guide](./docs/health-monitoring.md)**: System monitoring and troubleshooting
 - **[🔌 WebSocket Guide](./docs/websocket.md)**: WebSocket implementation and troubleshooting
+- **[📊 PM Integration Guide](./docs/pm-integration.md)**: Project management tool integration guide
 
 ## 🤝 Contributing
 
@@ -421,32 +490,34 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/leads-support-agent-smb/issues)
-- **Documentation**: [Wiki](https://github.com/your-org/leads-support-agent-smb/wiki)
-- **Email**: support@your-company.com
+- **Issues**: [GitHub Issues](https://github.com/your-org/studioconnect-ai/issues)
+- **Documentation**: [Wiki](https://github.com/your-org/studioconnect-ai/wiki)
+- **Email**: support@studioconnect.ai
 
 ---
 
-## 🏆 Recent Updates (V4.2)
+## 🏆 Recent Updates (V1.0)
 
 ### ✨ New Features
-- **🔊 OpenAI Realtime API Integration**: Real-time bidirectional audio streaming
-- **🔌 WebSocket Architecture**: Low-latency voice communication
-- **🎯 Voice Activity Detection**: Server-side VAD with intelligent interruption handling
-- **📊 Enhanced Session Management**: Real-time session tracking with WebSocket monitoring
-- **🧠 Dynamic Greetings**: Context-aware business greetings with automatic AI delivery
-- **🔔 Notification Management System**: Complete admin panel for email and phone notification configuration
+- **🎯 AI Studio Manager**: Professional lead capture and qualification
+- **🔄 Project Management Integration**: One-way sync with Asana/Jira
+- **📊 Real-time Updates**: Webhook-based project status synchronization
+- **👥 Client Recognition**: Personalized experience for existing clients
+- **📚 Knowledge Base**: Custom FAQ for agency-specific information
+- **🎵 Dynamic Audio Processing**: Real-time speech-to-speech with OpenAI
+- **🎯 Voice Activity Detection**: Intelligent interruption handling
+- **🔄 WebSocket Architecture**: Low-latency voice communication
 
 ### 🚀 Performance Improvements
 - **Latency**: 70% reduction in voice response time with WebSocket streaming
-- **Voice Quality**: Enhanced with real-time audio processing and G.711 μ-law format
+- **Voice Quality**: Enhanced with real-time audio processing
 - **Session Reliability**: 99.9% uptime with WebSocket connection monitoring
-- **Memory Usage**: Optimized WebSocket connection management and cleanup
+- **Memory Usage**: Optimized WebSocket connection management
 
 ### 🛡️ Security Enhancements
 - **WebSocket Security**: Secure WebSocket connections with proper authentication
 - **Session Security**: Enhanced Redis configuration with WebSocket session tracking
-- **Connection Monitoring**: Real-time WebSocket connection health and status tracking
-- **Error Handling**: Comprehensive WebSocket error recovery and reconnection logic
+- **Connection Monitoring**: Real-time WebSocket connection health tracking
+- **Error Handling**: Comprehensive WebSocket error recovery
 
-*Built with ❤️ for Small and Medium-Sized Businesses*
+*Built with ❤️ for Creative Agencies*
