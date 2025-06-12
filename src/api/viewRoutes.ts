@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from './authMiddleware'
 import { prisma } from '../services/db'
+import { requirePlan } from '../middleware/planMiddleware'
 
 const router = Router()
 
@@ -221,6 +222,100 @@ router.get('/notifications', authMiddleware, async (req, res) => {
     console.error('Error fetching notification settings:', error)
     res.status(500).render('error', { 
       message: 'Failed to load notification settings',
+      user: req.user 
+    })
+  }
+})
+
+// Protected clients route
+router.get('/clients', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).redirect('/admin/login')
+    }
+    
+    const businessId = req.user.businessId
+    
+    // Fetch all clients for this business
+    const clients = await prisma.client.findMany({ 
+      where: { businessId }, 
+      orderBy: { createdAt: 'desc' },
+      include: {
+        projects: true // Include related projects
+      }
+    })
+    
+    res.render('clients', { 
+      clients, 
+      user: req.user,
+      successMessage: req.query.success
+    })
+  } catch (error) {
+    console.error('Error fetching clients:', error)
+    res.status(500).render('error', { 
+      message: 'Failed to load clients',
+      user: req.user 
+    })
+  }
+})
+
+// Protected projects route - Enterprise plan only
+router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).redirect('/admin/login')
+    }
+    
+    const businessId = req.user.businessId
+    
+    // Fetch all projects for this business
+    const projects = await prisma.project.findMany({ 
+      where: { businessId }, 
+      orderBy: { createdAt: 'desc' },
+      include: {
+        client: true, // Include related client
+        tasks: true // Include related tasks
+      }
+    })
+    
+    res.render('projects', { 
+      projects, 
+      user: req.user,
+      successMessage: req.query.success
+    })
+  } catch (error) {
+    console.error('Error fetching projects:', error)
+    res.status(500).render('error', { 
+      message: 'Failed to load projects',
+      user: req.user 
+    })
+  }
+})
+
+// Protected integrations route - Enterprise plan only
+router.get('/integrations', authMiddleware, requirePlan('ENTERPRISE'), async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).redirect('/admin/login')
+    }
+    
+    const businessId = req.user.businessId
+    
+    // Fetch integration settings for this business
+    const integrations = await prisma.integration.findMany({ 
+      where: { businessId }, 
+      orderBy: { createdAt: 'desc' }
+    })
+    
+    res.render('integrations', { 
+      integrations, 
+      user: req.user,
+      successMessage: req.query.success
+    })
+  } catch (error) {
+    console.error('Error fetching integrations:', error)
+    res.status(500).render('error', { 
+      message: 'Failed to load integrations',
       user: req.user 
     })
   }
