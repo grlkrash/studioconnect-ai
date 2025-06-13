@@ -2,6 +2,7 @@ import { Router, Response, Request } from 'express'
 import twilio from 'twilio'
 import { realtimeAgentService } from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
+import { asyncHandler } from '../utils/asyncHandler'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -11,21 +12,13 @@ const customValidateTwilioRequest = (req: Request, res: Response, next: () => vo
   // Only validate in production
   if (process.env.NODE_ENV !== 'production') return next()
 
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const twilioSignature = req.header('X-Twilio-Signature')
+  const authToken = process.env.TWILIO_AUTH_TOKEN!
+  const twilioSignature = req.header('X-Twilio-Signature')!
   const url = new URL(req.originalUrl, `https://${req.header('host')}`).toString()
-  const params = req.body
-
-  try {
-    const isValid = twilio.validateRequest(authToken!, twilioSignature!, url, params)
-    if (isValid) {
-      console.log('[Twilio Validation] Signature is valid.')
-      return next()
-    }
-  } catch (e) {
-    console.error('[Twilio Validation] Error during validation:', e)
-    res.status(403).send('Forbidden')
-    return
+  const isValid = twilio.validateRequest(authToken, twilioSignature, url, req.body)
+  if (isValid) {
+    console.log('[Twilio Validation] Signature is valid.')
+    return next()
   }
   
   console.warn('[Twilio Validation] Invalid signature.')
@@ -34,7 +27,7 @@ const customValidateTwilioRequest = (req: Request, res: Response, next: () => vo
 }
 
 // POST /incoming - Handle incoming Twilio voice calls (Real-time Media Stream)
-router.post('/incoming', customValidateTwilioRequest, async (req: Request, res: Response) => {
+router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
   try {
     const callSid = req.body.CallSid
     console.log(`[VOICE STREAM] Incoming call received: ${callSid}`)
@@ -77,10 +70,10 @@ router.post('/incoming', customValidateTwilioRequest, async (req: Request, res: 
     res.type('text/xml')
     res.status(500).send(response.toString()); return;
   }
-})
+}))
 
 // GET /status - Check voice system status
-router.get('/status', async (req: Request, res: Response) => {
+router.get('/status', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
   try {
     // Use the imported instance directly
     const status = realtimeAgentService.getConnectionStatus()
@@ -101,10 +94,10 @@ router.get('/status', async (req: Request, res: Response) => {
       timestamp: new Date().toISOString()
     }); return;
   }
-})
+}))
 
 // POST /fallback-handler - Standard Twilio TwiML fallback handler
-router.post('/fallback-handler', customValidateTwilioRequest, async (req: Request, res: Response) => {
+router.post('/fallback-handler', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
   try {
     const twiml = new VoiceResponse()
     const speechResult = req.body.SpeechResult
@@ -150,6 +143,6 @@ router.post('/fallback-handler', customValidateTwilioRequest, async (req: Reques
     res.type('text/xml')
     res.status(500).send(twiml.toString()); return;
   }
-})
+}))
 
 export default router 
