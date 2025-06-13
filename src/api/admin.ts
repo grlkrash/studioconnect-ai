@@ -13,13 +13,14 @@ import { z } from 'zod'
 import { createRouter } from 'next-connect'
 import { ParsedQs } from 'qs'
 import { ParamsDictionary } from 'express-serve-static-core'
+import { asyncHandler } from '../utils/asyncHandler'
 
 // Custom type for authenticated request handlers
 type AuthenticatedRequestHandler = (
   req: Request & { user?: UserPayload },
   res: Response,
   next: NextFunction
-) => Promise<void | Response>
+) => Promise<void>
 
 const router = Router()
 
@@ -155,27 +156,26 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         role: user.role
       }
-    })
+    });
+    return;
 
   } catch (error) {
     console.error('ERROR IN LOGIN ROUTE:', error)
     res.status(500).json({ 
       error: 'Internal server error during login' 
-    })
+    });
+    return;
   }
 })
 
 // NEW: Add a protected /me route
 router.get('/me', authMiddleware, (req: Request, res: Response): void => {
-  // If authMiddleware passes, req.user will be populated by our extended Request type
   if (!req.user) {
-    // This case should ideally be caught by authMiddleware sending a 401
-    // but it's good defensive programming.
     res.status(401).json({ error: 'Authentication failed or user details not found on request.' })
     return
   }
-  // Send back the user details that the middleware attached to req.user
   res.status(200).json({ currentUser: req.user })
+  return
 })
 
 // Get Agent Configuration
@@ -192,15 +192,18 @@ router.get('/config', authMiddleware, async (req: Request, res: Response): Promi
     // Check if configuration exists
     if (config) {
       res.status(200).json(config)
+      return;
     } else {
       res.status(404).json({ 
         error: 'Configuration not found. Please create one.' 
-      })
+      });
+      return;
     }
 
   } catch (error) {
     console.error('Error fetching agent configuration:', error)
     res.status(500).json({ error: 'Internal server error' })
+    return;
   }
 })
 
@@ -391,7 +394,7 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
 
     // Send back the newly created question with 201 status
     res.status(201).json(newQuestion)
-
+    return
   } catch (error) {
     console.error('Error creating lead capture question:', error)
     
@@ -406,9 +409,8 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
       }
     }
     
-    res.status(500).json({ 
-      error: 'Internal server error while creating lead capture question' 
-    })
+    res.status(500).json({ error: 'Internal server error while creating lead capture question' })
+    return
   }
 })
 
@@ -550,10 +552,12 @@ router.get('/business/notifications', authMiddleware, async (req: Request, res: 
 
     // Send back the business notification settings
     res.status(200).json(business)
+    return;
 
   } catch (error) {
     console.error('Error fetching business notification settings:', error)
     res.status(500).json({ error: 'Internal server error while fetching notification settings' })
+    return;
   }
 })
 
@@ -709,19 +713,25 @@ router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Re
 
 // Project Management Routes (Enterprise only)
 router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req: Request, res: Response): Promise<void> => {
-  const { clientId } = req.query
-  
-  const projects = await prisma.project.findMany({
-    where: {
-      businessId: req.user!.businessId,
-      ...(clientId && { clientId: clientId as string })
-    },
-    include: {
-      client: true
-    }
-  })
-  res.json(projects); return;
-})
+  try {
+    const { clientId } = req.query;
+    const projects = await prisma.project.findMany({
+      where: {
+        businessId: req.user!.businessId,
+        ...(clientId && { clientId: clientId as string })
+      },
+      include: {
+        client: true
+      }
+    });
+    res.json(projects);
+    return;
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ error: 'Failed to fetch projects' });
+    return;
+  }
+});
 
 router.post(
   '/projects',
@@ -731,26 +741,27 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
       }
 
-      const { name, status, clientId, details, externalId } = req.body
+      const { name, status, clientId, details, externalId } = req.body;
 
       if (!name || !status || !clientId) {
-        res.status(400).json({ error: 'Project name, status, and client ID are required' }); return;
+        res.status(400).json({ error: 'Project name, status, and client ID are required' });
+        return;
       }
 
-      // Verify client exists for the business
       const clientExists = await prisma.client.findFirst({
         where: { 
           id: clientId,
           businessId: req.user.businessId
         }
-      })
+      });
 
       if (!clientExists) {
-        res.status(400).json({ error: 'Invalid client ID for this business' }); return;
+        res.status(400).json({ error: 'Invalid client ID for this business' });
+        return;
       }
 
       const project = await prisma.project.create({
@@ -765,14 +776,16 @@ router.post(
         include: {
           client: true
         }
-      })
-      res.status(201).json(project); return;
+      });
+      res.status(201).json(project);
+      return;
     } catch (error) {
-      console.error('Error creating project:', error)
-      res.status(500).json({ error: 'Failed to create project' }); return;
+      console.error('Error creating project:', error);
+      res.status(500).json({ error: 'Failed to create project' });
+      return;
     }
   }
-)
+);
 
 router.get(
   '/projects/:projectId',
@@ -895,20 +908,22 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
       }
 
       const integrations = await prisma.integration.findMany({
         where: { businessId: req.user.businessId }
-      })
-      res.json(integrations); return;
+      });
+      res.json(integrations);
+      return;
     } catch (error) {
-      console.error('Error fetching integrations:', error)
-      res.status(500).json({ error: 'Failed to fetch integrations' }); return;
+      console.error('Error fetching integrations:', error);
+      res.status(500).json({ error: 'Failed to fetch integrations' });
+      return;
     }
   }
-)
+);
 
 router.post(
   '/integrations',
@@ -917,14 +932,15 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
       }
 
-      const { type, apiKey, webhookSecret, settings } = req.body
+      const { type, apiKey, webhookSecret, settings } = req.body;
 
       if (!type || !apiKey) {
-        res.status(400).json({ error: 'Integration type and API key are required' }); return;
+        res.status(400).json({ error: 'Integration type and API key are required' });
+        return;
       }
 
       const integration = await prisma.integration.create({
@@ -935,14 +951,16 @@ router.post(
           settings,
           businessId: req.user!.businessId
         }
-      })
-      res.status(201).json(integration); return;
+      });
+      res.status(201).json(integration);
+      return;
     } catch (error) {
-      console.error('Error creating integration:', error)
-      res.status(500).json({ error: 'Failed to create integration' }); return;
+      console.error('Error creating integration:', error);
+      res.status(500).json({ error: 'Failed to create integration' });
+      return;
     }
   }
-)
+);
 
 router.put(
   '/integrations/:integrationId',
@@ -1017,43 +1035,45 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
       }
 
-      const { integrationId } = req.query
+      const { integrationId } = req.query;
       
       const integration = await prisma.integration.findUnique({
         where: { id: integrationId as string }
-      })
+      });
       
       if (!integration) {
-        res.status(404).json({ error: 'Integration not found' })
-        return
+        res.status(404).json({ error: 'Integration not found' });
+        return;
       }
       
       switch (integration.type) {
         case 'ASANA':
-          await syncAsanaProjects(integration)
-          break
+          await syncAsanaProjects(integration);
+          break;
         case 'JIRA':
-          await syncJiraProjects(integration)
-          break
+          await syncJiraProjects(integration);
+          break;
         case 'TRELLO':
-          await syncTrelloProjects(integration)
-          break
+          await syncTrelloProjects(integration);
+          break;
         default:
-          res.status(400).json({ error: `Unsupported integration type: ${integration.type}` })
-          return
+          res.status(400).json({ error: `Unsupported integration type: ${integration.type}` });
+          return;
       }
       
-      res.json({ message: 'Sync initiated successfully' }); return;
+      res.json({ message: 'Sync initiated successfully' });
+      return;
     } catch (error) {
-      console.error('Sync error:', error)
-      res.status(500).json({ error: 'Failed to initiate sync' })
+      console.error('Sync error:', error);
+      res.status(500).json({ error: 'Failed to initiate sync' });
+      return;
     }
   }
-)
+);
 
 // Helper functions for sync operations
 async function syncAsanaProjects(integration: Integration) {
@@ -1083,82 +1103,88 @@ router.get('/business', authMiddleware, async (req: Request, res: Response): Pro
         users: true,
         agentConfig: true
       }
-    })
-    res.json(business); return;
+    });
+    res.json(business);
+    return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch business' }); return;
+    res.status(500).json({ error: 'Failed to fetch business' });
+    return;
   }
-})
+});
 
 router.put('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      res.status(401).json({ error: 'Unauthorized' })
-      return
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    const { name, planTier } = req.body
+    const { name, planTier } = req.body;
 
     if (!name) {
-      res.status(400).json({ error: 'Business name is required' })
-      return
+      res.status(400).json({ error: 'Business name is required' });
+      return;
     }
 
     const business = await prisma.business.update({
       where: { id: req.user.businessId },
       data: { name, planTier }
-    })
-    res.json(business); return;
+    });
+    res.json(business);
+    return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update business' }); return;
+    res.status(500).json({ error: 'Failed to update business' });
+    return;
   }
-})
+});
 
 // User Management Routes
 router.get('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const users = await prisma.user.findMany({
       where: { businessId: req.user!.businessId }
-    })
-    res.json(users); return;
+    });
+    res.json(users);
+    return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch users' }); return;
+    res.status(500).json({ error: 'Failed to fetch users' });
+    return;
   }
-})
+});
 
 router.post('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      res.status(401).json({ error: 'Unauthorized' })
-      return
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    const { email, role, password } = req.body
+    const { email, role, password } = req.body;
 
     if (!email || !role || !password) {
-      res.status(400).json({ error: 'Email, role, and password are required' }); return;
+      res.status(400).json({ error: 'Email, role, and password are required' });
+      return;
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      res.status(400).json({ error: 'Invalid email format' })
-      return
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
     }
 
-    // Validate role
-    const validRoles = ['ADMIN', 'USER']
+    const validRoles = ['ADMIN', 'USER'];
     if (!validRoles.includes(role)) {
-      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
-      return
+      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
+      return;
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } })
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      res.status(400).json({ error: 'User with this email already exists' }); return;
+      res.status(400).json({ error: 'User with this email already exists' });
+      return;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10)
+    const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -1167,152 +1193,147 @@ router.post('/users', authMiddleware, async (req: Request, res: Response): Promi
         businessId: req.user.businessId,
         passwordHash
       }
-    })
-    res.status(201).json(user); return;
+    });
+    res.status(201).json(user);
+    return;
   } catch (error) {
-    console.error('Error creating user:', error)
-    res.status(500).json({ error: 'Failed to create user' }); return;
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+    return;
   }
-})
+});
 
 // Get All Knowledge Base Entries for the Business
 router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  // req.user is guaranteed to be set by authMiddleware
-  const entries = await prisma.knowledgeBase.findMany({
-    where: { businessId: req.user!.businessId }, // Non-null assertion
-    orderBy: { createdAt: 'desc' }
-  });
-  res.json(entries); return;
+  try {
+    const entries = await prisma.knowledgeBase.findMany({
+      where: { businessId: req.user!.businessId },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(entries);
+    return;
+  } catch (error) {
+    console.error('Error fetching knowledge base entries:', error);
+    res.status(500).json({ error: 'Internal server error while fetching knowledge base entries' });
+    return;
+  }
 })
 
 // Create New Knowledge Base Entry
 router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
+    const businessId = req.user!.businessId;
+    const { content, sourceURL } = req.body;
 
-    // Extract knowledge base details from request body
-    const { content, sourceURL } = req.body
-
-    // Validation: ensure content is present and not empty
     if (!content || content.trim() === '') {
-      res.status(400).json({ error: 'Content is required and cannot be empty' })
-      return
+      res.status(400).json({ error: 'Content is required and cannot be empty' });
+      return;
     }
 
-    // Create the new knowledge base entry
     const newKnowledgeEntry = await prisma.knowledgeBase.create({
       data: {
         content,
         sourceURL: sourceURL || null,
         businessId
       }
-    })
+    });
 
-    // Generate and store embedding for the new entry
     try {
-      await generateAndStoreEmbedding(newKnowledgeEntry.id)
+      await generateAndStoreEmbedding(newKnowledgeEntry.id);
     } catch (embeddingError) {
-      console.error(`Failed to generate embedding for KB entry ${newKnowledgeEntry.id}:`, embeddingError)
+      console.error(`Failed to generate embedding for KB entry ${newKnowledgeEntry.id}:`, embeddingError);
     }
 
-    // Send back the newly created knowledge base entry with 201 status
-    res.status(201).json(newKnowledgeEntry)
-
+    res.status(201).json(newKnowledgeEntry);
+    return;
   } catch (error) {
-    console.error('Error creating knowledge base entry:', error)
-    res.status(500).json({ error: 'Internal server error while creating knowledge base entry' })
+    console.error('Error creating knowledge base entry:', error);
+    res.status(500).json({ error: 'Internal server error while creating knowledge base entry' });
+    return;
   }
 })
 
 // Update Knowledge Base Entry
 router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-    const kbId = req.params.kbId
+    const businessId = req.user!.businessId;
+    const kbId = req.params.kbId;
+    const { content, sourceURL } = req.body;
 
-    // Extract knowledge base details from request body
-    const { content, sourceURL } = req.body
-
-    // Validation: ensure content is present if being updated
     if (content !== undefined && content.trim() === '') {
-      res.status(400).json({ error: 'Content cannot be empty if provided' })
-      return
+      res.status(400).json({ error: 'Content cannot be empty if provided' });
+      return;
     }
 
-    // Find the KB entry and verify ownership
     const kbEntry = await prisma.knowledgeBase.findUnique({
       where: { id: kbId }
-    })
+    });
 
-    // Check if KB entry exists and belongs to the business
     if (!kbEntry || kbEntry.businessId !== businessId) {
-      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to modify it' })
-      return
+      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to modify it' });
+      return;
     }
 
-    // Update the KB entry
     const updatedKbEntry = await prisma.knowledgeBase.update({
       where: { id: kbId },
       data: {
         content: content !== undefined ? content : undefined,
         sourceURL: sourceURL !== undefined ? sourceURL : undefined
       }
-    })
+    });
 
-    // Regenerate embedding if content was updated
     if (content !== undefined && updatedKbEntry) {
       try {
-        await generateAndStoreEmbedding(updatedKbEntry.id)
-        console.log(`Embedding regenerated for KB entry: ${updatedKbEntry.id}`)
+        await generateAndStoreEmbedding(updatedKbEntry.id);
       } catch (embedError) {
-        console.error(`Error regenerating embedding for KB entry ${updatedKbEntry.id} after update:`, embedError)
+        console.error(`Error regenerating embedding for KB entry ${updatedKbEntry.id} after update:`, embedError);
       }
     }
 
-    // Send back the updated KB entry
-    res.status(200).json(updatedKbEntry)
-
+    res.status(200).json(updatedKbEntry);
+    return;
   } catch (error) {
-    console.error('Error updating knowledge base entry:', error)
-    res.status(500).json({ error: 'Internal server error while updating knowledge base entry' })
+    console.error('Error updating knowledge base entry:', error);
+    res.status(500).json({ error: 'Internal server error while updating knowledge base entry' });
+    return;
   }
 })
 
 // Delete Knowledge Base Entry
 router.delete('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const kbId = req.params.kbId
+    const kbId = req.params.kbId;
     const kbEntry = await prisma.knowledgeBase.findUnique({
       where: { id: kbId }
-    })
+    });
 
     if (!kbEntry || kbEntry.businessId !== req.user!.businessId) {
-      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to delete it' })
-      return
+      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to delete it' });
+      return;
     }
 
     await prisma.knowledgeBase.delete({
       where: { id: kbId }
-    })
+    });
 
-    res.status(204).send(); return;
+    res.status(204).send();
+    return;
   } catch (error) {
-    console.error('Error deleting knowledge base entry:', error)
-    res.status(500).json({ error: 'Internal server error while deleting knowledge base entry' })
+    console.error('Error deleting knowledge base entry:', error);
+    res.status(500).json({ error: 'Internal server error while deleting knowledge base entry' });
+    return;
   }
 })
 
 router.get('/logout', (req: Request, res: Response): void => {
-  // Clear the 'token' cookie
   res.cookie('token', '', {
     httpOnly: true,
-    expires: new Date(0), // Set expiration to a past date
+    expires: new Date(0),
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-  })
-  res.redirect('/admin/login'); return;
+  });
+  res.redirect('/admin/login');
+  return;
 })
 
 export default router 

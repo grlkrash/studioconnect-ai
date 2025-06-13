@@ -1,32 +1,16 @@
-import { Request, Response, NextFunction, RequestHandler } from 'express'
-import { UserPayload } from '../api/authMiddleware'
-import { ParamsDictionary } from 'express-serve-static-core'
-import { ParsedQs } from 'qs'
+import { Request, Response, NextFunction } from 'express'
 
-type AsyncRequestHandler<
-  P = ParamsDictionary,
-  ResBody = any,
-  ReqBody = any,
-  ReqQuery = ParsedQs,
-  Locals extends Record<string, any> = Record<string, any>
-> = (
-  req: Request<P, ResBody, ReqBody, ReqQuery, Locals> & { user?: UserPayload },
-  res: Response<ResBody, Locals>,
-  next: NextFunction
-) => Promise<void | Response<ResBody, Locals>>
+// Defines a type for an asynchronous Express request handler
+type AsyncRequestHandler = (req: Request, res: Response, next: NextFunction) => Promise<any>
 
-const asyncHandler = <
-  P = ParamsDictionary,
-  ResBody = any,
-  ReqBody = any,
-  ReqQuery = ParsedQs,
-  Locals extends Record<string, any> = Record<string, any>
->(
-  fn: AsyncRequestHandler<P, ResBody, ReqBody, ReqQuery, Locals>
-): RequestHandler<P, ResBody, ReqBody, ReqQuery, Locals> => {
-  return (req, res, next) => {
+/**
+ * Wraps an asynchronous Express.js route handler to catch errors
+ * and pass them to the next middleware.
+ * This prevents the need for try-catch blocks in every async handler.
+ * @param fn The asynchronous request handler function.
+ * @returns A standard Express.js request handler.
+ */
+export const asyncHandler = (fn: AsyncRequestHandler) =>
+  (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next)
-  }
-}
-
-export default asyncHandler 
+  } 

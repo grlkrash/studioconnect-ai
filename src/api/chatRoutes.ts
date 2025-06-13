@@ -9,7 +9,7 @@ import { initiateClickToCall } from '../services/notificationService'
 import { PlanUtils } from '../utils/planUtils'
 import { CallDirection, CallType, CallStatus, PlanTier } from '@prisma/client'
 import { PrismaClient } from '@prisma/client'
-import asyncHandler from '../utils/asyncHandler'
+import { asyncHandler } from '../utils/asyncHandler'
 import crypto from 'crypto'
 
 const router = Router()
@@ -140,7 +140,7 @@ router.post(
 )
 
 // POST / route for handling chat messages
-router.post('/', asyncHandler(async (req: Request, res: Response) => {
+router.post('/', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { message, conversationHistory, businessId, currentFlow } = req.body
 
   // Debug logging
@@ -151,7 +151,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
 
   // Basic validation
   if (!businessId) {
-    res.status(400).json({ error: 'Missing required field: businessId' }); return;
+    res.status(400).json({ error: 'Missing required field: businessId' })
+    return
   }
 
   // Handle empty message as welcome message request
@@ -166,7 +167,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     })
     
     if (!business) {
-      res.status(404).json({ error: 'Business not found' }); return;
+      res.status(404).json({ error: 'Business not found' })
+      return
     }
 
     // Determine if branding should be shown
@@ -184,7 +186,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
       agentName: business.agentConfig?.agentName || 'AI Assistant',
       showBranding: showBranding,
       currentFlow: null
-    }); return;
+    })
+    return
   }
 
   // Call the AI handler with currentFlow parameter
@@ -223,16 +226,18 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  res.status(200).json(aiResponse); return;
+  res.status(200).json(aiResponse)
+  return
 }))
 
 // POST /initiate-call route for handling chat-to-call escalation
-router.post('/initiate-call', asyncHandler(async (req: Request, res: Response) => {
+router.post('/initiate-call', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { phoneNumber, businessId, conversationHistory } = req.body
 
   // Basic validation
   if (!phoneNumber || !businessId) {
-    res.status(400).json({ error: 'Missing required fields: phoneNumber and businessId' }); return;
+    res.status(400).json({ error: 'Missing required fields: phoneNumber and businessId' })
+    return
   }
 
   // Get business details
@@ -241,11 +246,13 @@ router.post('/initiate-call', asyncHandler(async (req: Request, res: Response) =
   })
   
   if (!business) {
-    res.status(404).json({ error: 'Business not found' }); return;
+    res.status(404).json({ error: 'Business not found' })
+    return
   }
 
   if (!business.notificationPhoneNumber) {
-    res.status(400).json({ error: 'Business has no notification phone number configured' }); return;
+    res.status(400).json({ error: 'Business has no notification phone number configured' })
+    return
   }
 
   // Create a new conversation for the call
@@ -268,7 +275,8 @@ router.post('/initiate-call', asyncHandler(async (req: Request, res: Response) =
     conversationHistory || []
   )
 
-  res.status(200).json(callResult); return;
+  res.status(200).json(callResult)
+  return
 }))
 
 router.get('/chats', requireAuth, asyncHandler(async (req: Request, res: Response) => {
@@ -342,7 +350,7 @@ router.post('/chats/:id/messages', requireAuth, asyncHandler(async (req: Request
 // Error handling middleware
 router.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Error in chat routes:', err)
-  res.status(500).json({ error: 'Internal server error' })
+  res.status(500).json({ error: 'Internal server error' }); return;
 })
 
 // Cleanup on process termination
