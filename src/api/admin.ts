@@ -294,7 +294,7 @@ router.post('/config', authMiddleware, async (req: Request, res: Response) => {
 })
 
 // Get Lead Capture Questions for Agent Configuration
-router.get('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -329,7 +329,7 @@ router.get('/config/questions', authMiddleware, async (req: Request, res: Respon
 })
 
 // Create New Lead Capture Question
-router.post('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -396,7 +396,7 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
 })
 
 // Update Lead Capture Question
-router.put('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -456,7 +456,7 @@ router.put('/config/questions/:questionId', authMiddleware, async (req: Request,
 })
 
 // Delete Lead Capture Question
-router.delete('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.delete('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -491,7 +491,7 @@ router.delete('/config/questions/:questionId', authMiddleware, async (req: Reque
 })
 
 // Get Business Notification Settings
-router.get('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -522,7 +522,7 @@ router.get('/business/notifications', authMiddleware, async (req: Request, res: 
 })
 
 // Update Business Notification Settings
-router.put('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -573,7 +573,7 @@ router.put('/business/notifications', authMiddleware, async (req: Request, res: 
 })
 
 // Get All Clients for the Business
-router.get('/clients', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/clients', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -596,7 +596,7 @@ router.get('/clients', authMiddleware, async (req: Request, res: Response): Prom
 })
 
 // Create New Client
-router.post('/clients', validateRequest(clientSchema), authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/clients', validateRequest(clientSchema), authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     const { name, email, phone, externalId } = req.body
     
@@ -621,7 +621,7 @@ router.post('/clients', validateRequest(clientSchema), authMiddleware, async (re
 })
 
 // Update Client
-router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' })
@@ -649,7 +649,7 @@ router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Respo
 })
 
 // Delete Client
-router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' })
@@ -669,7 +669,7 @@ router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Re
 })
 
 // Project Management Routes (Enterprise only)
-router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req: Request, res: Response): Promise<void> => {
+router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req: Request, res: Response): Promise<Response> => {
   try {
     const { clientId } = req.query;
     const projects = await prisma.project.findMany({
@@ -693,7 +693,7 @@ router.post(
   validateRequest(projectSchema),
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -740,7 +740,7 @@ router.post(
 router.get(
   '/projects/:projectId',
   authMiddleware,
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' })
@@ -773,7 +773,7 @@ router.put(
   '/projects/:projectId',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' })
@@ -826,7 +826,7 @@ router.delete(
   '/projects/:projectId',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' })
@@ -852,7 +852,7 @@ router.get(
   '/integrations',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -873,7 +873,7 @@ router.post(
   '/integrations',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -906,7 +906,7 @@ router.put(
   '/integrations/:integrationId',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' })
@@ -947,7 +947,7 @@ router.delete(
   '/integrations/:integrationId',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' })
@@ -970,7 +970,7 @@ router.post(
   '/integrations/sync-now',
   authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<Response> => {
     try {
       if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -1028,22 +1028,18 @@ async function syncTrelloProjects(integration: Integration) {
 }
 
 // Business Management Routes
-router.get('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const business = await prisma.business.findUnique({
-      where: { id: req.user!.businessId },
-      include: {
-        users: true,
-        agentConfig: true
-      }
-    });
-    return res.json(business);
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch business' });
-  }
-});
+router.get('/business', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const business = await prisma.business.findUnique({
+    where: { id: req.user!.businessId },
+    include: {
+      users: true,
+      agentConfig: true
+    }
+  })
+  return res.json(business)
+}))
 
-router.put('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/business', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     if (!isAuthenticatedRequest(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -1066,63 +1062,54 @@ router.put('/business', authMiddleware, async (req: Request, res: Response): Pro
 });
 
 // User Management Routes
-router.get('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const users = await prisma.user.findMany({
-      where: { businessId: req.user!.businessId }
-    });
-    return res.json(users);
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch users' });
+router.get('/users', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const users = await prisma.user.findMany({
+    where: { businessId: req.user!.businessId }
+  })
+  return res.json(users)
+}))
+
+router.post('/users', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ error: 'Unauthorized' })
   }
-});
 
-router.post('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  try {
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  const { email, role, password } = req.body
 
-    const { email, role, password } = req.body;
-
-    if (!email || !role || !password) {
-      return res.status(400).json({ error: 'Email, role, and password are required' });
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    const validRoles = ['ADMIN', 'USER'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
-    }
-
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ error: 'User with this email already exists' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        role,
-        businessId: req.user.businessId,
-        passwordHash
-      }
-    });
-    return res.status(201).json(user);
-  } catch (error) {
-    console.error('Error creating user:', error);
-    return res.status(500).json({ error: 'Failed to create user' });
+  if (!email || !role || !password) {
+    return res.status(400).json({ error: 'Email, role, and password are required' })
   }
-});
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format' })
+  }
+
+  const validRoles = ['ADMIN', 'USER']
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+  }
+
+  const existingUser = await prisma.user.findUnique({ where: { email } })
+  if (existingUser) {
+    return res.status(400).json({ error: 'User with this email already exists' })
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10)
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      role,
+      businessId: req.user.businessId,
+      passwordHash
+    }
+  })
+  return res.status(201).json(user)
+}))
 
 // Get All Knowledge Base Entries for the Business
-router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     const entries = await prisma.knowledgeBase.findMany({
       where: { businessId: req.user!.businessId },
@@ -1136,7 +1123,7 @@ router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response)
 })
 
 // Create New Knowledge Base Entry
-router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     const businessId = req.user!.businessId;
     const { content, sourceURL } = req.body;
@@ -1167,7 +1154,7 @@ router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response
 })
 
 // Update Knowledge Base Entry
-router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     const businessId = req.user!.businessId;
     const kbId = req.params.kbId;
@@ -1209,7 +1196,7 @@ router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Res
 })
 
 // Delete Knowledge Base Entry
-router.delete('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.delete('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<Response> => {
   try {
     const kbId = req.params.kbId;
     const kbEntry = await prisma.knowledgeBase.findUnique({
