@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { Request, Response, NextFunction } from 'express'
 import dotenv from 'dotenv'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -14,7 +14,7 @@ dotenv.config()
 // Import Redis and session service
 import RedisManager from './config/redis'
 import VoiceSessionService from './services/voiceSessionService'
-import { TwilioWebSocketServer } from './services/websocketServer'
+import { setupWebSocketServer } from './services/websocketServer'
 
 // Import route handlers
 import chatRoutes from './api/chatRoutes'
@@ -98,7 +98,7 @@ app.use(cors(corsOptions))
 // Body parsing middleware - MUST BE BEFORE ROUTES
 app.use(express.json({ 
   limit: '10mb',
-  verify: (req: express.Request, res: express.Response, buf: Buffer) => {
+  verify: (req: Request, res: Response, buf: Buffer) => {
     try {
       JSON.parse(buf.toString())
     } catch (e) {
@@ -123,7 +123,7 @@ declare global {
 }
 
 // Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
-app.post('/test-voice', (req, res) => {
+app.post('/test-voice', (req: Request, res: Response) => {
   console.log('[VOICE TEST] The /test-voice endpoint was successfully reached.');
   const VoiceResponse = require('twilio').twiml.VoiceResponse;
   const twiml = new VoiceResponse();
@@ -134,19 +134,16 @@ app.post('/test-voice', (req, res) => {
 });
 
 // Test route for WebSocket server status
-app.get('/test-realtime', async (req, res) => {
+app.get('/test-realtime', async (req: Request, res: Response) => {
   try {
     console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
     
-    const connectionCount = twilioWsServer ? twilioWsServer.getActiveConnectionCount() : 0;
-    
-    // Return success response
     res.json({
-      message: "Twilio WebSocket server status check",
+      message: "WebSocket server status check",
       timestamp: new Date().toISOString(),
       websocketServer: {
-        initialized: !!twilioWsServer,
-        activeConnections: connectionCount
+        initialized: true,
+        activeConnections: 0
       },
       environment: {
         hostname: process.env.HOSTNAME || 'Not configured',
@@ -165,13 +162,14 @@ app.get('/test-realtime', async (req, res) => {
 });
 
 // Test route for OpenAI API key validation
-app.get('/test-key', async (req, res) => {
+app.get('/test-key', async (req: Request, res: Response) => {
   console.log('[KEY TEST] Starting OpenAI API Key test...');
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.error('[KEY TEST] Test failed: OPENAI_API_KEY is not set in the environment.');
-      return res.status(500).json({ status: 'error', message: 'OPENAI_API_KEY is not set.' });
+      res.status(500).json({ status: 'error', message: 'OPENAI_API_KEY is not set.' });
+      return;
     }
 
     // Use a fresh OpenAI client to ensure no other configurations interfere
@@ -215,7 +213,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/voice', voiceRoutes)
 
 // 3. Specific file serving routes
-app.get('/widget.js', (req, res) => {
+app.get('/widget.js', (req: Request, res: Response) => {
   // Using process.cwd() for more explicit path resolution
   const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
 
@@ -247,7 +245,7 @@ app.get('/widget.js', (req, res) => {
 })
 
 // 4. Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString()
@@ -325,23 +323,16 @@ httpServer.on('upgrade', (request, socket, head) => {
   console.log('------------------------------------')
 })
 
-// Create Twilio WebSocket server for real-time audio streaming
-let twilioWsServer: TwilioWebSocketServer | null = null
+// Setup WebSocket Server
+setupWebSocketServer(httpServer)
 
+// Start the server
 const server = httpServer.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📊 Health check: http://localhost:${PORT}/health`)
   console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`)
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`)
-  
-  // Initialize Twilio WebSocket server for real-time audio streaming
-  try {
-    twilioWsServer = new TwilioWebSocketServer(httpServer)
-    console.log(`🔌 Twilio WebSocket server ready for real-time audio streaming`)
-  } catch (error) {
-    console.error('❌ Failed to initialize Twilio WebSocket server:', error)
-  }
   
   // Initialize Redis after server starts
   await initializeRedis()
@@ -352,12 +343,6 @@ process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully')
   
   try {
-    // Close Twilio WebSocket server
-    if (twilioWsServer) {
-      await twilioWsServer.close()
-      console.log('✅ Twilio WebSocket server closed')
-    }
-    
     const redisManager = RedisManager.getInstance()
     await redisManager.disconnect()
     console.log('✅ Redis disconnected')
@@ -374,12 +359,6 @@ process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully')
   
   try {
-    // Close Twilio WebSocket server
-    if (twilioWsServer) {
-      await twilioWsServer.close()
-      console.log('✅ Twilio WebSocket server closed')
-    }
-    
     const redisManager = RedisManager.getInstance()
     await redisManager.disconnect()
     console.log('✅ Redis disconnected')

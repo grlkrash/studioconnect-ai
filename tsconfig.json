@@ -20,8 +20,11 @@
       "./node_modules/@types",
       "./src/types"                          /* You can create an empty 'src/types' folder if it doesn't exist, for your own custom .d.ts files later */
     ],
-    "types": ["node"]                        /* Explicitly include global Node.js types (like 'process', '__dirname'). */
+    "types": ["node"]
   },
-  "include": ["src/**/*"],                   /* Specifies an array of file patterns to include in the program. */
+  "include": [
+    "src/**/*",
+    "prisma/**/*"
+  ],
   "exclude": ["node_modules", "dist"]        /* Specifies an array of file patterns to exclude from the program. */
 }

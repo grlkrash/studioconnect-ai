@@ -2,12 +2,22 @@ import { Request, Response, NextFunction } from 'express'
 import { PlanTier } from '@prisma/client'
 import { isAuthenticatedRequest } from '../api/authMiddleware'
 
+const planHierarchy = {
+  FREE: 0,
+  BASIC: 1,
+  PRO: 2,
+  ENTERPRISE: 3
+}
+
+const features = {
+  FREE: ['basic_chat'],
+  BASIC: ['basic_chat', 'lead_capture'],
+  PRO: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls'],
+  ENTERPRISE: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls', 'project_management', 'integrations']
+}
+
 export class PlanManager {
   static isPlanSufficient(userPlan: PlanTier, requiredPlan: PlanTier): boolean {
-    const planHierarchy = {
-      [PlanTier.PRO]: 0,
-      [PlanTier.ENTERPRISE]: 1
-    }
     return planHierarchy[userPlan] >= planHierarchy[requiredPlan]
   }
 
@@ -16,15 +26,37 @@ export class PlanManager {
   }
 
   static getAvailableFeatures(plan: PlanTier): string[] {
-    const features = {
-      [PlanTier.PRO]: ['Basic Chat', 'Knowledge Base', 'Voice Calls', 'Custom Branding'],
-      [PlanTier.ENTERPRISE]: ['Basic Chat', 'Knowledge Base', 'Voice Calls', 'Custom Branding', 'Project Management', 'API Access']
-    }
     return features[plan]
   }
 
   static shouldShowBranding(plan: PlanTier): boolean {
     return plan === PlanTier.PRO
+  }
+}
+
+export function hasRequiredPlan(requiredPlan: PlanTier) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user?.business?.planTier) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const userPlan = req.user.business.planTier
+    return planHierarchy[userPlan] >= planHierarchy[requiredPlan]
+      ? next()
+      : res.status(403).json({ error: 'Upgrade required' })
+  }
+}
+
+export function hasFeature(feature: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user?.business?.planTier) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const plan = req.user.business.planTier
+    return features[plan].includes(feature)
+      ? next()
+      : res.status(403).json({ error: 'Feature not available in your plan' })
   }
 }
 

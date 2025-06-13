@@ -1,19 +1,14 @@
-import { Router } from 'express'
+import { Router, Response, Request } from 'express'
 import twilio from 'twilio'
-import { RealtimeAgentService } from '../services/realtimeAgentService'
+import { realtimeAgentService } from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
-import { getBusinessIdFromPhoneNumber } from '../services/businessService'
-import { requireAuth, AuthenticatedRequest } from './authMiddleware'
-import { requirePlan } from '../middleware/planMiddleware'
-import { prisma } from '../services/db'
-import { CallDirection, CallType } from '@prisma/client'
-import crypto from 'crypto'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
 
 // Custom Twilio request validation middleware
-const validateTwilioRequest = (req: any, res: any, next: any) => {
+const customValidateTwilioRequest = (req: Request, res: Response, next: () => void) => {
+  // Only validate in production
   if (process.env.NODE_ENV !== 'production') return next()
 
   const authToken = process.env.TWILIO_AUTH_TOKEN
@@ -29,60 +24,42 @@ const validateTwilioRequest = (req: any, res: any, next: any) => {
     }
   } catch (e) {
     console.error('[Twilio Validation] Error during validation:', e)
-    return res.status(403).send('Forbidden')
+    res.status(403).send('Forbidden')
+    return
   }
   
   console.warn('[Twilio Validation] Invalid signature.')
-  return res.status(403).send('Forbidden')
+  res.status(403).send('Forbidden')
+  return
 }
 
 // POST /incoming - Handle incoming Twilio voice calls (Real-time Media Stream)
-router.post('/incoming', validateTwilioRequest, async (req, res) => {
+router.post('/incoming', customValidateTwilioRequest, async (req: Request, res: Response) => {
   try {
     const callSid = req.body.CallSid
-    const toPhoneNumber = req.body.To
-    console.log(`[VOICE STREAM] Incoming call received: ${callSid} to ${toPhoneNumber}`)
-
-    // Get business ID from phone number if not provided
-    let businessId = req.body.businessId
-    if (!businessId) {
-      businessId = await getBusinessIdFromPhoneNumber(toPhoneNumber)
-      if (!businessId) {
-        console.error(`[VOICE STREAM] No business found for phone number: ${toPhoneNumber}`)
-        const response = new VoiceResponse()
-        response.say('We are sorry, but this number is not associated with any business. Please contact the business directly.')
-        response.hangup()
-        res.type('text/xml')
-        return res.send(response.toString())
-      }
-    }
+    console.log(`[VOICE STREAM] Incoming call received: ${callSid}`)
 
     // Determine WebSocket URL - prioritize APP_PRIMARY_URL if available
     const host = process.env.APP_PRIMARY_URL || `https://${req.hostname}`
     const wsUrl = host.replace(/^https?:\/\//, 'wss://')
     
-    console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl} for business: ${businessId}`)
+    console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl}`)
 
     const response = new VoiceResponse()
     const connect = response.connect()
     const stream = connect.stream({ url: wsUrl })
     
-    // Add required parameters for client identification
+    // Add the CallSid as a parameter
     stream.parameter({
       name: 'callSid',
       value: callSid
     })
 
-    stream.parameter({
-      name: 'businessId',
-      value: businessId
-    })
-
-    // Add caller's phone number for client lookup
-    if (req.body.From) {
+    // Add business ID if available
+    if (req.body.businessId) {
       stream.parameter({
-        name: 'fromPhoneNumber',
-        value: req.body.From
+        name: 'businessId',
+        value: req.body.businessId
       })
     }
     
@@ -90,7 +67,7 @@ router.post('/incoming', validateTwilioRequest, async (req, res) => {
     response.pause({ length: 14400 }) // Pause for 4 hours (Twilio's max call duration)
     
     res.type('text/xml')
-    res.send(response.toString())
+    res.send(response.toString()); return;
     
   } catch (error) {
     console.error('[VOICE STREAM] Critical error in /incoming route:', error)
@@ -98,36 +75,36 @@ router.post('/incoming', validateTwilioRequest, async (req, res) => {
     response.say('We are sorry, but there was an error connecting your call. Please try again later.')
     response.hangup()
     res.type('text/xml')
-    res.status(500).send(response.toString())
+    res.status(500).send(response.toString()); return;
   }
 })
 
 // GET /status - Check voice system status
-router.get('/status', async (req, res) => {
+router.get('/status', async (req: Request, res: Response) => {
   try {
-    const agentService = RealtimeAgentService.getInstance()
-    const status = agentService.getConnectionStatus()
+    // Use the imported instance directly
+    const status = realtimeAgentService.getConnectionStatus()
     
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       voiceSystem: {
         status,
-        activeCalls: agentService.getActiveConnections()
+        activeCalls: realtimeAgentService.getActiveConnections()
       }
-    })
+    }); return;
   } catch (error) {
     console.error('[VOICE STREAM] Error checking status:', error)
     res.status(500).json({
       status: 'error',
-      message: 'Failed to check voice system status',
+      message: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
-    })
+    }); return;
   }
 })
 
 // POST /fallback-handler - Standard Twilio TwiML fallback handler
-router.post('/fallback-handler', validateTwilioRequest, async (req, res) => {
+router.post('/fallback-handler', customValidateTwilioRequest, async (req: Request, res: Response) => {
   try {
     const twiml = new VoiceResponse()
     const speechResult = req.body.SpeechResult
@@ -165,127 +142,13 @@ router.post('/fallback-handler', validateTwilioRequest, async (req, res) => {
     gather.say({ voice: 'alice' }, 'I didn\'t catch that. Could you please repeat?')
 
     res.type('text/xml')
-    res.send(twiml.toString())
+    res.send(twiml.toString()); return;
   } catch (error) {
     console.error('[FALLBACK HANDLER] Error:', error)
     const twiml = new VoiceResponse()
     twiml.say({ voice: 'alice' }, 'We\'re experiencing technical difficulties. Please try your call again later.')
     res.type('text/xml')
-    res.send(twiml.toString())
-  }
-})
-
-// Voice call handling routes
-router.post('/call', validateTwilioRequest, async (req, res) => {
-  const twiml = new VoiceResponse()
-  
-  try {
-    const businessId = await getBusinessIdFromPhoneNumber(req.body.To)
-    if (!businessId) {
-      twiml.say('Sorry, this number is not configured for voice calls.')
-      twiml.hangup()
-      return res.type('text/xml').send(twiml.toString())
-    }
-
-    // Start the call with the AI agent
-    twiml.say('Welcome to our AI assistant. Please wait while we connect you.')
-    twiml.connect().stream({
-      url: `wss://${req.headers.host}/voice/stream/${businessId}`
-    })
-
-    res.type('text/xml').send(twiml.toString())
-  } catch (error) {
-    console.error('Error in voice call handling:', error)
-    twiml.say('Sorry, there was an error processing your call.')
-    twiml.hangup()
-    res.type('text/xml').send(twiml.toString())
-  }
-})
-
-// Protected voice settings route
-router.get('/settings', requireAuth, requirePlan('PRO'), async (req: AuthenticatedRequest, res) => {
-  try {
-    const business = await prisma.business.findUnique({
-      where: { id: req.user.businessId },
-      include: { agentConfig: true }
-    })
-
-    if (!business || !business.agentConfig) {
-      return res.status(404).render('error', {
-        message: 'Agent configuration not found',
-        user: req.user
-      })
-    }
-
-    res.render('voice-settings', {
-      voiceConfig: business.agentConfig,
-      user: req.user
-    })
-  } catch (error) {
-    console.error('Error fetching agent config:', error)
-    res.status(500).render('error', {
-      message: 'Failed to load voice settings',
-      user: req.user
-    })
-  }
-})
-
-router.get('/calls', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const conversations = await prisma.conversation.findMany({
-      where: { businessId: req.user.businessId },
-      include: {
-        callLogs: true
-      }
-    })
-    res.json(conversations)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch conversations' })
-  }
-})
-
-router.post('/calls', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { phoneNumber } = req.body
-    const conversation = await prisma.conversation.create({
-      data: {
-        businessId: req.user.businessId,
-        sessionId: crypto.randomUUID(),
-        metadata: {},
-        callLogs: {
-          create: {
-            businessId: req.user.businessId,
-            callSid: crypto.randomUUID(),
-            from: phoneNumber,
-            to: process.env.TWILIO_PHONE_NUMBER as string,
-            status: 'INITIATED',
-            direction: CallDirection.INBOUND,
-            type: CallType.VOICE,
-            source: 'VOICE_CALL'
-          }
-        }
-      }
-    })
-    res.json(conversation)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create conversation' })
-  }
-})
-
-router.get('/calls/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: req.params.id },
-      include: {
-        callLogs: true
-      }
-    })
-    if (!conversation || conversation.businessId !== req.user.businessId) {
-      return res.status(404).json({ error: 'Conversation not found' })
-    }
-    res.json(conversation)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch conversation' })
+    res.status(500).send(twiml.toString()); return;
   }
 })
 

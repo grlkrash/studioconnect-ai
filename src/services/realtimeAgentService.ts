@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
-import twilio, { Twilio } from 'twilio';
-import { PrismaClient } from '@prisma/client';
+import twilio from 'twilio';
+import { PrismaClient, CallStatus, CallType, CallDirection } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
@@ -13,6 +13,8 @@ import fs from 'fs';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 import { getBusinessWelcomeMessage } from './businessService';
 import { getClientByPhoneNumber } from './clientService';
+import crypto from 'crypto';
+import { Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -23,23 +25,34 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
+interface ConnectionState {
+  ws: WebSocket;
+  isTwilioReady: boolean;
+  isAiReady: boolean;
+  streamSid: string | null;
+  audioQueue: string[];
+  conversationHistory: Array<{ role: 'user' | 'assistant', content: string, timestamp: Date }>;
+  businessId: string | null;
+  leadCaptureTriggered: boolean;
+  hasCollectedLeadInfo: boolean;
+  isCallActive: boolean;
+  welcomeMessageDelivered: boolean;
+  welcomeMessageAttempts: number;
+  isCleaningUp: boolean;
+  callSid: string | null;
+  lastActivity: number;
+  fromNumber: string | null;
+  toNumber: string | null;
+  clientId?: string;
+  currentFlow: string | null;
+}
+
 interface AgentSession {
   ws: WebSocket;
   businessId: string;
   conversationId: string;
   isActive: boolean;
   lastActivity: Date;
-}
-
-// This new interface will help manage the state of our connections
-interface ConnectionState {
-  ws: WebSocket;
-  callSid: string;
-  businessId: string;
-  fromPhoneNumber?: string;
-  clientId?: string;
-  conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>;
-  currentFlow: string | null;
 }
 
 interface Question {
@@ -144,17 +157,19 @@ async function cleanupTempFile(filePath: string): Promise<void> {
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
  * Handles real-time bidirectional voice conversations with lead capture integration
  */
-export class RealtimeAgentService {
+class RealtimeAgentService {
   private static instance: RealtimeAgentService;
   private connections: Map<string, ConnectionState>;
-  private twilioClient: Twilio;
+  private twilioClient: twilio.Twilio;
   private callSid: string | null = null;
+  private onCallSidReceived?: (callSid: string) => void;
+  private connectToOpenAI?: () => void;
 
   private constructor() {
     this.connections = new Map();
-    this.twilioClient = new Twilio(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_AUTH_TOKEN!
+    this.twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
     );
   }
 
@@ -172,7 +187,7 @@ export class RealtimeAgentService {
   public async handleNewConnection(ws: WebSocket, params: URLSearchParams): Promise<void> {
     const callSid = params.get('callSid');
     const businessId = params.get('businessId');
-    const fromPhoneNumber = params.get('fromPhoneNumber');
+    const fromNumber = params.get('fromPhoneNumber');
 
     if (!callSid || !businessId) {
       console.error('[REALTIME AGENT] Missing required parameters:', { callSid, businessId });
@@ -188,15 +203,27 @@ export class RealtimeAgentService {
       ws,
       callSid,
       businessId,
-      fromPhoneNumber: fromPhoneNumber || undefined,
+      fromNumber: fromNumber || null,
       conversationHistory: [],
-      currentFlow: null
+      currentFlow: null,
+      isTwilioReady: false,
+      isAiReady: false,
+      streamSid: null,
+      audioQueue: [],
+      leadCaptureTriggered: false,
+      hasCollectedLeadInfo: false,
+      isCallActive: false,
+      welcomeMessageDelivered: false,
+      welcomeMessageAttempts: 0,
+      isCleaningUp: false,
+      lastActivity: Date.now(),
+      toNumber: null
     };
 
     // Try to identify client if phone number is available
-    if (fromPhoneNumber) {
+    if (fromNumber) {
       try {
-        const client = await getClientByPhoneNumber(fromPhoneNumber);
+        const client = await getClientByPhoneNumber(fromNumber);
         if (client) {
           state.clientId = client.id;
           console.log(`[REALTIME AGENT] Identified client ${client.id} for call ${callSid}`);
@@ -218,9 +245,28 @@ export class RealtimeAgentService {
       console.error(`[REALTIME AGENT] Error sending welcome message:`, error);
       this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?');
     }
+
+    // Update the CallLog creation
+    const callLog = await prisma.callLog.create({
+      data: {
+        businessId,
+        conversationId: crypto.randomUUID(),
+        callSid,
+        from: fromNumber || '',
+        to: '',
+        direction: CallDirection.INBOUND,
+        type: CallType.VOICE,
+        status: CallStatus.INITIATED,
+        source: 'TWILIO'
+      }
+    });
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
+    if (!state.businessId) {
+      return 'Welcome to StudioConnect AI. How can I help you today?';
+    }
+
     try {
       const welcomeMessage = await getBusinessWelcomeMessage(state.businessId);
       if (state.clientId) {
@@ -236,10 +282,15 @@ export class RealtimeAgentService {
   private setupTwilioListeners(state: ConnectionState): void {
     const { callSid, businessId } = state;
 
+    if (!callSid || !businessId) {
+      console.error('[REALTIME AGENT] Missing required state:', { callSid, businessId });
+      return;
+    }
+
     // Handle start event
     (this.twilioClient.calls(callSid) as any)
-      .on('start', async () => {
-        console.log(`[REALTIME AGENT] Call ${callSid} started`);
+      .on('start', async (data: any) => {
+        await this.handleStartEvent(state, data);
       });
 
     // Handle media stream
@@ -258,10 +309,8 @@ export class RealtimeAgentService {
           );
 
           // Update conversation history and current flow
-          state.conversationHistory.push(
-            { role: 'user', content: media.payload },
-            { role: 'assistant', content: response.reply }
-          );
+          this.addToConversationHistory(state, 'user', media.payload);
+          this.addToConversationHistory(state, 'assistant', response.reply);
           state.currentFlow = response.currentFlow || null;
 
           // Keep conversation history at a reasonable size
@@ -286,6 +335,11 @@ export class RealtimeAgentService {
 
   private setupWebSocketListeners(state: ConnectionState): void {
     const { ws, callSid } = state;
+
+    if (!callSid) {
+      console.error('[REALTIME AGENT] Missing callSid in state');
+      return;
+    }
 
     ws.on('close', () => {
       console.log(`[REALTIME AGENT] WebSocket closed for call ${callSid}`);
@@ -329,6 +383,83 @@ export class RealtimeAgentService {
 
   public getActiveConnections(): number {
     return this.connections.size;
+  }
+
+  private async handleStartEvent(state: ConnectionState, data: any): Promise<void> {
+    console.log('[DEBUG] 3a. Processing start event...');
+    const callSid = data.start?.callSid;
+    state.streamSid = data.start?.streamSid;
+    state.isTwilioReady = true;
+    state.callSid = callSid;
+
+    if (this.onCallSidReceived && callSid) this.onCallSidReceived(callSid);
+
+    if (!callSid) {
+      console.error('[RealtimeAgent] CallSid not found in start message');
+      this.cleanup('Twilio');
+      return;
+    }
+
+    try {
+      const callDetails = await twilioClient.calls(callSid).fetch();
+      const toNumber = callDetails.to ?? '';
+      const fromNumber = callDetails.from ?? '';
+      console.log('[DEBUG] 3b. Call details fetched:', { toNumber, fromNumber });
+
+      // Find business by phone number
+      const business = await prisma.business.findFirst({
+        where: { twilioPhoneNumber: toNumber }
+      });
+
+      if (!business) {
+        console.error('[RealtimeAgent] Business not found for phone number:', toNumber);
+        this.cleanup('Business not found');
+        return;
+      }
+
+      // Create conversation
+      const conversation = await prisma.conversation.create({
+        data: {
+          businessId: business.id,
+          sessionId: crypto.randomUUID(),
+          messages: []
+        }
+      });
+
+      // Log the call
+      await prisma.callLog.create({
+        data: {
+          businessId: business.id,
+          callSid,
+          from: fromNumber,
+          to: toNumber,
+          direction: CallDirection.INBOUND,
+          type: CallType.VOICE,
+          status: CallStatus.INITIATED,
+          source: 'VOICE_CALL',
+          conversationId: conversation.id,
+          metadata: {
+            streamSid: state.streamSid
+          }
+        }
+      });
+
+      // Update state
+      state.businessId = business.id;
+      state.fromNumber = fromNumber;
+      state.toNumber = toNumber;
+
+      // Connect to OpenAI if needed
+      if (this.connectToOpenAI) this.connectToOpenAI();
+    } catch (error) {
+      console.error('[RealtimeAgent] Error handling start event:', error);
+      this.cleanup('Error handling start event');
+    }
+  }
+
+  // Example: when adding to conversationHistory, always include timestamp
+  private addToConversationHistory(state: ConnectionState, role: 'user' | 'assistant', content: string) {
+    state.conversationHistory.push({ role, content, timestamp: new Date() });
   }
 }
 

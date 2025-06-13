@@ -70,26 +70,33 @@ export const PLAN_FEATURES: Record<string, PlanFeature> = {
   }
 }
 
-export class PlanManager {
-  static readonly PLAN_HIERARCHY = {
-    PRO: 0,
-    ENTERPRISE: 1
+type Feature = 'basic_chat' | 'lead_capture' | 'knowledge_base' | 'voice_calls' | 'project_management' | 'integrations'
+
+export class PlanUtils {
+  private static readonly PLAN_HIERARCHY = {
+    FREE: 0,
+    BASIC: 1,
+    PRO: 2,
+    ENTERPRISE: 3
   } as const
+
+  private static readonly FEATURES: Record<PlanTier, Feature[]> = {
+    FREE: ['basic_chat'],
+    BASIC: ['basic_chat', 'lead_capture'],
+    PRO: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls'],
+    ENTERPRISE: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls', 'project_management', 'integrations']
+  }
 
   static isPlanSufficient(userPlan: PlanTier, requiredPlan: PlanTier): boolean {
     return this.PLAN_HIERARCHY[userPlan] >= this.PLAN_HIERARCHY[requiredPlan]
   }
 
-  static getAvailableFeatures(planTier: PlanTier): PlanFeature[] {
-    return Object.values(PLAN_FEATURES).filter(feature => 
-      this.isPlanSufficient(planTier, feature.requiredPlan)
-    )
+  static getAvailableFeatures(plan: PlanTier): Feature[] {
+    return [...this.FEATURES[plan]]
   }
 
-  static hasFeature(planTier: PlanTier, featureId: string): boolean {
-    const feature = PLAN_FEATURES[featureId]
-    if (!feature) return false
-    return this.isPlanSufficient(planTier, feature.requiredPlan)
+  static hasFeature(plan: PlanTier, feature: Feature): boolean {
+    return this.FEATURES[plan].includes(feature)
   }
 
   static shouldShowBranding(planTier: PlanTier): boolean {

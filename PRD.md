@@ -86,4 +86,903 @@ To ensure a focused and timely launch, the following features will not be includ
 
 ## 7. Design & UX Considerations
 
-The user interface for the admin dashboard must be clean, intuitive, and simple. Agency owners are busy and not necessarily deeply technical. The design should inspire confidence and professionalism, mirroring the quality they provide to their own clients. The setup process for integrations and AI configuration must be guided and include clear validation steps. 
+The user interface for the admin dashboard must be clean, intuitive, and simple. Agency owners are busy and not necessarily deeply technical. The design should inspire confidence and professionalism, mirroring the quality they provide to their own clients. The setup process for integrations and AI configuration must be guided and include clear validation steps.
+
+## 8. Technical Architecture
+
+### 8.1 System Overview
+The StudioConnect AI platform is built on a modern, scalable architecture using Node.js, TypeScript, and PostgreSQL with pgvector for AI embeddings. The system is containerized using Docker and follows microservices principles for scalability and maintainability.
+
+### 8.2 Core Components
+
+#### API Layer
+- **Express.js REST API**: Handles HTTP requests and WebSocket connections
+- **WebSocket Server**: Manages real-time voice communication
+- **Authentication Middleware**: JWT-based authentication with role-based access control
+- **Rate Limiting**: Per-IP and per-business rate limiting for API endpoints
+
+#### AI & Voice Processing
+- **OpenAI Integration**: 
+  - GPT-4 for conversation handling
+  - Whisper for transcription
+  - OpenAI Voice models for TTS
+- **Voice Activity Detection**: Server-side VAD with configurable thresholds
+- **SSML Processing**: Enhanced natural language patterns and conversational flow
+
+#### Data Layer
+- **PostgreSQL**: Primary database with pgvector extension for AI embeddings
+- **Redis**: Session management and caching
+- **Prisma ORM**: Type-safe database access
+- **Data Models**:
+  ```typescript
+  // Core Models
+  interface Business {
+    id: string
+    name: string
+    plan: 'PRO' | 'ENTERPRISE'
+    settings: BusinessSettings
+    integrations: Integration[]
+  }
+
+  interface Client {
+    id: string
+    businessId: string
+    name: string
+    phone: string
+    email: string
+    projects: Project[]
+  }
+
+  interface Project {
+    id: string
+    businessId: string
+    clientId: string
+    name: string
+    status: ProjectStatus
+    pmToolId: string
+    lastSync: Date
+  }
+  ```
+
+### 8.3 Integration Architecture
+
+#### Project Management Tools
+- **Supported Platforms**: Asana, Jira, Trello
+- **Integration Flow**:
+  1. OAuth2 authentication
+  2. One-way sync of project data
+  3. Webhook-based real-time updates
+  4. Data normalization layer
+
+#### Voice Infrastructure
+- **Twilio Integration**:
+  - Media Streams for bidirectional audio
+  - WebSocket-based real-time communication
+  - Call recording and transcription
+- **Voice Processing Pipeline**:
+  1. Audio capture (G.711 μ-law)
+  2. Real-time transcription
+  3. AI response generation
+  4. TTS conversion
+  5. Audio playback
+
+### 8.4 Security Architecture
+
+#### Authentication & Authorization
+- **JWT-based Authentication**:
+  - Access tokens (15min expiry)
+  - Refresh tokens (7-day expiry)
+  - Role-based access control
+- **API Security**:
+  - Rate limiting
+  - IP whitelisting
+  - Request validation
+  - CORS configuration
+
+#### Data Security
+- **Encryption**:
+  - TLS 1.3 for all communications
+  - AES-256 for data at rest
+  - End-to-end encryption for voice data
+- **Compliance**:
+  - GDPR compliance
+  - CCPA compliance
+  - SOC 2 Type II (planned)
+  - HIPAA compliance (optional)
+
+### 8.5 Deployment Architecture
+
+#### Infrastructure
+- **Containerization**: Docker with Docker Compose
+- **Orchestration**: Kubernetes (planned)
+- **CDN**: Cloudflare for static assets
+- **Monitoring**: Prometheus + Grafana
+
+#### Scaling Strategy
+- **Horizontal Scaling**:
+  - Stateless API servers
+  - Redis cluster for session management
+  - Read replicas for PostgreSQL
+- **Load Balancing**:
+  - Round-robin for API servers
+  - Sticky sessions for WebSocket connections
+
+### 8.6 Performance Requirements
+
+#### Latency Targets
+- Voice response time: < 500ms
+- API response time: < 100ms
+- WebSocket message latency: < 50ms
+- Database query time: < 10ms
+
+#### Scalability Metrics
+- Concurrent users: 10,000 per instance
+- Voice calls: 1,000 concurrent
+- API requests: 10,000 RPS
+- WebSocket connections: 5,000 per server
+
+#### Resource Requirements
+- CPU: 4+ cores per instance
+- RAM: 8GB+ per instance
+- Storage: 100GB+ SSD
+- Network: 1Gbps+
+
+### 8.7 Monitoring & Logging
+
+#### System Monitoring
+- **Health Checks**:
+  - API endpoint health
+  - Database connectivity
+  - Redis status
+  - WebSocket connections
+- **Performance Metrics**:
+  - Response times
+  - Error rates
+  - Resource utilization
+  - Concurrent users
+
+#### Logging Strategy
+- **Log Levels**:
+  - ERROR: System errors and failures
+  - WARN: Potential issues
+  - INFO: Important events
+  - DEBUG: Detailed debugging
+- **Log Storage**:
+  - Centralized logging
+  - 30-day retention
+  - Log rotation
+  - Audit trails
+
+### 8.8 Disaster Recovery
+
+#### Backup Strategy
+- **Database Backups**:
+  - Daily full backups
+  - Hourly incremental backups
+  - 30-day retention
+- **Configuration Backups**:
+  - Version-controlled
+  - Automated backups
+  - Cross-region replication
+
+#### Recovery Procedures
+- **RTO (Recovery Time Objective)**: 1 hour
+- **RPO (Recovery Point Objective)**: 1 hour
+- **Failover Testing**: Monthly
+- **Disaster Recovery Plan**: Quarterly review
+
+## 9. Testing & Quality Assurance
+
+### 9.1 Testing Strategy
+
+#### Unit Testing
+- **Coverage Requirements**:
+  - Minimum 80% code coverage
+  - Critical paths: 100% coverage
+  - All business logic must be tested
+- **Testing Framework**: Jest
+- **Test Categories**:
+  - Business logic
+  - API endpoints
+  - Database operations
+  - AI interactions
+
+#### Integration Testing
+- **API Testing**:
+  - End-to-end API flows
+  - Authentication flows
+  - Rate limiting
+  - Error handling
+- **Database Testing**:
+  - Data integrity
+  - Transaction handling
+  - Migration testing
+- **Third-party Integration Testing**:
+  - PM tool integrations
+  - Voice provider integration
+  - AI model integration
+
+#### Performance Testing
+- **Load Testing**:
+  - Concurrent users: 10,000
+  - API requests: 10,000 RPS
+  - Voice calls: 1,000 concurrent
+- **Stress Testing**:
+  - System limits
+  - Failure scenarios
+  - Recovery testing
+- **Endurance Testing**:
+  - 24-hour continuous load
+  - Memory leak detection
+  - Resource utilization
+
+#### Security Testing
+- **Penetration Testing**:
+  - Quarterly external audits
+  - Vulnerability scanning
+  - OWASP Top 10 coverage
+- **Authentication Testing**:
+  - JWT security
+  - OAuth flows
+  - Session management
+- **Data Security Testing**:
+  - Encryption validation
+  - Data access controls
+  - Privacy compliance
+
+### 9.2 Quality Assurance Process
+
+#### Code Quality
+- **Static Analysis**:
+  - ESLint configuration
+  - TypeScript strict mode
+  - SonarQube scanning
+- **Code Review Requirements**:
+  - Minimum 2 reviewers
+  - Automated checks passing
+  - Documentation updated
+  - Tests included
+
+#### Release Process
+- **Staging Environment**:
+  - Production-like setup
+  - Full test suite
+  - Performance validation
+- **Release Checklist**:
+  - All tests passing
+  - Documentation updated
+  - Security scan complete
+  - Performance metrics met
+
+#### Monitoring & Alerts
+- **Error Tracking**:
+  - Sentry integration
+  - Error categorization
+  - Alert thresholds
+- **Performance Monitoring**:
+  - Response time tracking
+  - Resource utilization
+  - Cost monitoring
+
+### 9.3 Test Environments
+
+#### Development
+- **Local Environment**:
+  - Docker Compose setup
+  - Mock services
+  - Development database
+- **CI/CD Pipeline**:
+  - Automated testing
+  - Code quality checks
+  - Security scanning
+
+#### Staging
+- **Environment Setup**:
+  - Production-like infrastructure
+  - Test data
+  - Integration testing
+- **Validation Process**:
+  - Smoke tests
+  - Integration tests
+  - Performance tests
+
+#### Production
+- **Monitoring**:
+  - Real-time metrics
+  - Error tracking
+  - Performance monitoring
+- **Rollback Procedures**:
+  - Version control
+  - Database rollback
+  - Configuration management
+
+### 9.4 Test Data Management
+
+#### Test Data Strategy
+- **Data Generation**:
+  - Synthetic data
+  - Anonymized production data
+  - Edge cases
+- **Data Refresh**:
+  - Daily updates
+  - Version control
+  - Backup procedures
+
+#### Data Privacy
+- **PII Handling**:
+  - Data anonymization
+  - Access controls
+  - Audit logging
+- **Compliance**:
+  - GDPR requirements
+  - CCPA requirements
+  - Data retention
+
+### 9.5 Continuous Improvement
+
+#### Metrics & KPIs
+- **Quality Metrics**:
+  - Test coverage
+  - Bug detection rate
+  - Time to fix
+- **Performance Metrics**:
+  - Response times
+  - Error rates
+  - Resource utilization
+
+#### Feedback Loop
+- **User Feedback**:
+  - Bug reports
+  - Feature requests
+  - Performance issues
+- **Internal Reviews**:
+  - Sprint retrospectives
+  - Process improvements
+  - Tool evaluation
+
+## 10. Analytics & Reporting
+
+### 10.1 Core Metrics
+
+#### Business Metrics
+- **Revenue Metrics**:
+  - Monthly Recurring Revenue (MRR)
+  - Annual Recurring Revenue (ARR)
+  - Average Revenue Per User (ARPU)
+  - Customer Lifetime Value (CLV)
+- **Growth Metrics**:
+  - New customer acquisition
+  - Plan upgrades
+  - Customer churn rate
+  - Expansion revenue
+
+#### Usage Metrics
+- **Voice Interactions**:
+  - Total call volume
+  - Average call duration
+  - Call completion rate
+  - AI response accuracy
+- **API Usage**:
+  - Request volume
+  - Error rates
+  - Response times
+  - Resource utilization
+
+#### Client Success Metrics
+- **Client Satisfaction**:
+  - CSAT scores
+  - NPS tracking
+  - Client feedback
+  - Support ticket volume
+- **Feature Adoption**:
+  - Integration usage
+  - Feature utilization
+  - User engagement
+  - Time to value
+
+### 10.2 Reporting System
+
+#### Dashboard Requirements
+- **Executive Dashboard**:
+  - Key business metrics
+  - Growth trends
+  - Revenue projections
+  - Customer health
+- **Operational Dashboard**:
+  - System performance
+  - Resource utilization
+  - Error rates
+  - SLA compliance
+- **Client Dashboard**:
+  - Usage statistics
+  - AI performance
+  - Cost analysis
+  - ROI metrics
+
+#### Report Types
+- **Standard Reports**:
+  - Daily usage summary
+  - Weekly performance
+  - Monthly business review
+  - Quarterly growth analysis
+- **Custom Reports**:
+  - Client-specific metrics
+  - Custom date ranges
+  - Filtered views
+  - Export capabilities
+
+### 10.3 Data Collection
+
+#### Data Sources
+- **System Data**:
+  - API logs
+  - Voice interactions
+  - Error logs
+  - Performance metrics
+- **Business Data**:
+  - Customer information
+  - Usage patterns
+  - Billing data
+  - Support tickets
+
+#### Data Processing
+- **Real-time Processing**:
+  - Live metrics
+  - Instant alerts
+  - Performance monitoring
+  - Usage tracking
+- **Batch Processing**:
+  - Daily aggregations
+  - Weekly summaries
+  - Monthly reports
+  - Historical analysis
+
+### 10.4 Data Retention
+
+#### Retention Policies
+- **Raw Data**:
+  - 30 days retention
+  - Compressed storage
+  - Access logging
+  - Audit trails
+- **Aggregated Data**:
+  - 2 years retention
+  - Monthly backups
+  - Version control
+  - Archive policies
+
+#### Compliance Requirements
+- **Data Privacy**:
+  - GDPR compliance
+  - CCPA compliance
+  - Data minimization
+  - Right to be forgotten
+- **Security**:
+  - Access controls
+  - Encryption
+  - Audit logging
+  - Data classification
+
+### 10.5 Export & Integration
+
+#### Export Capabilities
+- **Formats**:
+  - CSV export
+  - JSON API
+  - PDF reports
+  - Excel templates
+- **Scheduling**:
+  - Automated exports
+  - Custom schedules
+  - Email delivery
+  - Cloud storage
+
+#### Integration Options
+- **Business Intelligence**:
+  - Tableau integration
+  - Power BI connection
+  - Custom API access
+  - Webhook support
+- **CRM Integration**:
+  - Salesforce sync
+  - HubSpot integration
+  - Custom CRM support
+  - Data mapping
+
+### 10.6 Analytics Features
+
+#### Advanced Analytics
+- **Predictive Analytics**:
+  - Usage forecasting
+  - Churn prediction
+  - Revenue projection
+  - Resource planning
+- **Behavioral Analytics**:
+  - User patterns
+  - Feature adoption
+  - Engagement metrics
+  - Success indicators
+
+#### Visualization
+- **Interactive Charts**:
+  - Real-time updates
+  - Drill-down capability
+  - Custom views
+  - Export options
+- **Custom Dashboards**:
+  - Widget-based layout
+  - Personalization
+  - Sharing options
+  - Mobile view
+
+## 11. Cost & Pricing
+
+### 11.1 Pricing Structure
+
+#### PRO Plan ("AI Studio Manager")
+- **Base Price**: $299/month
+- **Included Features**:
+  - 24/7 AI call answering
+  - Lead qualification flow
+  - Basic AI persona customization
+  - Email notifications
+  - Basic analytics
+- **Usage Limits**:
+  - 500 minutes/month voice calls
+  - 1,000 API requests/day
+  - 5 concurrent calls
+  - 1 PM tool integration
+
+#### ENTERPRISE Plan ("AI Account Manager")
+- **Base Price**: $999/month
+- **Included Features**:
+  - All PRO features
+  - Advanced PM tool integration
+  - Real-time project status
+  - Client-specific FAQ
+  - Advanced analytics
+  - Priority support
+- **Usage Limits**:
+  - 2,000 minutes/month voice calls
+  - 5,000 API requests/day
+  - 20 concurrent calls
+  - Unlimited PM tool integrations
+
+### 11.2 Usage-Based Pricing
+
+#### Voice Call Pricing
+- **PRO Plan**:
+  - $0.10/minute over included minutes
+  - Volume discounts available
+  - No minimum commitment
+- **ENTERPRISE Plan**:
+  - $0.08/minute over included minutes
+  - Custom volume pricing
+  - Annual commitment options
+
+#### API Usage Pricing
+- **PRO Plan**:
+  - $0.001 per API request over limit
+  - Daily billing
+  - Automatic scaling
+- **ENTERPRISE Plan**:
+  - $0.0005 per API request over limit
+  - Monthly billing
+  - Custom rate limits
+
+### 11.3 Additional Services
+
+#### Professional Services
+- **Onboarding**: $1,500
+  - Initial setup
+  - Configuration
+  - Training
+  - Integration support
+- **Custom Development**: $150/hour
+  - Custom integrations
+  - Feature development
+  - API customization
+  - White-label solutions
+
+#### Support Services
+- **Standard Support**:
+  - Email support
+  - 24/7 system monitoring
+  - Documentation access
+  - Community forum
+- **Premium Support**:
+  - 24/7 phone support
+  - Dedicated account manager
+  - Priority response
+  - Custom SLA options
+
+### 11.4 Billing & Payment
+
+#### Billing Cycle
+- **Monthly Billing**:
+  - Credit card required
+  - Automatic renewal
+  - Usage-based charges
+  - 30-day notice for cancellation
+- **Annual Billing**:
+  - 2 months free
+  - Invoice payment option
+  - Volume discounts
+  - Custom payment terms
+
+#### Payment Methods
+- **Accepted Methods**:
+  - Credit cards (Visa, MasterCard, Amex)
+  - ACH/wire transfer
+  - Purchase orders
+  - International payments
+- **Currency Support**:
+  - USD (default)
+  - EUR
+  - GBP
+  - CAD
+
+### 11.5 Discounts & Promotions
+
+#### Volume Discounts
+- **Voice Minutes**:
+  - 10% off 1,000+ minutes
+  - 20% off 5,000+ minutes
+  - 30% off 10,000+ minutes
+- **API Requests**:
+  - 10% off 100,000+ requests
+  - 20% off 500,000+ requests
+  - 30% off 1,000,000+ requests
+
+#### Special Programs
+- **Startup Program**:
+  - 50% off first 3 months
+  - Free onboarding
+  - Technical support
+  - Growth planning
+- **Agency Partner Program**:
+  - Revenue sharing
+  - White-label options
+  - Custom pricing
+  - Marketing support
+
+### 11.6 Refund Policy
+
+#### Standard Refund Policy
+- **Monthly Plans**:
+  - No refunds for partial months
+  - Prorated for annual plans
+  - Service credits for outages
+  - 30-day money-back guarantee
+- **Annual Plans**:
+  - Prorated refunds
+  - Service credit options
+  - Transfer options
+  - Cancellation fees
+
+#### Special Circumstances
+- **Service Outages**:
+  - Automatic credit calculation
+  - SLA-based compensation
+  - Alternative service options
+  - Priority restoration
+- **Billing Errors**:
+  - Immediate correction
+  - Account credit
+  - Adjustment options
+  - Dispute resolution
+
+### 11.7 Cost Optimization
+
+#### Resource Management
+- **Auto-scaling**:
+  - Automatic resource adjustment
+  - Cost optimization
+  - Performance monitoring
+  - Usage alerts
+- **Resource Limits**:
+  - Usage caps
+  - Budget alerts
+  - Cost controls
+  - Optimization suggestions
+
+#### Cost Control Features
+- **Usage Monitoring**:
+  - Real-time tracking
+  - Cost projections
+  - Usage alerts
+  - Optimization tips
+- **Budget Management**:
+  - Budget limits
+  - Cost allocation
+  - Department billing
+  - Usage reports
+
+## 12. Support & Maintenance
+
+### 12.1 Service Level Agreements (SLAs)
+
+#### System Availability
+- **PRO Plan**:
+  - 99.5% uptime guarantee
+  - 4-hour response time
+  - Email support
+  - Business hours support
+- **ENTERPRISE Plan**:
+  - 99.9% uptime guarantee
+  - 1-hour response time
+  - 24/7 phone support
+  - Dedicated account manager
+
+#### Response Times
+- **Critical Issues**:
+  - 15-minute response
+  - 1-hour resolution target
+  - 24/7 support
+  - Escalation path
+- **High Priority**:
+  - 1-hour response
+  - 4-hour resolution target
+  - Business hours support
+  - Technical escalation
+- **Normal Priority**:
+  - 4-hour response
+  - 24-hour resolution target
+  - Business hours support
+  - Standard support
+
+### 12.2 Support Channels
+
+#### Technical Support
+- **Email Support**:
+  - support@studioconnect.ai
+  - 24/7 monitoring
+  - Ticket tracking
+  - Knowledge base access
+- **Phone Support**:
+  - PRO: Business hours
+  - ENTERPRISE: 24/7
+  - Direct line
+  - Callback option
+
+#### Self-Service
+- **Knowledge Base**:
+  - Documentation
+  - FAQs
+  - Video tutorials
+  - Best practices
+- **Community Forum**:
+  - User discussions
+  - Feature requests
+  - Bug reports
+  - Community support
+
+### 12.3 Maintenance Windows
+
+#### Scheduled Maintenance
+- **Regular Updates**:
+  - Weekly security patches
+  - Monthly feature updates
+  - Quarterly major releases
+  - Annual system review
+- **Maintenance Windows**:
+  - Sunday 2-4 AM EST
+  - 2-hour maximum duration
+  - 7-day advance notice
+  - Emergency exceptions
+
+#### Emergency Maintenance
+- **Critical Updates**:
+  - Security vulnerabilities
+  - System stability
+  - Performance issues
+  - Data integrity
+- **Notification Process**:
+  - Immediate alert
+  - Status page updates
+  - Email notifications
+  - SMS alerts (ENTERPRISE)
+
+### 12.4 Update Process
+
+#### Release Management
+- **Version Control**:
+  - Semantic versioning
+  - Release notes
+  - Change log
+  - Rollback plan
+- **Deployment Process**:
+  - Staging testing
+  - Canary releases
+  - Blue-green deployment
+  - Zero-downtime updates
+
+#### Feature Updates
+- **Release Schedule**:
+  - Monthly feature updates
+  - Quarterly major releases
+  - Annual roadmap review
+  - Customer feedback cycle
+- **Update Communication**:
+  - Release notes
+  - Feature documentation
+  - Training materials
+  - Migration guides
+
+### 12.5 Training & Documentation
+
+#### User Training
+- **Onboarding**:
+  - Initial setup guide
+  - Feature walkthrough
+  - Best practices
+  - Use case examples
+- **Ongoing Training**:
+  - Webinars
+  - Video tutorials
+  - Documentation updates
+  - Feature workshops
+
+#### Technical Documentation
+- **API Documentation**:
+  - Endpoint reference
+  - Authentication guide
+  - Integration examples
+  - SDK documentation
+- **System Documentation**:
+  - Architecture overview
+  - Deployment guide
+  - Security guide
+  - Troubleshooting guide
+
+### 12.6 Issue Management
+
+#### Bug Tracking
+- **Issue Reporting**:
+  - Bug report template
+  - Priority levels
+  - Reproduction steps
+  - Expected behavior
+- **Resolution Process**:
+  - Issue triage
+  - Development fix
+  - Testing verification
+  - Release deployment
+
+#### Feature Requests
+- **Request Process**:
+  - Feature request form
+  - Community voting
+  - Priority assessment
+  - Roadmap planning
+- **Implementation**:
+  - Development planning
+  - Beta testing
+  - User feedback
+  - General release
+
+### 12.7 Performance Monitoring
+
+#### System Monitoring
+- **Health Checks**:
+  - API endpoints
+  - Database performance
+  - Voice processing
+  - Integration status
+- **Alert System**:
+  - Performance thresholds
+  - Error rates
+  - Resource utilization
+  - Security events
+
+#### Performance Optimization
+- **Regular Reviews**:
+  - System performance
+  - Resource utilization
+  - Cost optimization
+  - Scaling needs
+- **Optimization Actions**:
+  - Code optimization
+  - Infrastructure scaling
+  - Cache improvements
+  - Query optimization 

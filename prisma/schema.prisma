@@ -165,7 +165,7 @@ model CallLog {
   to             String
   direction      CallDirection
   type           CallType
-  status         String
+  status         CallStatus
   source         String
   content        String?
   metadata       Json?
@@ -260,6 +260,8 @@ enum UserRole {
 }
 
 enum PlanTier {
+  FREE
+  BASIC
   PRO
   ENTERPRISE
 }
@@ -291,5 +293,16 @@ enum CallDirection {
 
 enum CallType {
   VOICE
+  SMS
   CHAT
+}
+
+enum CallStatus {
+  INITIATED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  BUSY
+  NO_ANSWER
+  CANCELED
 }

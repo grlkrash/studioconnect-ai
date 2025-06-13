@@ -10,6 +10,7 @@ const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
+const openai_1 = __importDefault(require("openai"));
 // Load environment variables
 dotenv_1.default.config();
 // Import Redis and session service
@@ -86,9 +87,23 @@ const corsOptions = {
 };
 // Apply CORS middleware first
 app.use((0, cors_1.default)(corsOptions));
-// Then other middleware
-app.use(express_1.default.json({ limit: '10mb' }));
-app.use(express_1.default.urlencoded({ extended: true }));
+// Body parsing middleware - MUST BE BEFORE ROUTES
+app.use(express_1.default.json({
+    limit: '10mb',
+    verify: (req, res, buf) => {
+        try {
+            JSON.parse(buf.toString());
+        }
+        catch (e) {
+            res.status(400).json({ error: 'Invalid JSON' });
+            throw new Error('Invalid JSON');
+        }
+    }
+}));
+app.use(express_1.default.urlencoded({
+    extended: true,
+    limit: '10mb'
+}));
 app.use((0, cookie_parser_1.default)());
 // Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
 app.post('/test-voice', (req, res) => {
@@ -104,14 +119,12 @@ app.post('/test-voice', (req, res) => {
 app.get('/test-realtime', async (req, res) => {
     try {
         console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
-        const connectionCount = twilioWsServer ? twilioWsServer.getActiveConnectionCount() : 0;
-        // Return success response
         res.json({
-            message: "Twilio WebSocket server status check",
+            message: "WebSocket server status check",
             timestamp: new Date().toISOString(),
             websocketServer: {
-                initialized: !!twilioWsServer,
-                activeConnections: connectionCount
+                initialized: true,
+                activeConnections: 0
             },
             environment: {
                 hostname: process.env.HOSTNAME || 'Not configured',
@@ -125,6 +138,37 @@ app.get('/test-realtime', async (req, res) => {
             error: "Failed to check WebSocket server status",
             message: error instanceof Error ? error.message : 'Unknown error',
             timestamp: new Date().toISOString()
+        });
+    }
+});
+// Test route for OpenAI API key validation
+app.get('/test-key', async (req, res) => {
+    console.log('[KEY TEST] Starting OpenAI API Key test...');
+    try {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            console.error('[KEY TEST] Test failed: OPENAI_API_KEY is not set in the environment.');
+            res.status(500).json({ status: 'error', message: 'OPENAI_API_KEY is not set.' });
+            return;
+        }
+        // Use a fresh OpenAI client to ensure no other configurations interfere
+        const openai = new openai_1.default({ apiKey: apiKey });
+        // Make the simplest possible, lightweight API call
+        await openai.models.list();
+        console.log('[KEY TEST] SUCCESS: The API Key is valid and successfully connected to OpenAI.');
+        res.status(200).json({ status: 'success', message: 'API Key is valid and operational.' });
+    }
+    catch (error) {
+        console.error('[KEY TEST] FAILURE: The API Key test failed.', error);
+        const statusCode = error.status || 500;
+        res.status(statusCode).json({
+            status: 'error',
+            message: 'The API Key test failed.',
+            errorDetails: {
+                message: error.message,
+                status: error.status,
+                type: error.type,
+            }
         });
     }
 });
@@ -242,22 +286,15 @@ httpServer.on('upgrade', (request, socket, head) => {
     console.log('Request Headers:', JSON.stringify(request.headers, null, 2));
     console.log('------------------------------------');
 });
-// Create Twilio WebSocket server for real-time audio streaming
-let twilioWsServer = null;
+// Setup WebSocket Server
+(0, websocketServer_1.setupWebSocketServer)(httpServer);
+// Start the server
 const server = httpServer.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
-    // Initialize Twilio WebSocket server for real-time audio streaming
-    try {
-        twilioWsServer = new websocketServer_1.TwilioWebSocketServer(httpServer);
-        console.log(`🔌 Twilio WebSocket server ready for real-time audio streaming`);
-    }
-    catch (error) {
-        console.error('❌ Failed to initialize Twilio WebSocket server:', error);
-    }
     // Initialize Redis after server starts
     await initializeRedis();
 });
@@ -265,11 +302,6 @@ const server = httpServer.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
     try {
-        // Close Twilio WebSocket server
-        if (twilioWsServer) {
-            await twilioWsServer.close();
-            console.log('✅ Twilio WebSocket server closed');
-        }
         const redisManager = redis_1.default.getInstance();
         await redisManager.disconnect();
         console.log('✅ Redis disconnected');
@@ -284,11 +316,6 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
     console.log('SIGINT received, shutting down gracefully');
     try {
-        // Close Twilio WebSocket server
-        if (twilioWsServer) {
-            await twilioWsServer.close();
-            console.log('✅ Twilio WebSocket server closed');
-        }
         const redisManager = redis_1.default.getInstance();
         await redisManager.disconnect();
         console.log('✅ Redis disconnected');

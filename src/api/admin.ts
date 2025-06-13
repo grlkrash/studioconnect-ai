@@ -1,8 +1,8 @@
-import { Router, Request, Response, RequestHandler } from 'express'
+import { Router, Request, Response, RequestHandler, NextFunction } from 'express'
 import bcrypt from 'bcrypt'
 import jsonwebtoken from 'jsonwebtoken'
 import { prisma } from '../services/db'
-import { requireAuth, UserPayload, isAuthenticatedRequest } from './authMiddleware'
+import { authMiddleware, UserPayload, isAuthenticatedRequest } from './authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
 import { validateRequest } from '../middleware/validateRequest'
 import { generateAndStoreEmbedding } from '../core/ragService'
@@ -15,13 +15,11 @@ import { ParsedQs } from 'qs'
 import { ParamsDictionary } from 'express-serve-static-core'
 
 // Custom type for authenticated request handlers
-type AuthenticatedRequestHandler = RequestHandler<
-  ParamsDictionary,
-  any,
-  any,
-  ParsedQs,
-  { user: UserPayload }
->
+type AuthenticatedRequestHandler = (
+  req: Request & { user?: UserPayload },
+  res: Response,
+  next: NextFunction
+) => Promise<void | Response>
 
 const router = Router()
 
@@ -69,16 +67,17 @@ const projectInclude = {
   integrations: true,
 } as const
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body
     console.log('LOGIN ATTEMPT:', { email, receivedPassword: password })
 
     if (!email || !password) {
       console.log('Login failed: Missing email or password in request body.')
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Email and password are required' 
       })
+      return
     }
 
     const user = await prisma.user.findUnique({
@@ -89,9 +88,10 @@ router.post('/login', async (req, res) => {
 
     if (!user || !user.passwordHash) {
       console.log('Login failed: User not found or no password hash for email:', email)
-      return res.status(401).json({ 
+      res.status(401).json({ 
         error: 'Invalid email or password' 
       })
+      return
     }
 
     // **NEW DETAILED LOGS FOR BCRYPT.COMPARE**
@@ -113,9 +113,10 @@ router.post('/login', async (req, res) => {
 
     if (!passwordMatch) {
       console.log('Login failed: Password did not match for user:', email)
-      return res.status(401).json({ 
+      res.status(401).json({ 
         error: 'Invalid email or password' 
       })
+      return
     }
 
     // Authentication successful
@@ -165,24 +166,23 @@ router.post('/login', async (req, res) => {
 })
 
 // NEW: Add a protected /me route
-router.get('/me', requireAuth, (req, res) => {
+router.get('/me', authMiddleware, (req: Request, res: Response): void => {
   // If authMiddleware passes, req.user will be populated by our extended Request type
-  // The UserPayload interface is exported from authMiddleware.ts,
-  // and the Express.Request interface was extended there too.
   if (!req.user) {
     // This case should ideally be caught by authMiddleware sending a 401
     // but it's good defensive programming.
-    return res.status(401).json({ error: 'Authentication failed or user details not found on request.' })
+    res.status(401).json({ error: 'Authentication failed or user details not found on request.' })
+    return
   }
   // Send back the user details that the middleware attached to req.user
   res.status(200).json({ currentUser: req.user })
 })
 
 // Get Agent Configuration
-router.get('/config', requireAuth, async (req, res) => {
+router.get('/config', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
+    const businessId = req.user!.businessId // Non-null assertion is fine after authMiddleware
 
     // Find the configuration for this business
     const config = await prisma.agentConfig.findUnique({
@@ -200,14 +200,12 @@ router.get('/config', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching agent configuration:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while fetching configuration' 
-    })
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
 // Create/Update Agent Configuration
-router.post('/config', requireAuth, async (req, res) => {
+router.post('/config', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -218,9 +216,10 @@ router.post('/config', requireAuth, async (req, res) => {
     })
 
     if (!business) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         error: 'Business not found' 
       })
+      return
     }
 
     // Extract configuration details from request body
@@ -241,9 +240,10 @@ router.post('/config', requireAuth, async (req, res) => {
 
     // Basic validation
     if (!agentName || !personaPrompt || !welcomeMessage) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Missing required fields: agentName, personaPrompt, and welcomeMessage are required' 
       })
+      return
     }
 
     // Validate OpenAI voice for PRO plan businesses
@@ -251,9 +251,10 @@ router.post('/config', requireAuth, async (req, res) => {
       const validVoices = ['ALLOY', 'ECHO', 'FABLE', 'ONYX', 'NOVA', 'SHIMMER']
       const normalizedVoice = openaiVoice.toUpperCase()
       if (!validVoices.includes(normalizedVoice)) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           error: `Invalid OpenAI voice. Must be one of: ${validVoices.join(', ')}` 
         })
+        return
       }
     }
 
@@ -302,7 +303,7 @@ router.post('/config', requireAuth, async (req, res) => {
 })
 
 // Get Lead Capture Questions for Agent Configuration
-router.get('/config/questions', requireAuth, async (req, res) => {
+router.get('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -314,9 +315,10 @@ router.get('/config/questions', requireAuth, async (req, res) => {
 
     // Check if agent configuration exists
     if (!agentConfig) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         error: 'Agent configuration not found for this business. Please create one first.' 
       })
+      return
     }
 
     // Fetch all lead capture questions for this configuration
@@ -337,7 +339,7 @@ router.get('/config/questions', requireAuth, async (req, res) => {
 })
 
 // Create New Lead Capture Question
-router.post('/config/questions', requireAuth, async (req, res) => {
+router.post('/config/questions', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -347,17 +349,19 @@ router.post('/config/questions', requireAuth, async (req, res) => {
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Missing required fields: questionText and order are required' 
       })
+      return
     }
 
     // Validate expectedFormat against allowed values
     const validFormats = ['TEXT', 'EMAIL', 'PHONE']
     if (expectedFormat && !validFormats.includes(expectedFormat)) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: `Invalid expectedFormat. Must be one of: ${validFormats.join(', ')}` 
       })
+      return
     }
 
     // Find the agent configuration for this business
@@ -367,9 +371,10 @@ router.post('/config/questions', requireAuth, async (req, res) => {
 
     // Check if agent configuration exists
     if (!agentConfig) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         error: 'Agent configuration must exist before adding questions. Please create one first.' 
       })
+      return
     }
 
     // Create the new lead capture question
@@ -394,9 +399,10 @@ router.post('/config/questions', requireAuth, async (req, res) => {
     if (error instanceof Error) {
       // Handle unique constraint violation (e.g., duplicate order number)
       if (error.message.includes('Unique constraint')) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           error: 'A question with this order number already exists for this configuration' 
         })
+        return
       }
     }
     
@@ -407,7 +413,7 @@ router.post('/config/questions', requireAuth, async (req, res) => {
 })
 
 // Update Lead Capture Question
-router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
+router.put('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -418,17 +424,19 @@ router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Missing required fields: questionText and order are required' 
       })
+      return
     }
 
     // Validate expectedFormat against allowed values
     const validFormats = ['TEXT', 'EMAIL', 'PHONE']
     if (expectedFormat && !validFormats.includes(expectedFormat)) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: `Invalid expectedFormat. Must be one of: ${validFormats.join(', ')}` 
       })
+      return
     }
 
     // Find the question and verify ownership
@@ -439,9 +447,10 @@ router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
 
     // Check if question exists and belongs to the business
     if (!question || question.config.businessId !== businessId) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         error: 'Question not found or you do not have permission to modify it' 
       })
+      return
     }
 
     // Update the question
@@ -466,9 +475,10 @@ router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
     if (error instanceof Error) {
       // Handle unique constraint violation (e.g., duplicate order number)
       if (error.message.includes('Unique constraint')) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           error: 'A question with this order number already exists for this configuration' 
         })
+        return
       }
     }
     
@@ -479,7 +489,7 @@ router.put('/config/questions/:questionId', requireAuth, async (req, res) => {
 })
 
 // Delete Lead Capture Question
-router.delete('/config/questions/:questionId', requireAuth, async (req, res) => {
+router.delete('/config/questions/:questionId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -493,9 +503,10 @@ router.delete('/config/questions/:questionId', requireAuth, async (req, res) => 
 
     // Check if question exists and belongs to the business
     if (!question || question.config.businessId !== businessId) {
-      return res.status(404).json({ 
+      res.status(404).json({ 
         error: 'Question not found or you do not have permission to delete it' 
       })
+      return
     }
 
     // Delete the question
@@ -514,368 +525,8 @@ router.delete('/config/questions/:questionId', requireAuth, async (req, res) => 
   }
 })
 
-// Create New Knowledge Base Entry
-router.post('/knowledgebase', requireAuth, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-
-    // Extract knowledge base details from request body
-    const { content, sourceURL } = req.body
-
-    // Validation: ensure content is present and not empty
-    if (!content || content.trim() === '') {
-      return res.status(400).json({ 
-        error: 'Content is required and cannot be empty' 
-      })
-    }
-
-    // Create the new knowledge base entry
-    // Note: embedding field will remain null - to be populated by RAG service later
-    const newKnowledgeEntry = await prisma.knowledgeBase.create({
-      data: {
-        content,
-        sourceURL: sourceURL || null, // Include sourceURL if provided
-        businessId
-        // embedding field is not set here - will be handled by RAG service
-      }
-    })
-
-    // Generate and store embedding for the new entry
-    try {
-      await generateAndStoreEmbedding(newKnowledgeEntry.id)
-    } catch (embeddingError) {
-      // Log the embedding error, but still return success for the KB entry creation
-      console.error(`Failed to generate embedding for KB entry ${newKnowledgeEntry.id}:`, embeddingError)
-      // We'll let the KB entry creation be considered a success even if embedding fails
-      // The embedding can potentially be regenerated later
-    }
-
-    // Send back the newly created knowledge base entry with 201 status
-    res.status(201).json(newKnowledgeEntry)
-
-  } catch (error) {
-    console.error('Error creating knowledge base entry:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while creating knowledge base entry' 
-    })
-  }
-})
-
-// Get All Knowledge Base Entries for the Business
-router.get('/knowledgebase', requireAuth, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const entries = await prisma.knowledgeBase.findMany({
-    where: { businessId: req.user.businessId },
-    orderBy: { createdAt: 'desc' }
-  });
-  res.json(entries);
-})
-
-// Get All Leads for the Business
-router.get('/leads', requireAuth, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-
-    // Fetch all leads for this business
-    // Order by createdAt descending (newest first)
-    const leads = await prisma.lead.findMany({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' }
-    })
-
-    // Send back the leads array with 200 OK status
-    // This will be an empty array if no leads exist yet
-    res.status(200).json(leads)
-
-  } catch (error) {
-    console.error('Error fetching leads:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while fetching leads' 
-    })
-  }
-})
-
-// Update Lead Status
-router.put('/leads/:leadId/status', requireAuth, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-    const leadId = req.params.leadId
-    const { status } = req.body
-
-    // Validate status
-    const validStatuses = ['NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED_WON', 'CLOSED_LOST']
-    if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
-      })
-    }
-
-    // Find the lead and verify ownership
-    const lead = await prisma.lead.findUnique({
-      where: { id: leadId }
-    })
-
-    // Check if lead exists and belongs to the business
-    if (!lead || lead.businessId !== businessId) {
-      return res.status(404).json({
-        error: 'Lead not found or you do not have permission to modify it'
-      })
-    }
-
-    // Update the lead status
-    const updatedLead = await prisma.lead.update({
-      where: { id: leadId },
-      data: { status }
-    })
-
-    // Send back the updated lead
-    res.status(200).json(updatedLead)
-
-  } catch (error) {
-    console.error('Error updating lead status:', error)
-    res.status(500).json({
-      error: 'Internal server error while updating lead status'
-    })
-  }
-})
-
-// Update Lead Notes
-router.put('/leads/:leadId', requireAuth, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-    const leadId = req.params.leadId
-    const { notes } = req.body
-
-    // Find the lead and verify ownership
-    const lead = await prisma.lead.findUnique({
-      where: { id: leadId }
-    })
-
-    // Check if lead exists and belongs to the business
-    if (!lead || lead.businessId !== businessId) {
-      return res.status(404).json({
-        error: 'Lead not found or you do not have permission to modify it'
-      })
-    }
-
-    // Update the lead notes
-    const updatedLead = await prisma.lead.update({
-      where: { id: leadId },
-      data: { notes }
-    })
-
-    // Send back the updated lead
-    res.status(200).json(updatedLead)
-
-  } catch (error) {
-    console.error('Error updating lead notes:', error)
-    res.status(500).json({
-      error: 'Internal server error while updating lead notes'
-    })
-  }
-})
-
-// Add logout route
-router.get('/logout', (req, res) => {
-  // Clear the 'token' cookie
-  res.cookie('token', '', {
-    httpOnly: true,
-    expires: new Date(0), // Set expiration to a past date
-    secure: process.env.NODE_ENV === 'production', // Match your login cookie settings
-    sameSite: 'strict' // Match your login cookie settings
-  })
-  // Redirect to login page
-  res.redirect('/admin/login')
-})
-
-// Test SendGrid configuration endpoint
-router.post('/test-sendgrid', requireAuth, async (req, res) => {
-  try {
-    const { testEmail } = req.body
-    
-    if (!testEmail || !testEmail.includes('@')) {
-      return res.status(400).json({ error: 'Valid test email address required' })
-    }
-
-    console.log('=== TESTING SENDGRID CONFIGURATION ===')
-    console.log('Test email will be sent to:', testEmail)
-    
-    // Check SendGrid configuration
-    if (!process.env.SENDGRID_API_KEY) {
-      console.log('❌ SENDGRID_API_KEY not found in environment')
-      return res.status(500).json({ 
-        error: 'SENDGRID_API_KEY not configured',
-        details: 'Environment variable SENDGRID_API_KEY is missing'
-      })
-    }
-    
-    if (!process.env.SENDGRID_API_KEY.startsWith('SG.')) {
-      console.log('❌ SENDGRID_API_KEY has invalid format')
-      console.log('Key starts with:', process.env.SENDGRID_API_KEY.substring(0, 3))
-      return res.status(500).json({ 
-        error: 'Invalid SENDGRID_API_KEY format',
-        details: 'API key must start with "SG."'
-      })
-    }
-
-    console.log('✅ SENDGRID_API_KEY found and has correct format')
-    console.log('Key length:', process.env.SENDGRID_API_KEY.length)
-    console.log('Key starts with:', process.env.SENDGRID_API_KEY.substring(0, 10) + '...')
-
-    // Test direct SendGrid connection
-    const sgTransport = await import('nodemailer-sendgrid-transport')
-    const nodemailer = await import('nodemailer')
-    
-    const testTransporter = nodemailer.default.createTransport(sgTransport.default({
-      auth: { api_key: process.env.SENDGRID_API_KEY }
-    }))
-
-    console.log('📧 Testing SendGrid transporter verification...')
-    await testTransporter.verify()
-    console.log('✅ SendGrid transporter verified successfully')
-
-    // Send test email
-    console.log('📤 Sending test email...')
-    const testMailOptions = {
-      from: process.env.FROM_EMAIL || 'sonia@cincyaisolutions.com',
-      to: testEmail,
-      subject: '🧪 SendGrid Test Email - Lead Agent System',
-      html: `
-        <h2>✅ SendGrid Configuration Test Successful!</h2>
-        <p>This test email confirms that your SendGrid configuration is working properly.</p>
-        <p><strong>Sent at:</strong> ${new Date().toISOString()}</p>
-        <p><strong>From:</strong> Your Lead Agent System</p>
-        <hr>
-        <small>This is an automated test email. You can safely delete it.</small>
-      `,
-      text: `
-SendGrid Configuration Test Successful!
-
-This test email confirms that your SendGrid configuration is working properly.
-
-Sent at: ${new Date().toISOString()}
-From: Your Lead Agent System
-
-This is an automated test email. You can safely delete it.
-      `
-    }
-
-    const info = await testTransporter.sendMail(testMailOptions)
-    console.log('✅ Test email sent successfully!')
-    console.log('SendGrid response:', JSON.stringify(info, null, 2))
-
-    res.status(200).json({
-      success: true,
-      message: 'SendGrid test email sent successfully',
-      details: {
-        sentTo: testEmail,
-        messageId: info.messageId,
-        sendGridResponse: info
-      }
-    })
-
-  } catch (error) {
-    console.error('❌ SendGrid test failed:', error)
-    res.status(500).json({
-      success: false,
-      error: 'SendGrid test failed',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-})
-
-// Update Knowledge Base Entry
-router.put('/knowledgebase/:kbId', requireAuth, async (req, res) => {
-  try {
-    // Get the businessId from the authenticated user
-    const businessId = req.user!.businessId
-    const kbId = req.params.kbId
-
-    // Extract knowledge base details from request body
-    const { content, sourceURL } = req.body
-
-    // Validation: ensure content is present if being updated
-    if (content !== undefined && content.trim() === '') {
-      return res.status(400).json({ 
-        error: 'Content cannot be empty if provided' 
-      })
-    }
-
-    // Find the KB entry and verify ownership
-    const kbEntry = await prisma.knowledgeBase.findUnique({
-      where: { id: kbId }
-    })
-
-    // Check if KB entry exists and belongs to the business
-    if (!kbEntry || kbEntry.businessId !== businessId) {
-      return res.status(404).json({ 
-        error: 'Knowledge base entry not found or you do not have permission to modify it' 
-      })
-    }
-
-    // Update the KB entry
-    const updatedKbEntry = await prisma.knowledgeBase.update({
-      where: { id: kbId },
-      data: {
-        content: content !== undefined ? content : undefined,
-        sourceURL: sourceURL !== undefined ? sourceURL : undefined
-      }
-    })
-
-    // Regenerate embedding if content was updated
-    if (content !== undefined && updatedKbEntry) {
-      try {
-        await generateAndStoreEmbedding(updatedKbEntry.id)
-        console.log(`Embedding regenerated for KB entry: ${updatedKbEntry.id}`)
-      } catch (embedError) {
-        console.error(`Error regenerating embedding for KB entry ${updatedKbEntry.id} after update:`, embedError)
-        // We'll let the KB update be considered a success even if embedding regeneration fails
-        // The embedding can potentially be regenerated later
-      }
-    }
-
-    // Send back the updated KB entry
-    res.status(200).json(updatedKbEntry)
-
-  } catch (error) {
-    console.error('Error updating knowledge base entry:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while updating knowledge base entry' 
-    })
-  }
-})
-
-// Delete Knowledge Base Entry
-router.delete('/knowledgebase/:kbId', requireAuth, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const kbId = req.params.kbId;
-  const kbEntry = await prisma.knowledgeBase.findUnique({
-    where: { id: kbId }
-  });
-
-  if (!kbEntry || kbEntry.businessId !== req.user.businessId) {
-    return res.status(404).json({ 
-      error: 'Knowledge base entry not found or you do not have permission to delete it' 
-    });
-  }
-
-  await prisma.knowledgeBase.delete({
-    where: { id: kbId }
-  });
-
-  res.status(204).send();
-})
-
 // Get Business Notification Settings
-router.get('/business/notifications', requireAuth, async (req, res) => {
+router.get('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -893,9 +544,8 @@ router.get('/business/notifications', requireAuth, async (req, res) => {
     })
 
     if (!business) {
-      return res.status(404).json({ 
-        error: 'Business not found' 
-      })
+      res.status(404).json({ error: 'Business not found' })
+      return
     }
 
     // Send back the business notification settings
@@ -903,14 +553,12 @@ router.get('/business/notifications', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching business notification settings:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while fetching notification settings' 
-    })
+    res.status(500).json({ error: 'Internal server error while fetching notification settings' })
   }
 })
 
 // Update Business Notification Settings
-router.put('/business/notifications', requireAuth, async (req, res) => {
+router.put('/business/notifications', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -922,9 +570,8 @@ router.put('/business/notifications', requireAuth, async (req, res) => {
     if (notificationEmail && notificationEmail.trim() !== '') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(notificationEmail.trim())) {
-        return res.status(400).json({ 
-          error: 'Invalid email format' 
-        })
+        res.status(400).json({ error: 'Invalid email format' })
+        return
       }
     }
 
@@ -933,9 +580,8 @@ router.put('/business/notifications', requireAuth, async (req, res) => {
       const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
       const cleanedPhone = notificationPhoneNumber.replace(/[\s\-\(\)\.]/g, '')
       if (!phoneRegex.test(cleanedPhone)) {
-        return res.status(400).json({ 
-          error: 'Invalid phone number format. Please use digits only with optional country code.' 
-        })
+        res.status(400).json({ error: 'Invalid phone number format. Please use digits only with optional country code.' })
+        return
       }
     }
 
@@ -960,107 +606,139 @@ router.put('/business/notifications', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error updating business notification settings:', error)
-    res.status(500).json({ 
-      error: 'Internal server error while updating notification settings' 
+    res.status(500).json({ error: 'Internal server error while updating notification settings' })
+  }
+})
+
+// Get All Clients for the Business
+router.get('/clients', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+
+    // Fetch all clients for this business
+    // Order by createdAt descending (newest first)
+    const clients = await prisma.client.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' }
     })
+
+    // Send back the clients array (empty array if no clients exist yet)
+    res.status(200).json(clients); return;
+
+  } catch (error) {
+    console.error('Error fetching clients:', error)
+    res.status(500).json({ 
+      error: 'Internal server error while fetching clients' 
+    }); return;
   }
 })
 
-// Client Management Routes
-router.get('/clients', requireAuth, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const clients = await prisma.client.findMany({
-    where: { businessId: req.user.businessId }
-  });
-  res.json(clients);
-})
-
-router.post(
-  '/clients',
-  validateRequest(clientSchema),
-  requireAuth,
-  async (req: Request, res: Response) => {
-    try {
-      if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-      const { name, email, phone, externalId } = req.body
-      
-      if (!name) {
-        return res.status(400).json({ error: 'Client name is required' })
-      }
-
-      const client = await prisma.client.create({
-        data: {
-          name,
-          email,
-          phone,
-          externalId,
-          businessId: req.user.businessId
-        }
-      })
-      res.status(201).json(client)
-    } catch (error) {
-      console.error('Error creating client:', error)
-      res.status(500).json({ error: 'Failed to create client' })
+// Create New Client
+router.post('/clients', validateRequest(clientSchema), authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, email, phone, externalId } = req.body
+    
+    if (!name) {
+      res.status(400).json({ error: 'Client name is required' }); return;
     }
-  }
-)
 
-router.put('/clients/:clientId', async (req, res) => {
-  const { clientId } = req.query
-  const data = clientSchema.parse(req.body)
-  
-  const client = await prisma.client.update({
-    where: { id: clientId as string },
-    data
-  })
-  res.json(client)
+    const client = await prisma.client.create({
+      data: {
+        name,
+        email,
+        phone,
+        externalId,
+        businessId: req.user!.businessId
+      }
+    })
+    res.status(201).json(client); return;
+  } catch (error) {
+    console.error('Error creating client:', error)
+    res.status(500).json({ error: 'Failed to create client' }); return;
+  }
 })
 
-router.delete('/clients/:clientId', async (req, res) => {
-  const { clientId } = req.query
-  await prisma.client.delete({
-    where: { id: clientId as string }
-  })
-  res.status(204).end()
+// Update Client
+router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized' }); return;
+    }
+    const { clientId } = req.params;
+    const parsedData = clientSchema.safeParse(req.body);
+
+    if (!parsedData.success) {
+      res.status(400).json({ error: parsedData.error.errors }); return;
+    }
+    const data = parsedData.data;
+
+    const client = await prisma.client.update({
+      where: { 
+        id: clientId as string,
+        businessId: req.user.businessId
+      },
+      data
+    })
+    res.json(client); return;
+  } catch (error) {
+    console.error('Error updating client:', error);
+    res.status(500).json({ error: 'Failed to update client' }); return;
+  }
+})
+
+// Delete Client
+router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized' }); return;
+    }
+    const { clientId } = req.params;
+    await prisma.client.delete({
+      where: { 
+        id: clientId as string,
+        businessId: req.user.businessId
+      }
+    })
+    res.status(204).send(); return;
+  } catch (error) {
+    console.error('Error deleting client:', error);
+    res.status(500).json({ error: 'Failed to delete client' }); return;
+  }
 })
 
 // Project Management Routes (Enterprise only)
-router.get('/projects', requireAuth, requirePlan('ENTERPRISE'), async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req: Request, res: Response): Promise<void> => {
   const { clientId } = req.query
   
   const projects = await prisma.project.findMany({
     where: {
-      businessId: req.user.businessId,
+      businessId: req.user!.businessId,
       ...(clientId && { clientId: clientId as string })
     },
     include: {
       client: true
     }
   })
-  res.json(projects)
+  res.json(projects); return;
 })
 
 router.post(
   '/projects',
   validateRequest(projectSchema),
-  requireAuth,
+  authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const { name, status, clientId, details, externalId } = req.body
 
       if (!name || !status || !clientId) {
-        return res.status(400).json({ error: 'Project name, status, and client ID are required' })
+        res.status(400).json({ error: 'Project name, status, and client ID are required' }); return;
       }
 
       // Verify client exists for the business
@@ -1072,7 +750,7 @@ router.post(
       })
 
       if (!clientExists) {
-        return res.status(400).json({ error: 'Invalid client ID for this business' })
+        res.status(400).json({ error: 'Invalid client ID for this business' }); return;
       }
 
       const project = await prisma.project.create({
@@ -1088,22 +766,24 @@ router.post(
           client: true
         }
       })
-      res.status(201).json(project)
+      res.status(201).json(project); return;
     } catch (error) {
       console.error('Error creating project:', error)
-      res.status(500).json({ error: 'Failed to create project' })
+      res.status(500).json({ error: 'Failed to create project' }); return;
     }
   }
 )
 
 router.get(
   '/projects/:projectId',
-  requireAuth,
-  async (req: Request, res: Response) => {
+  authMiddleware,
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const { projectId } = req.params
       const project = await prisma.project.findFirst({
         where: { 
@@ -1114,31 +794,35 @@ router.get(
           client: true
         }
       })
+
       if (!project) {
-        return res.status(404).json({ error: 'Project not found' })
+        res.status(404).json({ error: 'Project not found' }); return;
       }
-      res.json(project)
+
+      res.json(project); return;
     } catch (error) {
       console.error('Error fetching project:', error)
-      res.status(500).json({ error: 'Failed to fetch project' })
+      res.status(500).json({ error: 'Failed to fetch project' }); return;
     }
   }
 )
 
 router.put(
   '/projects/:projectId',
-  requireAuth,
+  authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const { projectId } = req.params
       const { name, status, clientId, details, externalId } = req.body
 
       if (!name || !status || !clientId) {
-        return res.status(400).json({ error: 'Project name, status, and client ID are required' })
+        res.status(400).json({ error: 'Project name, status, and client ID are required' }); return;
       }
 
       // Verify client exists for the business
@@ -1150,7 +834,7 @@ router.put(
       })
 
       if (!clientExists) {
-        return res.status(400).json({ error: 'Invalid client ID for this business' })
+        res.status(400).json({ error: 'Invalid client ID for this business' }); return;
       }
 
       const project = await prisma.project.update({
@@ -1169,23 +853,25 @@ router.put(
           client: true
         }
       })
-      res.json(project)
+      res.json(project); return;
     } catch (error) {
       console.error('Error updating project:', error)
-      res.status(500).json({ error: 'Failed to update project' })
+      res.status(500).json({ error: 'Failed to update project' }); return;
     }
   }
 )
 
 router.delete(
   '/projects/:projectId',
-  requireAuth,
+  authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const { projectId } = req.params
       await prisma.project.delete({
         where: { 
@@ -1193,10 +879,10 @@ router.delete(
           businessId: req.user.businessId
         }
       })
-      res.status(204).send()
+      res.status(204).send(); return;
     } catch (error) {
       console.error('Error deleting project:', error)
-      res.status(500).json({ error: 'Failed to delete project' })
+      res.status(500).json({ error: 'Failed to delete project' }); return;
     }
   }
 )
@@ -1204,37 +890,41 @@ router.delete(
 // Integration Management Routes (Enterprise only)
 router.get(
   '/integrations',
-  requireAuth,
+  authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const integrations = await prisma.integration.findMany({
         where: { businessId: req.user.businessId }
       })
-      res.json(integrations)
+      res.json(integrations); return;
     } catch (error) {
       console.error('Error fetching integrations:', error)
-      res.status(500).json({ error: 'Failed to fetch integrations' })
+      res.status(500).json({ error: 'Failed to fetch integrations' }); return;
     }
   }
 )
 
 router.post(
   '/integrations',
-  requireAuth,
+  authMiddleware,
   requirePlan('ENTERPRISE'),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
+
       const { type, apiKey, webhookSecret, settings } = req.body
 
       if (!type || !apiKey) {
-        return res.status(400).json({ error: 'Integration type and API key are required' })
+        res.status(400).json({ error: 'Integration type and API key are required' }); return;
       }
 
       const integration = await prisma.integration.create({
@@ -1243,94 +933,127 @@ router.post(
           apiKey,
           webhookSecret,
           settings,
-          businessId: req.user.businessId
+          businessId: req.user!.businessId
         }
       })
-      res.status(201).json(integration)
+      res.status(201).json(integration); return;
     } catch (error) {
       console.error('Error creating integration:', error)
-      res.status(500).json({ error: 'Failed to create integration' })
+      res.status(500).json({ error: 'Failed to create integration' }); return;
     }
   }
 )
 
-router.put('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req: Request, res: Response) => {
-  try {
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { integrationId } = req.params;
-    const { type, apiKey, webhookSecret, config, isEnabled } = req.body;
-
-    // Validate integration type if provided
-    if (type) {
-      const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS'];
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ 
-          error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
-        });
+router.put(
+  '/integrations/:integrationId',
+  authMiddleware,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
-    }
 
-    const integration = await prisma.integration.update({
-      where: { id: integrationId },
-      data: {
-        type,
-        apiKey,
-        webhookSecret,
-        isEnabled,
-        settings: config ? config : undefined
+      const { integrationId } = req.params
+      const { type, apiKey, webhookSecret, config, isEnabled } = req.body
+
+      // Validate integration type if provided
+      if (type) {
+        const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS']
+        if (!validTypes.includes(type)) {
+          res.status(400).json({ 
+            error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
+          }); return;
+        }
       }
-    });
-    res.json(integration);
-  } catch (error) {
-    console.error('Error updating integration:', error);
-    res.status(500).json({ error: 'Failed to update integration' });
+
+      const integration = await prisma.integration.update({
+        where: { id: integrationId },
+        data: {
+          type,
+          apiKey,
+          webhookSecret,
+          isEnabled,
+          settings: config ? config : undefined
+        }
+      })
+      res.json(integration); return;
+    } catch (error) {
+      console.error('Error updating integration:', error);
+      res.status(500).json({ error: 'Failed to update integration' }); return;
+    }
   }
-});
+)
 
-router.delete('/integrations/:integrationId', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
-  const { integrationId } = req.params
-  await prisma.integration.delete({
-    where: { id: integrationId }
-  })
-  res.status(204).end()
-})
+router.delete(
+  '/integrations/:integrationId',
+  authMiddleware,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+
+      const { integrationId } = req.params
+      await prisma.integration.delete({
+        where: { id: integrationId }
+      })
+      res.status(204).end(); return;
+    } catch (error) {
+      console.error('Error deleting integration:', error)
+      res.status(500).json({ error: 'Failed to delete integration' })
+    }
+  }
+)
 
 // Manual sync trigger (Enterprise only)
-router.post('/integrations/sync-now', requireAuth, requirePlan('ENTERPRISE'), async (req, res) => {
-  const { integrationId } = req.query
-  
-  const integration = await prisma.integration.findUnique({
-    where: { id: integrationId as string }
-  })
-  
-  if (!integration) {
-    return res.status(404).json({ error: 'Integration not found' })
-  }
-  
-  try {
-    switch (integration.type) {
-      case 'ASANA':
-        await syncAsanaProjects(integration)
-        break
-      case 'JIRA':
-        await syncJiraProjects(integration)
-        break
-      case 'TRELLO':
-        await syncTrelloProjects(integration)
-        break
-      default:
-        throw new Error(`Unsupported integration type: ${integration.type}`)
+router.post(
+  '/integrations/sync-now',
+  authMiddleware,
+  requirePlan('ENTERPRISE'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!isAuthenticatedRequest(req)) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+
+      const { integrationId } = req.query
+      
+      const integration = await prisma.integration.findUnique({
+        where: { id: integrationId as string }
+      })
+      
+      if (!integration) {
+        res.status(404).json({ error: 'Integration not found' })
+        return
+      }
+      
+      switch (integration.type) {
+        case 'ASANA':
+          await syncAsanaProjects(integration)
+          break
+        case 'JIRA':
+          await syncJiraProjects(integration)
+          break
+        case 'TRELLO':
+          await syncTrelloProjects(integration)
+          break
+        default:
+          res.status(400).json({ error: `Unsupported integration type: ${integration.type}` })
+          return
+      }
+      
+      res.json({ message: 'Sync initiated successfully' }); return;
+    } catch (error) {
+      console.error('Sync error:', error)
+      res.status(500).json({ error: 'Failed to initiate sync' })
     }
-    
-    res.json({ message: 'Sync initiated successfully' })
-  } catch (error) {
-    console.error('Sync error:', error)
-    res.status(500).json({ error: 'Failed to initiate sync' })
   }
-})
+)
 
 // Helper functions for sync operations
 async function syncAsanaProjects(integration: Integration) {
@@ -1351,68 +1074,88 @@ async function syncTrelloProjects(integration: Integration) {
   // and update the local database
 }
 
-router.get('/business', requireAuth, async (req: Request, res: Response) => {
+// Business Management Routes
+router.get('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
     const business = await prisma.business.findUnique({
-      where: { id: req.user.businessId },
+      where: { id: req.user!.businessId },
       include: {
         users: true,
         agentConfig: true
       }
     })
-    res.json(business)
+    res.json(business); return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch business' })
+    res.status(500).json({ error: 'Failed to fetch business' }); return;
   }
 })
 
-router.put('/business', requireAuth, async (req: Request, res: Response) => {
+router.put('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' })
+      return
     }
+
     const { name, planTier } = req.body
+
+    if (!name) {
+      res.status(400).json({ error: 'Business name is required' })
+      return
+    }
+
     const business = await prisma.business.update({
       where: { id: req.user.businessId },
       data: { name, planTier }
     })
-    res.json(business)
+    res.json(business); return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update business' })
+    res.status(500).json({ error: 'Failed to update business' }); return;
   }
 })
 
-router.get('/users', requireAuth, async (req: Request, res: Response) => {
+// User Management Routes
+router.get('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
     const users = await prisma.user.findMany({
-      where: { businessId: req.user.businessId }
+      where: { businessId: req.user!.businessId }
     })
-    res.json(users)
+    res.json(users); return;
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch users' })
+    res.status(500).json({ error: 'Failed to fetch users' }); return;
   }
 })
 
-router.post('/users', requireAuth, async (req: Request, res: Response) => {
+router.post('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' })
+      return
     }
+
     const { email, role, password } = req.body
 
     if (!email || !role || !password) {
-      return res.status(400).json({ error: 'Email, role, and password are required' })
+      res.status(400).json({ error: 'Email, role, and password are required' }); return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ error: 'Invalid email format' })
+      return
+    }
+
+    // Validate role
+    const validRoles = ['ADMIN', 'USER']
+    if (!validRoles.includes(role)) {
+      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      return
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } })
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this email already exists' })
+      res.status(400).json({ error: 'User with this email already exists' }); return;
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
@@ -1425,11 +1168,151 @@ router.post('/users', requireAuth, async (req: Request, res: Response) => {
         passwordHash
       }
     })
-    res.status(201).json(user)
+    res.status(201).json(user); return;
   } catch (error) {
     console.error('Error creating user:', error)
-    res.status(500).json({ error: 'Failed to create user' })
+    res.status(500).json({ error: 'Failed to create user' }); return;
   }
+})
+
+// Get All Knowledge Base Entries for the Business
+router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  // req.user is guaranteed to be set by authMiddleware
+  const entries = await prisma.knowledgeBase.findMany({
+    where: { businessId: req.user!.businessId }, // Non-null assertion
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(entries); return;
+})
+
+// Create New Knowledge Base Entry
+router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+
+    // Extract knowledge base details from request body
+    const { content, sourceURL } = req.body
+
+    // Validation: ensure content is present and not empty
+    if (!content || content.trim() === '') {
+      res.status(400).json({ error: 'Content is required and cannot be empty' })
+      return
+    }
+
+    // Create the new knowledge base entry
+    const newKnowledgeEntry = await prisma.knowledgeBase.create({
+      data: {
+        content,
+        sourceURL: sourceURL || null,
+        businessId
+      }
+    })
+
+    // Generate and store embedding for the new entry
+    try {
+      await generateAndStoreEmbedding(newKnowledgeEntry.id)
+    } catch (embeddingError) {
+      console.error(`Failed to generate embedding for KB entry ${newKnowledgeEntry.id}:`, embeddingError)
+    }
+
+    // Send back the newly created knowledge base entry with 201 status
+    res.status(201).json(newKnowledgeEntry)
+
+  } catch (error) {
+    console.error('Error creating knowledge base entry:', error)
+    res.status(500).json({ error: 'Internal server error while creating knowledge base entry' })
+  }
+})
+
+// Update Knowledge Base Entry
+router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the businessId from the authenticated user
+    const businessId = req.user!.businessId
+    const kbId = req.params.kbId
+
+    // Extract knowledge base details from request body
+    const { content, sourceURL } = req.body
+
+    // Validation: ensure content is present if being updated
+    if (content !== undefined && content.trim() === '') {
+      res.status(400).json({ error: 'Content cannot be empty if provided' })
+      return
+    }
+
+    // Find the KB entry and verify ownership
+    const kbEntry = await prisma.knowledgeBase.findUnique({
+      where: { id: kbId }
+    })
+
+    // Check if KB entry exists and belongs to the business
+    if (!kbEntry || kbEntry.businessId !== businessId) {
+      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to modify it' })
+      return
+    }
+
+    // Update the KB entry
+    const updatedKbEntry = await prisma.knowledgeBase.update({
+      where: { id: kbId },
+      data: {
+        content: content !== undefined ? content : undefined,
+        sourceURL: sourceURL !== undefined ? sourceURL : undefined
+      }
+    })
+
+    // Regenerate embedding if content was updated
+    if (content !== undefined && updatedKbEntry) {
+      try {
+        await generateAndStoreEmbedding(updatedKbEntry.id)
+        console.log(`Embedding regenerated for KB entry: ${updatedKbEntry.id}`)
+      } catch (embedError) {
+        console.error(`Error regenerating embedding for KB entry ${updatedKbEntry.id} after update:`, embedError)
+      }
+    }
+
+    // Send back the updated KB entry
+    res.status(200).json(updatedKbEntry)
+
+  } catch (error) {
+    console.error('Error updating knowledge base entry:', error)
+    res.status(500).json({ error: 'Internal server error while updating knowledge base entry' })
+  }
+})
+
+// Delete Knowledge Base Entry
+router.delete('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const kbId = req.params.kbId
+    const kbEntry = await prisma.knowledgeBase.findUnique({
+      where: { id: kbId }
+    })
+
+    if (!kbEntry || kbEntry.businessId !== req.user!.businessId) {
+      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to delete it' })
+      return
+    }
+
+    await prisma.knowledgeBase.delete({
+      where: { id: kbId }
+    })
+
+    res.status(204).send(); return;
+  } catch (error) {
+    console.error('Error deleting knowledge base entry:', error)
+    res.status(500).json({ error: 'Internal server error while deleting knowledge base entry' })
+  }
+})
+
+router.get('/logout', (req: Request, res: Response): void => {
+  // Clear the 'token' cookie
+  res.cookie('token', '', {
+    httpOnly: true,
+    expires: new Date(0), // Set expiration to a past date
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  })
+  res.redirect('/admin/login'); return;
 })
 
 export default router 

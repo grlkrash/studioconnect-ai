@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
 import sgTransport from 'nodemailer-sendgrid-transport'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, CallStatus, CallType, CallDirection } from '@prisma/client'
 import VoiceResponse = require('twilio/lib/twiml/VoiceResponse')
 import crypto from 'crypto'
 
@@ -118,20 +118,20 @@ export async function sendLeadNotificationEmail(
     return;
   }
 
-  const fromEmail = process.env.FROM_EMAIL || '"AI Studio Manager" <noreply@example.com>';
+  const fromEmail = process.env.FROM_EMAIL || '"AI Lead Agent" <noreply@example.com>';
   const contactName = leadDetails.contactName || (leadDetails.capturedData && leadDetails.capturedData["What is your full name, please?"]) || "N/A";
-  const subject = `New Lead for ${businessName}: ${contactName} (Priority: ${leadPriority || 'NORMAL'})`;
+  const subject = `New ${leadPriority || 'NORMAL'} Priority Lead for ${businessName}: ${contactName}`;
 
   // --- Start Building Human-Readable HTML Body ---
   let htmlBody = `<p>Hello ${businessName} team,</p>`;
   
-  // CRITICAL PROJECT ISSUE SECTION
+  // URGENT ALERT SECTION - Make emergency transcription highly visible at the top
   if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
     htmlBody += `
       <div style="background-color: #fef2f2; border: 3px solid #ef4444; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 Critical Project Issue Detected 🚨</h2>
+        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 URGENT EMERGENCY ALERT 🚨</h2>
         <p style="font-size: 18px; font-weight: bold; color: #991b1b; margin: 0; line-height: 1.4;">
-          Client Reported: "${leadDetails.capturedData.emergency_notes}"
+          Customer Stated: "${leadDetails.capturedData.emergency_notes}"
         </p>
       </div>
     `;
@@ -261,8 +261,18 @@ export async function initiateEmergencyVoiceCall(
 ): Promise<void> {
   try {
     // Validate required environment variables
-    if (!validateTwilioConfig()) {
-      console.error('[Emergency Call] Twilio configuration validation failed');
+    const requiredEnvVars = {
+      TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+      TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+      TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER
+    };
+
+    const missingVars = Object.entries(requiredEnvVars)
+      .filter(([_, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingVars.length > 0) {
+      console.error(`[Emergency Call] Missing required environment variables: ${missingVars.join(', ')}`);
       return;
     }
 
@@ -283,8 +293,10 @@ export async function initiateEmergencyVoiceCall(
       console.error('[Emergency Call] Error fetching AgentConfig:', configError);
     }
 
-    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || 'alice') as any;
-    const languageToUse = 'en-US' as any;
+    // Configure voice settings with fallbacks
+    const voiceToUse = (process.env.AGENT_VOICE_FOR_HSP_ALERTS || 'alice') as any
+    const languageToUse = 'en-US' as any
+    console.log('[Emergency Call] Voice settings:', { voice: voiceToUse, language: languageToUse })
 
     // Enhanced XML escaping function for safe text insertion in SSML
     const escapeXml = (unsafe: string): string => {
@@ -300,34 +312,37 @@ export async function initiateEmergencyVoiceCall(
       })
     }
 
-    const safeBusinessName = escapeXml(businessName);
-    const safeLeadSummary = escapeXml(leadSummary);
+    // Escape the dynamic content
+    const safeBusinessName = escapeXml(businessName)
+    const safeLeadSummary = escapeXml(leadSummary)
 
-    // Create enhanced SSML message for agency context
+    // Create enhanced SSML message with strategic pauses, emphasis, and professional urgency
     const messageToSay = 
-      `<prosody rate="fast"><emphasis level="strong">Urgent Project Alert!</emphasis></prosody>` +
+      `<prosody rate="fast"><emphasis level="strong">Urgent Alert!</emphasis></prosody>` +
       `<break strength="medium"/>` +
-      `This is an urgent notification for ${safeBusinessName}.` +
+      `This is an emergency <phoneme alphabet="ipa" ph="li藧d">lead</phoneme> notification for ${safeBusinessName}.` +
       `<break strength="medium"/>` +
-      `A client has reported a critical project issue. Details: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
+      `A customer has reported an emergency. Issue stated: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
       `<break strength="medium"/>` +
-      `Please check your email or dashboard immediately for full details and client contact information.` +
+      `Please check your email or dashboard immediately for full details and contact information.` +
       `<break strength="strong"/>` +
       `Repeating: <break time="300ms"/> ` +
-      `<emphasis level="strong">Urgent</emphasis> project issue for ${safeBusinessName}. ` +
+      `<emphasis level="strong">Urgent</emphasis> emergency <phoneme alphabet="ipa" ph="li藧d">lead</phoneme> for ${safeBusinessName}. ` +
       `Issue: <emphasis level="moderate">${safeLeadSummary}</emphasis>. ` +
       `Check your email for complete details.`
 
-    // Create TwiML response
-    const twiml = new VoiceResponse();
-    twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay);
+    // Create TwiML response using Twilio VoiceResponse class
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: voiceToUse, language: languageToUse }, messageToSay)
 
     try {
+      // Validate Twilio client
       if (!twilioClient) {
         console.error('Twilio client not initialized');
         return;
       }
 
+      // Log emergency call attempt
       console.log('[Emergency Call] Initiating call with details:', {
         to: toPhoneNumber,
         from: twilioPhoneNumber,
@@ -336,23 +351,45 @@ export async function initiateEmergencyVoiceCall(
         timestamp: new Date().toISOString()
       });
 
+      // Create the call with error handling
       const call = await twilioClient.calls.create({
         twiml: twiml.toString(),
         to: toPhoneNumber,
         from: twilioPhoneNumber
       });
 
+      // Log successful call creation
       console.log('[Emergency Call] Call created successfully:', {
         callSid: call.sid,
         status: call.status,
         timestamp: new Date().toISOString()
       });
 
+      // Add call status monitoring
       const callStatus = await call.fetch();
       console.log('[Emergency Call] Initial call status:', {
         callSid: call.sid,
         status: callStatus.status,
         timestamp: new Date().toISOString()
+      });
+
+      // Add call log entry for emergency call
+      const callLog = await prisma.callLog.create({
+        data: {
+          businessId,
+          conversationId: crypto.randomUUID(),
+          callSid: call.sid,
+          from: twilioPhoneNumber,
+          to: toPhoneNumber,
+          direction: CallDirection.OUTBOUND,
+          status: call.status as CallStatus,
+          source: 'EMERGENCY_CALL_NOTIFICATION',
+          type: CallType.VOICE,
+          metadata: {
+            leadSummary: safeLeadSummary,
+            leadId: businessId
+          }
+        }
       });
 
     } catch (twilioError: any) {
@@ -480,83 +517,83 @@ export async function sendLeadConfirmationToCustomer(
   }
 }
 
-export async function initiateClickToCall({
-  phoneNumber,
-  businessId,
-  conversationHistory
-}: {
-  phoneNumber: string
-  businessId: string
+export async function initiateClickToCall(
+  phoneNumber: string,
+  businessNotificationPhoneNumber: string,
+  businessName: string,
   conversationHistory: any[]
-}) {
+): Promise<{ success: boolean; callSid: string }> {
   try {
-    // Get business details
-    const business = await prisma.business.findUnique({
-      where: { id: businessId },
-      select: {
-        notificationPhoneNumber: true,
-        name: true
-      }
-    })
-
-    if (!business?.notificationPhoneNumber) {
-      throw new Error('Business notification number not configured')
+    // Validate Twilio configuration
+    if (!validateTwilioConfig()) {
+      throw new Error('Twilio configuration is incomplete.');
     }
 
     // Format conversation history for context
     const formattedHistory = conversationHistory
       .map(msg => `${msg.role}: ${msg.content}`)
-      .join('\n')
+      .join('\n');
 
     // Create TwiML for the call
-    const twiml = new VoiceResponse()
+    const twiml = new VoiceResponse();
     twiml.say({
       voice: 'Polly.Amy',
       language: 'en-GB'
-    }, `You have an emergency call request from a chat user. Here's the conversation history: ${formattedHistory}`)
+    }, `You have an emergency call request from a chat user. Here's the conversation history: ${formattedHistory}`);
 
     // Initiate the call using Twilio
     const call = await twilioClient.calls.create({
-      to: business.notificationPhoneNumber,
+      to: businessNotificationPhoneNumber,
       from: process.env.TWILIO_PHONE_NUMBER as string,
       twiml: twiml.toString(),
       statusCallback: `${process.env.API_BASE_URL}/api/calls/status`,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'
-    })
+    });
+
+    // Get business ID from Prisma
+    const business = await prisma.business.findFirst({
+      where: { notificationPhoneNumber: businessNotificationPhoneNumber }
+    });
+
+    if (!business) {
+      console.error('Business not found for logging click-to-call.');
+      return { success: true, callSid: call.sid };
+    }
+
+    // Create a new conversation for the call
+    const conversation = await prisma.conversation.create({
+      data: {
+        businessId: business.id,
+        sessionId: crypto.randomUUID(),
+        metadata: {
+          chatConversationHistory: formattedHistory,
+          customerPhoneNumber: phoneNumber
+        }
+      }
+    });
 
     // Log the call initiation
     await prisma.callLog.create({
       data: {
-        businessId,
+        businessId: business.id,
+        conversationId: conversation.id,
         callSid: call.sid,
         from: process.env.TWILIO_PHONE_NUMBER as string,
-        to: business.notificationPhoneNumber,
-        direction: 'OUTBOUND',
-        type: 'VOICE',
-        status: call.status,
-        source: 'CHAT_ESCALATION',
-        metadata: {
-          conversationHistory: formattedHistory
-        },
-        conversation: {
-          create: {
-            businessId,
-            sessionId: crypto.randomUUID(),
-            metadata: {
-              conversationHistory: formattedHistory
-            }
-          }
-        }
+        to: businessNotificationPhoneNumber,
+        direction: CallDirection.OUTBOUND,
+        type: CallType.VOICE,
+        status: CallStatus.INITIATED,
+        source: 'CLICK_TO_CALL'
       }
-    })
+    });
 
     return {
       success: true,
       callSid: call.sid
-    }
+    };
   } catch (error) {
-    console.error('Error initiating click-to-call:', error)
-    throw error
+    console.error('Error initiating click-to-call:', error);
+    throw error;
   }
 }
