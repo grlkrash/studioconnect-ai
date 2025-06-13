@@ -14,13 +14,14 @@ import { createRouter } from 'next-connect'
 import { ParsedQs } from 'qs'
 import { ParamsDictionary } from 'express-serve-static-core'
 import { asyncHandler } from '../utils/asyncHandler'
+import { sendTestEmail, sendLeadNotificationEmail } from '../services/notificationService'
 
 // Custom type for authenticated request handlers
 type AuthenticatedRequestHandler = (
   req: Request & { user?: UserPayload },
   res: Response,
   next: NextFunction
-) => Promise<void>
+) => Promise<Response | void>
 
 const router = Router()
 
@@ -68,17 +69,16 @@ const projectInclude = {
   integrations: true,
 } as const
 
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
+router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body
     console.log('LOGIN ATTEMPT:', { email, receivedPassword: password })
 
     if (!email || !password) {
       console.log('Login failed: Missing email or password in request body.')
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: 'Email and password are required' 
       })
-      return
     }
 
     const user = await prisma.user.findUnique({
@@ -89,10 +89,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     if (!user || !user.passwordHash) {
       console.log('Login failed: User not found or no password hash for email:', email)
-      res.status(401).json({ 
+      return res.status(401).json({ 
         error: 'Invalid email or password' 
       })
-      return
     }
 
     // **NEW DETAILED LOGS FOR BCRYPT.COMPARE**
@@ -114,10 +113,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     if (!passwordMatch) {
       console.log('Login failed: Password did not match for user:', email)
-      res.status(401).json({ 
+      return res.status(401).json({ 
         error: 'Invalid email or password' 
       })
-      return
     }
 
     // Authentication successful
@@ -149,37 +147,33 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     console.log('Token cookie set. Sending success response.')
     
     // Send success response
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Login successful',
       user: {
         id: user.id,
         email: user.email,
         role: user.role
       }
-    });
-    return;
+    })
 
   } catch (error) {
     console.error('ERROR IN LOGIN ROUTE:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error during login' 
-    });
-    return;
+    })
   }
 })
 
 // NEW: Add a protected /me route
-router.get('/me', authMiddleware, (req: Request, res: Response): void => {
+router.get('/me', authMiddleware, (req: Request, res: Response) => {
   if (!req.user) {
-    res.status(401).json({ error: 'Authentication failed or user details not found on request.' })
-    return
+    return res.status(401).json({ error: 'Authentication failed or user details not found on request.' })
   }
-  res.status(200).json({ currentUser: req.user })
-  return
+  return res.status(200).json({ currentUser: req.user })
 })
 
 // Get Agent Configuration
-router.get('/config', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/config', authMiddleware, async (req: Request, res: Response) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId // Non-null assertion is fine after authMiddleware
@@ -191,24 +185,21 @@ router.get('/config', authMiddleware, async (req: Request, res: Response): Promi
 
     // Check if configuration exists
     if (config) {
-      res.status(200).json(config)
-      return;
+      return res.status(200).json(config)
     } else {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Configuration not found. Please create one.' 
-      });
-      return;
+      })
     }
 
   } catch (error) {
     console.error('Error fetching agent configuration:', error)
-    res.status(500).json({ error: 'Internal server error' })
-    return;
+    return res.status(500).json({ error: 'Internal server error' })
   }
 })
 
 // Create/Update Agent Configuration
-router.post('/config', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/config', authMiddleware, async (req: Request, res: Response) => {
   try {
     // Get the businessId from the authenticated user
     const businessId = req.user!.businessId
@@ -219,10 +210,9 @@ router.post('/config', authMiddleware, async (req: Request, res: Response): Prom
     })
 
     if (!business) {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Business not found' 
       })
-      return
     }
 
     // Extract configuration details from request body
@@ -243,10 +233,9 @@ router.post('/config', authMiddleware, async (req: Request, res: Response): Prom
 
     // Basic validation
     if (!agentName || !personaPrompt || !welcomeMessage) {
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: 'Missing required fields: agentName, personaPrompt, and welcomeMessage are required' 
       })
-      return
     }
 
     // Validate OpenAI voice for PRO plan businesses
@@ -254,10 +243,9 @@ router.post('/config', authMiddleware, async (req: Request, res: Response): Prom
       const validVoices = ['ALLOY', 'ECHO', 'FABLE', 'ONYX', 'NOVA', 'SHIMMER']
       const normalizedVoice = openaiVoice.toUpperCase()
       if (!validVoices.includes(normalizedVoice)) {
-        res.status(400).json({ 
+        return res.status(400).json({ 
           error: `Invalid OpenAI voice. Must be one of: ${validVoices.join(', ')}` 
         })
-        return
       }
     }
 
@@ -295,11 +283,11 @@ router.post('/config', authMiddleware, async (req: Request, res: Response): Prom
     })
 
     // Send back the created or updated configuration
-    res.status(200).json(config)
+    return res.status(200).json(config)
 
   } catch (error) {
     console.error('Error creating/updating agent configuration:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error while saving configuration' 
     })
   }
@@ -318,10 +306,9 @@ router.get('/config/questions', authMiddleware, async (req: Request, res: Respon
 
     // Check if agent configuration exists
     if (!agentConfig) {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Agent configuration not found for this business. Please create one first.' 
       })
-      return
     }
 
     // Fetch all lead capture questions for this configuration
@@ -331,11 +318,11 @@ router.get('/config/questions', authMiddleware, async (req: Request, res: Respon
     })
 
     // Send back the questions array (empty array if no questions exist)
-    res.status(200).json(questions)
+    return res.status(200).json(questions)
 
   } catch (error) {
     console.error('Error fetching lead capture questions:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error while fetching lead capture questions' 
     })
   }
@@ -352,19 +339,17 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: 'Missing required fields: questionText and order are required' 
       })
-      return
     }
 
     // Validate expectedFormat against allowed values
     const validFormats = ['TEXT', 'EMAIL', 'PHONE']
     if (expectedFormat && !validFormats.includes(expectedFormat)) {
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: `Invalid expectedFormat. Must be one of: ${validFormats.join(', ')}` 
       })
-      return
     }
 
     // Find the agent configuration for this business
@@ -374,10 +359,9 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
 
     // Check if agent configuration exists
     if (!agentConfig) {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Agent configuration must exist before adding questions. Please create one first.' 
       })
-      return
     }
 
     // Create the new lead capture question
@@ -393,8 +377,7 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
     })
 
     // Send back the newly created question with 201 status
-    res.status(201).json(newQuestion)
-    return
+    return res.status(201).json(newQuestion)
   } catch (error) {
     console.error('Error creating lead capture question:', error)
     
@@ -402,15 +385,13 @@ router.post('/config/questions', authMiddleware, async (req: Request, res: Respo
     if (error instanceof Error) {
       // Handle unique constraint violation (e.g., duplicate order number)
       if (error.message.includes('Unique constraint')) {
-        res.status(400).json({ 
+        return res.status(400).json({ 
           error: 'A question with this order number already exists for this configuration' 
         })
-        return
       }
     }
     
-    res.status(500).json({ error: 'Internal server error while creating lead capture question' })
-    return
+    return res.status(500).json({ error: 'Internal server error while creating lead capture question' })
   }
 })
 
@@ -426,19 +407,17 @@ router.put('/config/questions/:questionId', authMiddleware, async (req: Request,
 
     // Basic validation
     if (!questionText || order === undefined || order === null) {
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: 'Missing required fields: questionText and order are required' 
       })
-      return
     }
 
     // Validate expectedFormat against allowed values
     const validFormats = ['TEXT', 'EMAIL', 'PHONE']
     if (expectedFormat && !validFormats.includes(expectedFormat)) {
-      res.status(400).json({ 
+      return res.status(400).json({ 
         error: `Invalid expectedFormat. Must be one of: ${validFormats.join(', ')}` 
       })
-      return
     }
 
     // Find the question and verify ownership
@@ -449,10 +428,9 @@ router.put('/config/questions/:questionId', authMiddleware, async (req: Request,
 
     // Check if question exists and belongs to the business
     if (!question || question.config.businessId !== businessId) {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Question not found or you do not have permission to modify it' 
       })
-      return
     }
 
     // Update the question
@@ -468,23 +446,10 @@ router.put('/config/questions/:questionId', authMiddleware, async (req: Request,
     })
 
     // Send back the updated question
-    res.status(200).json(updatedQuestion)
-
+    return res.status(200).json(updatedQuestion)
   } catch (error) {
     console.error('Error updating lead capture question:', error)
-    
-    // Check for specific Prisma errors
-    if (error instanceof Error) {
-      // Handle unique constraint violation (e.g., duplicate order number)
-      if (error.message.includes('Unique constraint')) {
-        res.status(400).json({ 
-          error: 'A question with this order number already exists for this configuration' 
-        })
-        return
-      }
-    }
-    
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error while updating lead capture question' 
     })
   }
@@ -505,10 +470,9 @@ router.delete('/config/questions/:questionId', authMiddleware, async (req: Reque
 
     // Check if question exists and belongs to the business
     if (!question || question.config.businessId !== businessId) {
-      res.status(404).json({ 
+      return res.status(404).json({ 
         error: 'Question not found or you do not have permission to delete it' 
       })
-      return
     }
 
     // Delete the question
@@ -517,11 +481,10 @@ router.delete('/config/questions/:questionId', authMiddleware, async (req: Reque
     })
 
     // Send success response
-    res.status(204).send()
-
+    return res.status(204).send()
   } catch (error) {
     console.error('Error deleting lead capture question:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error while deleting lead capture question' 
     })
   }
@@ -546,18 +509,15 @@ router.get('/business/notifications', authMiddleware, async (req: Request, res: 
     })
 
     if (!business) {
-      res.status(404).json({ error: 'Business not found' })
-      return
+      return res.status(404).json({ error: 'Business not found' })
     }
 
     // Send back the business notification settings
-    res.status(200).json(business)
-    return;
+    return res.status(200).json(business)
 
   } catch (error) {
     console.error('Error fetching business notification settings:', error)
-    res.status(500).json({ error: 'Internal server error while fetching notification settings' })
-    return;
+    return res.status(500).json({ error: 'Internal server error while fetching notification settings' })
   }
 })
 
@@ -574,8 +534,7 @@ router.put('/business/notifications', authMiddleware, async (req: Request, res: 
     if (notificationEmail && notificationEmail.trim() !== '') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(notificationEmail.trim())) {
-        res.status(400).json({ error: 'Invalid email format' })
-        return
+        return res.status(400).json({ error: 'Invalid email format' })
       }
     }
 
@@ -584,8 +543,7 @@ router.put('/business/notifications', authMiddleware, async (req: Request, res: 
       const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
       const cleanedPhone = notificationPhoneNumber.replace(/[\s\-\(\)\.]/g, '')
       if (!phoneRegex.test(cleanedPhone)) {
-        res.status(400).json({ error: 'Invalid phone number format. Please use digits only with optional country code.' })
-        return
+        return res.status(400).json({ error: 'Invalid phone number format. Please use digits only with optional country code.' })
       }
     }
 
@@ -606,11 +564,11 @@ router.put('/business/notifications', authMiddleware, async (req: Request, res: 
     })
 
     // Send back the updated business settings
-    res.status(200).json(updatedBusiness)
+    return res.status(200).json(updatedBusiness)
 
   } catch (error) {
     console.error('Error updating business notification settings:', error)
-    res.status(500).json({ error: 'Internal server error while updating notification settings' })
+    return res.status(500).json({ error: 'Internal server error while updating notification settings' })
   }
 })
 
@@ -628,13 +586,12 @@ router.get('/clients', authMiddleware, async (req: Request, res: Response): Prom
     })
 
     // Send back the clients array (empty array if no clients exist yet)
-    res.status(200).json(clients); return;
-
+    return res.status(200).json(clients)
   } catch (error) {
     console.error('Error fetching clients:', error)
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Internal server error while fetching clients' 
-    }); return;
+    })
   }
 })
 
@@ -644,7 +601,7 @@ router.post('/clients', validateRequest(clientSchema), authMiddleware, async (re
     const { name, email, phone, externalId } = req.body
     
     if (!name) {
-      res.status(400).json({ error: 'Client name is required' }); return;
+      return res.status(400).json({ error: 'Client name is required' })
     }
 
     const client = await prisma.client.create({
@@ -656,10 +613,10 @@ router.post('/clients', validateRequest(clientSchema), authMiddleware, async (re
         businessId: req.user!.businessId
       }
     })
-    res.status(201).json(client); return;
+    return res.status(201).json(client)
   } catch (error) {
     console.error('Error creating client:', error)
-    res.status(500).json({ error: 'Failed to create client' }); return;
+    return res.status(500).json({ error: 'Failed to create client' })
   }
 })
 
@@ -667,13 +624,13 @@ router.post('/clients', validateRequest(clientSchema), authMiddleware, async (re
 router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ error: 'Unauthorized' }); return;
+      return res.status(401).json({ error: 'Unauthorized' })
     }
     const { clientId } = req.params;
     const parsedData = clientSchema.safeParse(req.body);
 
     if (!parsedData.success) {
-      res.status(400).json({ error: parsedData.error.errors }); return;
+      return res.status(400).json({ error: parsedData.error.errors })
     }
     const data = parsedData.data;
 
@@ -684,10 +641,10 @@ router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Respo
       },
       data
     })
-    res.json(client); return;
+    return res.json(client)
   } catch (error) {
     console.error('Error updating client:', error);
-    res.status(500).json({ error: 'Failed to update client' }); return;
+    return res.status(500).json({ error: 'Failed to update client' })
   }
 })
 
@@ -695,7 +652,7 @@ router.put('/clients/:clientId', authMiddleware, async (req: Request, res: Respo
 router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ error: 'Unauthorized' }); return;
+      return res.status(401).json({ error: 'Unauthorized' })
     }
     const { clientId } = req.params;
     await prisma.client.delete({
@@ -704,10 +661,10 @@ router.delete('/clients/:clientId', authMiddleware, async (req: Request, res: Re
         businessId: req.user.businessId
       }
     })
-    res.status(204).send(); return;
+    return res.status(204).send()
   } catch (error) {
     console.error('Error deleting client:', error);
-    res.status(500).json({ error: 'Failed to delete client' }); return;
+    return res.status(500).json({ error: 'Failed to delete client' })
   }
 })
 
@@ -724,12 +681,10 @@ router.get('/projects', authMiddleware, requirePlan('ENTERPRISE'), async (req: R
         client: true
       }
     });
-    res.json(projects);
-    return;
+    return res.json(projects)
   } catch (error) {
     console.error('Error fetching projects:', error);
-    res.status(500).json({ error: 'Failed to fetch projects' });
-    return;
+    return res.status(500).json({ error: 'Failed to fetch projects' })
   }
 });
 
@@ -741,15 +696,13 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { name, status, clientId, details, externalId } = req.body;
 
       if (!name || !status || !clientId) {
-        res.status(400).json({ error: 'Project name, status, and client ID are required' });
-        return;
+        return res.status(400).json({ error: 'Project name, status, and client ID are required' });
       }
 
       const clientExists = await prisma.client.findFirst({
@@ -760,8 +713,7 @@ router.post(
       });
 
       if (!clientExists) {
-        res.status(400).json({ error: 'Invalid client ID for this business' });
-        return;
+        return res.status(400).json({ error: 'Invalid client ID for this business' });
       }
 
       const project = await prisma.project.create({
@@ -777,12 +729,10 @@ router.post(
           client: true
         }
       });
-      res.status(201).json(project);
-      return;
+      return res.status(201).json(project);
     } catch (error) {
       console.error('Error creating project:', error);
-      res.status(500).json({ error: 'Failed to create project' });
-      return;
+      return res.status(500).json({ error: 'Failed to create project' });
     }
   }
 );
@@ -793,8 +743,7 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        return res.status(401).json({ error: 'Unauthorized' })
       }
 
       const { projectId } = req.params
@@ -809,13 +758,13 @@ router.get(
       })
 
       if (!project) {
-        res.status(404).json({ error: 'Project not found' }); return;
+        return res.status(404).json({ error: 'Project not found' });
       }
 
-      res.json(project); return;
+      return res.json(project);
     } catch (error) {
       console.error('Error fetching project:', error)
-      res.status(500).json({ error: 'Failed to fetch project' }); return;
+      return res.status(500).json({ error: 'Failed to fetch project' });
     }
   }
 )
@@ -827,15 +776,14 @@ router.put(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        return res.status(401).json({ error: 'Unauthorized' })
       }
 
       const { projectId } = req.params
       const { name, status, clientId, details, externalId } = req.body
 
       if (!name || !status || !clientId) {
-        res.status(400).json({ error: 'Project name, status, and client ID are required' }); return;
+        return res.status(400).json({ error: 'Project name, status, and client ID are required' });
       }
 
       // Verify client exists for the business
@@ -847,7 +795,7 @@ router.put(
       })
 
       if (!clientExists) {
-        res.status(400).json({ error: 'Invalid client ID for this business' }); return;
+        return res.status(400).json({ error: 'Invalid client ID for this business' });
       }
 
       const project = await prisma.project.update({
@@ -866,10 +814,10 @@ router.put(
           client: true
         }
       })
-      res.json(project); return;
+      return res.json(project);
     } catch (error) {
       console.error('Error updating project:', error)
-      res.status(500).json({ error: 'Failed to update project' }); return;
+      return res.status(500).json({ error: 'Failed to update project' });
     }
   }
 )
@@ -881,8 +829,7 @@ router.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        return res.status(401).json({ error: 'Unauthorized' })
       }
 
       const { projectId } = req.params
@@ -892,10 +839,10 @@ router.delete(
           businessId: req.user.businessId
         }
       })
-      res.status(204).send(); return;
+      return res.status(204).send();
     } catch (error) {
       console.error('Error deleting project:', error)
-      res.status(500).json({ error: 'Failed to delete project' }); return;
+      return res.status(500).json({ error: 'Failed to delete project' });
     }
   }
 )
@@ -908,19 +855,16 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const integrations = await prisma.integration.findMany({
         where: { businessId: req.user.businessId }
       });
-      res.json(integrations);
-      return;
+      return res.json(integrations);
     } catch (error) {
       console.error('Error fetching integrations:', error);
-      res.status(500).json({ error: 'Failed to fetch integrations' });
-      return;
+      return res.status(500).json({ error: 'Failed to fetch integrations' });
     }
   }
 );
@@ -932,15 +876,13 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { type, apiKey, webhookSecret, settings } = req.body;
 
       if (!type || !apiKey) {
-        res.status(400).json({ error: 'Integration type and API key are required' });
-        return;
+        return res.status(400).json({ error: 'Integration type and API key are required' });
       }
 
       const integration = await prisma.integration.create({
@@ -952,12 +894,10 @@ router.post(
           businessId: req.user!.businessId
         }
       });
-      res.status(201).json(integration);
-      return;
+      return res.status(201).json(integration);
     } catch (error) {
       console.error('Error creating integration:', error);
-      res.status(500).json({ error: 'Failed to create integration' });
-      return;
+      return res.status(500).json({ error: 'Failed to create integration' });
     }
   }
 );
@@ -969,8 +909,7 @@ router.put(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        return res.status(401).json({ error: 'Unauthorized' })
       }
 
       const { integrationId } = req.params
@@ -980,9 +919,9 @@ router.put(
       if (type) {
         const validTypes = ['ASANA', 'JIRA', 'TRELLO', 'GOOGLE_SHEETS']
         if (!validTypes.includes(type)) {
-          res.status(400).json({ 
+          return res.status(400).json({ 
             error: `Invalid integration type. Must be one of: ${validTypes.join(', ')}` 
-          }); return;
+          });
         }
       }
 
@@ -996,10 +935,10 @@ router.put(
           settings: config ? config : undefined
         }
       })
-      res.json(integration); return;
+      return res.json(integration);
     } catch (error) {
       console.error('Error updating integration:', error);
-      res.status(500).json({ error: 'Failed to update integration' }); return;
+      return res.status(500).json({ error: 'Failed to update integration' });
     }
   }
 )
@@ -1011,18 +950,17 @@ router.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' })
-        return
+        return res.status(401).json({ error: 'Unauthorized' })
       }
 
       const { integrationId } = req.params
       await prisma.integration.delete({
         where: { id: integrationId }
       })
-      res.status(204).end(); return;
+      return res.status(204).end();
     } catch (error) {
       console.error('Error deleting integration:', error)
-      res.status(500).json({ error: 'Failed to delete integration' })
+      return res.status(500).json({ error: 'Failed to delete integration' })
     }
   }
 )
@@ -1035,8 +973,7 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       if (!isAuthenticatedRequest(req)) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { integrationId } = req.query;
@@ -1046,8 +983,7 @@ router.post(
       });
       
       if (!integration) {
-        res.status(404).json({ error: 'Integration not found' });
-        return;
+        return res.status(404).json({ error: 'Integration not found' });
       }
       
       switch (integration.type) {
@@ -1061,16 +997,13 @@ router.post(
           await syncTrelloProjects(integration);
           break;
         default:
-          res.status(400).json({ error: `Unsupported integration type: ${integration.type}` });
-          return;
+          return res.status(400).json({ error: `Unsupported integration type: ${integration.type}` });
       }
       
-      res.json({ message: 'Sync initiated successfully' });
-      return;
+      return res.json({ message: 'Sync initiated successfully' });
     } catch (error) {
       console.error('Sync error:', error);
-      res.status(500).json({ error: 'Failed to initiate sync' });
-      return;
+      return res.status(500).json({ error: 'Failed to initiate sync' });
     }
   }
 );
@@ -1104,37 +1037,31 @@ router.get('/business', authMiddleware, async (req: Request, res: Response): Pro
         agentConfig: true
       }
     });
-    res.json(business);
-    return;
+    return res.json(business);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch business' });
-    return;
+    return res.status(500).json({ error: 'Failed to fetch business' });
   }
 });
 
 router.put('/business', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const { name, planTier } = req.body;
 
     if (!name) {
-      res.status(400).json({ error: 'Business name is required' });
-      return;
+      return res.status(400).json({ error: 'Business name is required' });
     }
 
     const business = await prisma.business.update({
       where: { id: req.user.businessId },
       data: { name, planTier }
     });
-    res.json(business);
-    return;
+    return res.json(business);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update business' });
-    return;
+    return res.status(500).json({ error: 'Failed to update business' });
   }
 });
 
@@ -1144,44 +1071,37 @@ router.get('/users', authMiddleware, async (req: Request, res: Response): Promis
     const users = await prisma.user.findMany({
       where: { businessId: req.user!.businessId }
     });
-    res.json(users);
-    return;
+    return res.json(users);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch users' });
-    return;
+    return res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
 router.post('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isAuthenticatedRequest(req)) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const { email, role, password } = req.body;
 
     if (!email || !role || !password) {
-      res.status(400).json({ error: 'Email, role, and password are required' });
-      return;
+      return res.status(400).json({ error: 'Email, role, and password are required' });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      res.status(400).json({ error: 'Invalid email format' });
-      return;
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     const validRoles = ['ADMIN', 'USER'];
     if (!validRoles.includes(role)) {
-      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
-      return;
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      res.status(400).json({ error: 'User with this email already exists' });
-      return;
+      return res.status(400).json({ error: 'User with this email already exists' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -1194,12 +1114,10 @@ router.post('/users', authMiddleware, async (req: Request, res: Response): Promi
         passwordHash
       }
     });
-    res.status(201).json(user);
-    return;
+    return res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
-    res.status(500).json({ error: 'Failed to create user' });
-    return;
+    return res.status(500).json({ error: 'Failed to create user' });
   }
 });
 
@@ -1210,12 +1128,10 @@ router.get('/knowledgebase', authMiddleware, async (req: Request, res: Response)
       where: { businessId: req.user!.businessId },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(entries);
-    return;
+    return res.json(entries);
   } catch (error) {
     console.error('Error fetching knowledge base entries:', error);
-    res.status(500).json({ error: 'Internal server error while fetching knowledge base entries' });
-    return;
+    return res.status(500).json({ error: 'Internal server error while fetching knowledge base entries' });
   }
 })
 
@@ -1226,8 +1142,7 @@ router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response
     const { content, sourceURL } = req.body;
 
     if (!content || content.trim() === '') {
-      res.status(400).json({ error: 'Content is required and cannot be empty' });
-      return;
+      return res.status(400).json({ error: 'Content is required and cannot be empty' });
     }
 
     const newKnowledgeEntry = await prisma.knowledgeBase.create({
@@ -1244,12 +1159,10 @@ router.post('/knowledgebase', authMiddleware, async (req: Request, res: Response
       console.error(`Failed to generate embedding for KB entry ${newKnowledgeEntry.id}:`, embeddingError);
     }
 
-    res.status(201).json(newKnowledgeEntry);
-    return;
+    return res.status(201).json(newKnowledgeEntry);
   } catch (error) {
     console.error('Error creating knowledge base entry:', error);
-    res.status(500).json({ error: 'Internal server error while creating knowledge base entry' });
-    return;
+    return res.status(500).json({ error: 'Internal server error while creating knowledge base entry' });
   }
 })
 
@@ -1261,8 +1174,7 @@ router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Res
     const { content, sourceURL } = req.body;
 
     if (content !== undefined && content.trim() === '') {
-      res.status(400).json({ error: 'Content cannot be empty if provided' });
-      return;
+      return res.status(400).json({ error: 'Content cannot be empty if provided' });
     }
 
     const kbEntry = await prisma.knowledgeBase.findUnique({
@@ -1270,8 +1182,7 @@ router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Res
     });
 
     if (!kbEntry || kbEntry.businessId !== businessId) {
-      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to modify it' });
-      return;
+      return res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to modify it' });
     }
 
     const updatedKbEntry = await prisma.knowledgeBase.update({
@@ -1290,12 +1201,10 @@ router.put('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: Res
       }
     }
 
-    res.status(200).json(updatedKbEntry);
-    return;
+    return res.status(200).json(updatedKbEntry);
   } catch (error) {
     console.error('Error updating knowledge base entry:', error);
-    res.status(500).json({ error: 'Internal server error while updating knowledge base entry' });
-    return;
+    return res.status(500).json({ error: 'Internal server error while updating knowledge base entry' });
   }
 })
 
@@ -1308,20 +1217,17 @@ router.delete('/knowledgebase/:kbId', authMiddleware, async (req: Request, res: 
     });
 
     if (!kbEntry || kbEntry.businessId !== req.user!.businessId) {
-      res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to delete it' });
-      return;
+      return res.status(404).json({ error: 'Knowledge base entry not found or you do not have permission to delete it' });
     }
 
     await prisma.knowledgeBase.delete({
       where: { id: kbId }
     });
 
-    res.status(204).send();
-    return;
+    return res.status(204).send();
   } catch (error) {
     console.error('Error deleting knowledge base entry:', error);
-    res.status(500).json({ error: 'Internal server error while deleting knowledge base entry' });
-    return;
+    return res.status(500).json({ error: 'Internal server error while deleting knowledge base entry' });
   }
 })
 
@@ -1335,5 +1241,30 @@ router.get('/logout', (req: Request, res: Response): void => {
   res.redirect('/admin/login');
   return;
 })
+
+router.post('/test-sendgrid', authMiddleware, async (req, res) => {
+    try {
+        const { testEmail } = req.body
+        
+        if (!testEmail || !testEmail.includes('@')) {
+          return res.status(400).json({ error: 'Valid test email address required' })
+        }
+    
+        const result = await sendTestEmail(testEmail)
+        
+        return res.status(200).json({
+          success: true,
+          message: 'SendGrid test email sent successfully.',
+          result,
+        })
+      } catch (error) {
+        console.error('❌ SendGrid test failed:', error)
+        return res.status(500).json({
+          success: false,
+          error: 'SendGrid test failed',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        })
+      }
+});
 
 export default router 

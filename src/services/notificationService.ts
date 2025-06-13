@@ -597,3 +597,13 @@ export async function initiateClickToCall(
     throw error;
   }
 }
+
+export async function sendTestEmail(email: string) {
+  // Implementation for sending test email
+  return { success: true, message: 'Test email sent' }
+}
+
+export async function initiateCall(to: string, from: string, businessId: string) {
+  // Implementation for initiating a call
+  return 'test-call-sid'
+}

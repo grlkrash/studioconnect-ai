@@ -1,242 +1,181 @@
-import { Router, Response, Request } from 'express'
-import { authMiddleware, isAuthenticatedRequest } from './authMiddleware'
+import { Router, Request, Response } from 'express'
+import { authMiddleware, UserPayload } from './authMiddleware'
 import { prisma } from '../services/db'
 
 const router = Router()
 
-// Login page route
+// Extend Express Request type
+interface AuthRequest extends Request {
+    user?: UserPayload
+}
+
+// Simple login page
 router.get('/login', (req: Request, res: Response) => {
-  res.render('login', { error: null }); return;
-})
-
-// Protected dashboard route
-router.get('/dashboard', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const userWithBusiness = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      include: {
-        business: true
-      }
-    })
-
-    if (!userWithBusiness) {
-      console.error('Dashboard: User from token not found in DB:', req.user.userId)
-      res.redirect('/admin/login'); return
+    if (req.cookies.token) {
+        return res.redirect('/dashboard')
     }
-
-    res.render('dashboard', {
-      user: userWithBusiness
-    }); return;
-  } catch (error) {
-    console.error("Error rendering dashboard:", error)
-    res.status(500).json({ error: 'Failed to fetch dashboard data' }); return
-  }
+    return res.render('login', { title: 'Login' })
 })
 
-// Protected agent settings route
-router.get('/settings', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const business = await prisma.business.findUnique({
-      where: { id: businessId }
-    })
-    
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId }
-    })
-    
-    res.render('agent-settings', {
-      agentConfig: agentConfig || null,
-      business: business || null,
-      user: req.user,
-      successMessage: req.query.success
-    }); return;
-  } catch (error) {
-    console.error('Error fetching agent config:', error)
-    res.status(500).json({ error: 'Failed to fetch settings' }); return
-  }
+// Simple logout action
+router.get('/logout', (req: Request, res: Response) => {
+    res.clearCookie('token')
+    return res.redirect('/login')
 })
 
-// Protected lead questions route
-router.get('/lead-questions', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId }
-    })
-    
-    const questions = agentConfig 
-      ? await prisma.leadCaptureQuestion.findMany({ 
-          where: { configId: agentConfig.id }, 
-          orderBy: { order: 'asc' } 
-        }) 
-      : []
-    
-    res.render('lead-questions', { 
-      questions, 
-      user: req.user 
-    }); return;
-  } catch (error) {
-    console.error('Error fetching lead questions:', error)
-    res.status(500).json({ error: 'Failed to fetch lead questions' }); return
-  }
-})
-
-// Protected knowledge base route
-router.get('/knowledge-base', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const knowledgeEntries = await prisma.knowledgeBase.findMany({ 
-      where: { businessId }, 
-      orderBy: { createdAt: 'desc' } 
-    })
-    
-    res.render('knowledge-base', { 
-      knowledgeEntries, 
-      user: req.user 
-    }); return;
-  } catch (error) {
-    console.error('Error fetching knowledge base entries:', error)
-    res.status(500).json({ error: 'Failed to fetch knowledge base' }); return
-  }
-})
-
-// Protected leads route
-router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const leads = await prisma.lead.findMany({ 
-      where: { businessId }, 
-      orderBy: { createdAt: 'desc' } 
-    })
-    
-    res.render('view-leads', { 
-      leads, 
-      user: req.user 
-    }); return;
-  } catch (error) {
-    console.error('Error fetching leads:', error)
-    res.status(500).json({ error: 'Failed to fetch leads' }); return
-  }
-})
-
-// Protected notification settings route
-router.get('/notifications', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const business = await prisma.business.findUnique({
-      where: { id: businessId },
-      select: {
-        id: true,
-        name: true,
-        notificationEmail: true,
-        notificationPhoneNumber: true,
-        planTier: true
-      }
-    })
-    
-    if (!business) {
-      res.status(404).render('error', {
-        message: 'Business not found',
-        user: req.user 
-      }); return
+// Dashboard View
+router.get('/dashboard', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
     }
-    
-    res.render('notification-settings', { 
-      business, 
-      user: req.user,
-      successMessage: req.query.success
-    }); return;
-  } catch (error) {
-    console.error('Error fetching notification settings:', error)
-    res.status(500).json({ error: 'Failed to fetch notifications' }); return
-  }
-})
+    try {
+        const business = await prisma.business.findUnique({
+            where: { id: req.user.businessId }
+        })
 
-// Protected clients route
-router.get('/clients', authMiddleware, async (req: Request, res: Response) => {
-  if (!isAuthenticatedRequest(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const business = await prisma.business.findUnique({
-      where: { id: req.user.businessId },
-      include: {
-        clients: {
-          orderBy: { createdAt: 'desc' },
-          include: {
-            projects: true
-          }
+        const leadStats = await prisma.lead.groupBy({
+            by: ['status'],
+            where: { businessId: req.user.businessId },
+            _count: {
+                status: true
+            }
+        })
+
+        const stats = {
+            NEW: leadStats.find(s => s.status === 'NEW')?._count.status || 0,
+            CONTACTED: leadStats.find(s => s.status === 'CONTACTED')?._count.status || 0,
+            CLOSED: leadStats.find(s => s.status === 'CLOSED')?._count.status || 0
         }
-      }
-    })
-    
-    if (!business) {
-      res.status(404).render('error', {
-        message: 'Business not found',
-        user: req.user 
-      }); return
+
+        return res.render('dashboard', {
+            title: 'Dashboard',
+            businessName: business?.name || 'Your Business',
+            stats,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Dashboard error:', error)
+        return res.status(500).send('Error loading dashboard')
     }
-    
-    res.render('clients', { 
-      clients: business.clients, 
-      user: req.user,
-      successMessage: req.query.success
-    }); return;
-  } catch (error) {
-    console.error('Error fetching clients:', error)
-    res.status(500).json({ error: 'Failed to fetch clients' }); return
-  }
 })
 
-// Protected projects route - Enterprise plan only
-router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
-  if (!req.user) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const projects = await prisma.project.findMany({
-      where: { businessId },
-      include: {
-        client: true,
-        business: true
-      }
-    })
-    
-    res.json(projects); return;
-  } catch (error) {
-    console.error('Error fetching projects:', error)
-    res.status(500).json({ error: 'Failed to fetch projects' }); return
-  }
+// Settings View
+router.get('/settings', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
+    }
+
+    try {
+        const business = await prisma.business.findUnique({ where: { id: req.user.businessId } })
+        return res.render('settings', {
+            title: 'Settings',
+            businessName: business?.name || 'Your Business',
+            config: business,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Settings page error:', error)
+        return res.status(500).send('Error loading settings')
+    }
 })
 
-// Protected integrations route - Enterprise plan only
-router.get('/integrations', authMiddleware, async (req: Request, res: Response) => {
-  if (!req.user) { res.status(401).json({ error: 'Unauthorized' }); return }
-  try {
-    const businessId = req.user.businessId
-    
-    const integrations = await prisma.integration.findMany({
-      where: { businessId },
-      include: {
-        business: true
-      }
-    })
-    
-    res.json(integrations); return;
-  } catch (error) {
-    console.error('Error fetching integrations:', error)
-    res.status(500).json({ error: 'Failed to fetch integrations' }); return
-  }
+// Lead Questions View
+router.get('/lead-questions', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
+    }
+    try {
+        const business = await prisma.business.findUnique({ where: { id: req.user.businessId } })
+        const questions = await prisma.leadCaptureQuestion.findMany({
+            where: { config: { businessId: req.user.businessId } },
+            orderBy: { order: 'asc' }
+        })
+        return res.render('lead-questions', {
+            title: 'Lead Questions',
+            businessName: business?.name,
+            questions,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Lead questions page error:', error)
+        return res.status(500).send('Error loading lead questions')
+    }
+})
+
+// Knowledge Base View
+router.get('/knowledge-base', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
+    }
+    try {
+        const business = await prisma.business.findUnique({ where: { id: req.user.businessId } })
+        const knowledgeBaseItems = await prisma.knowledgeBase.findMany({
+            where: { businessId: req.user.businessId },
+            orderBy: { createdAt: 'desc' }
+        })
+        return res.render('knowledge-base', {
+            title: 'Knowledge Base',
+            businessName: business?.name,
+            items: knowledgeBaseItems,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Knowledge base page error:', error)
+        return res.status(500).send('Error loading knowledge base')
+    }
+})
+
+// Leads Table View
+router.get('/leads', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
+    }
+    try {
+        const business = await prisma.business.findUnique({ where: { id: req.user.businessId } })
+        const leads = await prisma.lead.findMany({
+            where: { businessId: req.user.businessId },
+            orderBy: { createdAt: 'desc' }
+        })
+        return res.render('leads', {
+            title: 'Leads',
+            businessName: business?.name,
+            leads,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Leads page error:', error)
+        return res.status(500).send('Error loading leads')
+    }
+})
+
+router.get('/notifications', authMiddleware, async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+        return res.redirect('/login')
+    }
+    try {
+        const business = await prisma.business.findUnique({
+            where: { id: req.user.businessId },
+            select: {
+                name: true,
+                notificationEmail: true,
+                notificationPhoneNumber: true
+            }
+        })
+
+        if (!business) {
+            return res.status(404).send('Business not found')
+        }
+
+        return res.render('notifications', {
+            title: 'Notifications',
+            businessName: business.name,
+            settings: business,
+            user: req.user
+        })
+    } catch (error) {
+        console.error('Notifications page error:', error)
+        return res.status(500).send('Error loading notification settings')
+    }
 })
 
 export default router 

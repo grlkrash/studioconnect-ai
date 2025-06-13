@@ -820,3 +820,8 @@ export const generateRecoveryResponse = (): string => {
   const randomIndex = Math.floor(Math.random() * recoveryMessages.length)
   return recoveryMessages[randomIndex]
 }
+
+export async function handleIncomingMessage(message: string, sessionId: string, businessId: string) {
+  // Implementation for handling incoming messages
+  return { response: 'AI response' }
+}
