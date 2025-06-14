@@ -40,10 +40,13 @@ router.get('/settings', authMiddleware, async (req: Request, res: Response) => {
       prisma.business.findUnique({ where: { id: req.user.businessId } })
     ])
 
+    const successMessageParam = typeof req.query.success === 'string' ? decodeURIComponent(req.query.success) : null
+
     res.render('agent-settings', {
       businessId: req.user.businessId,
       business, // needed for plan tier checks inside template
-      agentConfig
+      agentConfig,
+      successMessage: successMessageParam
     })
   } catch (error) {
     console.error('[VIEW ROUTES] Failed to load agent settings:', error)
@@ -116,14 +119,16 @@ router.get('/leads', authMiddleware, async (req: Request, res: Response) => {
 router.get('/clients', authMiddleware, async (req: Request, res: Response) => {
   if (!req.user) return res.redirect('/admin/login')
   const clients = await prisma.client.findMany({ where: { businessId: req.user.businessId }, include: { projects: true } })
-  res.render('clients', { clients })
+  const successMessageParam = typeof req.query.success === 'string' ? decodeURIComponent(req.query.success) : null
+  res.render('clients', { clients, successMessage: successMessageParam })
 })
 
 // Projects list page
 router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
   if (!req.user) return res.redirect('/admin/login')
   const projects = await prisma.project.findMany({ where: { businessId: req.user.businessId }, include: { client: true } })
-  res.render('projects', { projects })
+  const successMessageParam = typeof req.query.success === 'string' ? decodeURIComponent(req.query.success) : null
+  res.render('projects', { projects, successMessage: successMessageParam })
 })
 
 // Integrations page
