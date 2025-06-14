@@ -200,7 +200,10 @@ app.get('/test-key', async (req: Request, res: Response) => {
 
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
-app.set('views', path.join(__dirname, '../views'))
+app.set('views', [
+  path.join(__dirname, '../views'),        // compiled views directory
+  path.join(__dirname, '../src/views')     // source views for ts-node/dev
+])
 
 // =======================
 // ROUTE MOUNTING ORDER

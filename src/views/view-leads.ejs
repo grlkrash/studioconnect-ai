@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>View Captured Leads</title>
+  <title>View Clients & Requests</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
@@ -12,11 +12,11 @@
       <!-- Header -->
       <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
         <div class="flex justify-between items-center">
-          <h1 class="text-2xl font-bold text-gray-800">Captured Leads</h1>
+          <h1 class="text-2xl font-bold text-gray-800">Clients & Requests</h1>
           <nav class="space-x-4">
             <a href="/admin/dashboard" class="text-blue-600 hover:text-blue-800">Dashboard</a>
             <a href="/admin/settings" class="text-blue-600 hover:text-blue-800">Agent Settings</a>
-            <a href="/admin/lead-questions" class="text-blue-600 hover:text-blue-800">Lead Questions</a>
+            <a href="/admin/lead-questions" class="text-blue-600 hover:text-blue-800">Intake Questions</a>
             <a href="/admin/knowledge-base" class="text-blue-600 hover:text-blue-800">Knowledge Base</a>
           </nav>
         </div>
@@ -27,7 +27,7 @@
         <% if (leads.length === 0) { %>
           <div class="text-center py-8">
             <p class="text-gray-500 text-lg">No leads captured yet.</p>
-            <p class="text-gray-400 mt-2">Leads will appear here once they are captured through your chat agent.</p>
+            <p class="text-gray-400 mt-2">Clients will appear here once they are captured through your AI Account Manager.</p>
           </div>
         <% } else { %>
           <div class="overflow-x-auto">
@@ -164,7 +164,7 @@
 
         leadsFeedback.style.color = 'red' // Default
         if (response.ok) {
-          leadsFeedback.textContent = 'Lead status updated successfully!'
+          leadsFeedback.textContent = 'Status updated successfully!'
           leadsFeedback.style.color = 'green'
         } else {
           const errorResult = await response.json()

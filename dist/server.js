@@ -19,6 +19,8 @@ const chatRoutes_1 = __importDefault(require("./api/chatRoutes"));
 const admin_1 = __importDefault(require("./api/admin"));
 const viewRoutes_1 = __importDefault(require("./api/viewRoutes"));
 const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
+const projectRoutes_1 = __importDefault(require("./api/projectRoutes"));
+const clientRoutes_1 = __importDefault(require("./api/clientRoutes"));
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -158,11 +160,16 @@ app.get('/test-key', async (req, res) => {
     }
 });
 app.set('view engine', 'ejs');
-app.set('views', path_1.default.join(__dirname, '../views'));
+app.set('views', [
+    path_1.default.join(__dirname, '../views'),
+    path_1.default.join(__dirname, '../src/views')
+]);
 app.use('/admin', viewRoutes_1.default);
 app.use('/api/chat', chatRoutes_1.default);
 app.use('/api/admin', admin_1.default);
 app.use('/api/voice', voiceRoutes_1.default);
+app.use('/api/clients', clientRoutes_1.default);
+app.use('/api/projects', projectRoutes_1.default);
 app.get('/widget.js', (req, res) => {
     const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
     console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
