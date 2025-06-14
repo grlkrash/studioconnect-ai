@@ -209,6 +209,11 @@ app.set('views', [
   path.join(__dirname, '../src/views')     // source views for ts-node/dev
 ])
 
+// ────────────────────────────────────────────────────────────
+// NEXT.JS DASHBOARD (dir: /dashboard) will be prepared below
+// We first declare the app & handler, then defer route mounting
+// and server start until after nextApp.prepare() completes.
+// ────────────────────────────────────────────────────────────
 // Wait for Next to be ready before mounting its handler and legacy view routes
 const devNext = process.env.NODE_ENV !== 'production'
 const nextApp = next({ dev: devNext, dir: path.join(__dirname, '../dashboard') })
