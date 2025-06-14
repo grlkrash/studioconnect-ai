@@ -27,6 +27,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000} # Default if not in .env
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       db:
         condition: service_healthy # Wait for the DB to be healthy before starting the app
@@ -54,5 +56,15 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: studioconnect-ai-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+
 volumes:
   postgres_data: # Defines the named volume for data persistence 
+  redis_data: 

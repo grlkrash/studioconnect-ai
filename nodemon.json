@@ -9,6 +9,6 @@
     "generated/*",
     "*.log"
   ],
-  "exec": "npx ts-node ./src/server.ts",
+  "exec": "npx ts-node --transpile-only ./src/server.ts",
   "signal": "SIGINT"
 } 
