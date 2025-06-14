@@ -6,10 +6,12 @@ WORKDIR /app
 
 # Copy only the dependency manifest first for better layer-caching
 COPY package*.json ./
+# Copy dashboard package manifests for layer caching
+COPY dashboard/package*.json ./dashboard/
 
-# Install all dependencies exactly as locked
-# --legacy-peer-deps avoids peer-dependency conflicts in dev
-RUN npm ci --legacy-peer-deps
+# Install root and dashboard dependencies for optimal caching
+RUN npm ci --legacy-peer-deps \
+    && npm --prefix dashboard ci --legacy-peer-deps
 
 # Copy the rest of the source code
 COPY . .
@@ -21,6 +23,8 @@ RUN npx prisma generate
 
 # Expose Next.js default port
 EXPOSE 3000
+# Expose Next.js dashboard port as well
+EXPOSE 3100
 
 # Run the dev server (change to "start" if you build for prod)
 CMD ["npm", "run", "dev"] 

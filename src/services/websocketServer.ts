@@ -1,20 +1,26 @@
 import { WebSocket, WebSocketServer } from 'ws'
-import { Server } from 'http'
+import { Server, IncomingMessage } from 'http'
 import { realtimeAgentService } from './realtimeAgentService'
-
-interface WebSocketWithUrl extends WebSocket {
-  url: string
-}
 
 export function setupWebSocketServer(httpServer: Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer })
 
-  wss.on('connection', (ws: WebSocketWithUrl) => {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     console.log('New WebSocket connection')
     
+    let callSid: string | undefined
+
     try {
-      const url = new URL(ws.url)
-      const params = new URLSearchParams(url.search)
+      // `req.url` contains the path + query string sent by Twilio (e.g. "/?callSid=...&businessId=...")
+      const requestUrl = req.url || '/'
+
+      // Use a dummy base because URL requires an absolute URL string
+      const fullUrl = new URL(requestUrl, 'http://localhost')
+      const params = new URLSearchParams(fullUrl.search)
+
+      callSid = params.get('callSid') || undefined
+
+      // Forward the connection and parsed params to the realtime agent service
       realtimeAgentService.handleNewConnection(ws, params)
     } catch (error) {
       console.error('Error processing WebSocket connection:', error)
@@ -33,17 +39,11 @@ export function setupWebSocketServer(httpServer: Server): WebSocketServer {
 
     ws.on('error', (error: Error) => {
       console.error('WebSocket error:', error)
-      const url = new URL(ws.url)
-      const params = new URLSearchParams(url.search)
-      const callSid = params.get('callSid')
       if (callSid) realtimeAgentService.cleanup(callSid)
     })
 
     ws.on('close', (code: number, reason: string) => {
       console.log(`WebSocket connection closed: ${code} - ${reason}`)
-      const url = new URL(ws.url)
-      const params = new URLSearchParams(url.search)
-      const callSid = params.get('callSid')
       if (callSid) realtimeAgentService.cleanup(callSid)
     })
   })

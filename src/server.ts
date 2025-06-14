@@ -7,6 +7,7 @@ import fs from 'fs'
 import http from 'http'
 import OpenAI from 'openai'
 import { UserPayload } from './api/authMiddleware'
+import next from 'next'
 
 // Load environment variables
 dotenv.config()
@@ -68,7 +69,9 @@ const corsOptions = {
       process.env.WIDGET_TEST_URL,
       process.env.FRONTEND_PRODUCTION_URL,
       'http://127.0.0.1:8080', // Local development server
-      'http://localhost:8080'  // Local development server
+      'http://localhost:8080',  // Local development server
+      'http://127.0.0.1:3100', // Next.js dashboard dev server
+      'http://localhost:3100', // Next.js dashboard dev server
     ]
       .filter(Boolean) // Remove undefined/null values
       .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
@@ -206,11 +209,34 @@ app.set('views', [
   path.join(__dirname, '../src/views')     // source views for ts-node/dev
 ])
 
+// Wait for Next to be ready before mounting its handler and legacy view routes
+const devNext = process.env.NODE_ENV !== 'production'
+const nextApp = next({ dev: devNext, dir: path.join(__dirname, '../dashboard') })
+const handleNext = nextApp.getRequestHandler()
+
 // =======================
 // ROUTE MOUNTING ORDER
 // =======================
 
 // 1. Mount admin view routes FIRST
+await nextApp.prepare()
+
+// Serve Next assets and pages under /admin
+app.use('/_next', (req: Request, res: Response) => {
+  return handleNext(req, res)
+})
+
+// Next pages under /admin
+app.use('/admin', (req: Request, res: Response, nextFn: NextFunction) => {
+  // If the request matches an existing EJS legacy route (e.g. /admin/settings)
+  // that we still want to serve, delegate to viewRoutes via next()
+  if (viewRoutes.stack.some((r) => (r as any).route?.path && req.path.startsWith((r as any).route.path))) {
+    return nextFn()
+  }
+  return handleNext(req, res)
+})
+
+// Legacy EJS admin routes as fallback
 app.use('/admin', viewRoutes)
 
 // 2. Mount API routes

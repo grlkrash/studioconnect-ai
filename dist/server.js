@@ -21,6 +21,7 @@ const viewRoutes_1 = __importDefault(require("./api/viewRoutes"));
 const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
 const projectRoutes_1 = __importDefault(require("./api/projectRoutes"));
 const clientRoutes_1 = __importDefault(require("./api/clientRoutes"));
+const knowledgeBaseRoutes_1 = __importDefault(require("./api/knowledgeBaseRoutes"));
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -55,7 +56,9 @@ const corsOptions = {
             process.env.WIDGET_TEST_URL,
             process.env.FRONTEND_PRODUCTION_URL,
             'http://127.0.0.1:8080',
-            'http://localhost:8080'
+            'http://localhost:8080',
+            'http://127.0.0.1:3100',
+            'http://localhost:3100',
         ]
             .filter(Boolean)
             .filter((value, index, self) => self.indexOf(value) === index);
@@ -170,6 +173,7 @@ app.use('/api/admin', admin_1.default);
 app.use('/api/voice', voiceRoutes_1.default);
 app.use('/api/clients', clientRoutes_1.default);
 app.use('/api/projects', projectRoutes_1.default);
+app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
 app.get('/widget.js', (req, res) => {
     const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
     console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);

@@ -6,6 +6,8 @@ services:
     ports:
       # Map Next.js dev port
       - "3000:3000"
+      # Map dashboard Next.js port
+      - "3100:3100"
       # Map Prisma Studio port
       - "5555:5555"
     volumes:
