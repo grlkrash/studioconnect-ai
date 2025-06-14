@@ -1,13 +1,13 @@
-version: "3.9"
-
 services:
   app:
     container_name: studioconnect-ai-app
     # Build the image from the Dockerfile in the current directory (.)
     build: .
     ports:
-      # Map port 3000 on your Mac to port 3000 in the container
+      # Map Next.js dev port
       - "3000:3000"
+      # Map Prisma Studio port
+      - "5555:5555"
     volumes:
       # Mount your current project directory into the container at /app
       # This allows live code changes to be reflected without rebuilding the image.
@@ -21,7 +21,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      # Database URL points to the 'db' service name, using the credentials defined for it
+      # Forward Render connection string from your host .env
       DATABASE_URL: ${DATABASE_URL}
       DIRECT_URL: ${DATABASE_URL}
       # These will be picked up from your local .env file (if it exists in your project root)

@@ -22,8 +22,8 @@ model Business {
   notificationPhoneNumber String?
   planTier                PlanTier        @default(PRO)
   twilioPhoneNumber       String?         @unique
-  businessHours           Json?           @default("{\"friday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"monday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"tuesday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"thursday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"wednesday\": {\"end\": \"17:00\", \"start\": \"9:00\"}}")
-  timezone                String?         @default("America/New_York")
+  businessHours           Json?
+  timezone                String?
   agentConfig             AgentConfig?
   callLogs                CallLog[]
   clients                 Client[]
@@ -67,11 +67,7 @@ model AgentConfig {
   voiceGreetingMessage         String?
   openaiModel                  String                @default("tts-1")
   useOpenaiTts                 Boolean               @default(true)
-  openaiVoice                  OpenAiVoice           @default(ALLOY)
-  prefix_padding_ms            Int?
-  realtimeInstructions         String?
-  silence_duration_ms          Int?
-  vad_threshold                Decimal?
+  openaiVoice                  OpenAiVoice           @default(NOVA)
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 
@@ -224,13 +220,11 @@ model Integration {
 
 enum OpenAiVoice {
   ALLOY
-  ASH
-  BALLAD
-  CORAL
   ECHO
-  SAGE
+  FABLE
+  ONYX
+  NOVA
   SHIMMER
-  VERSE
 }
 
 enum BusinessType {

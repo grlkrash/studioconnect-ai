@@ -1,0 +1,1 @@
+ALTER TABLE \public\.usinesses\ ADD COLUMN 	imezone\ text DEFAULT 'America/New_York';
