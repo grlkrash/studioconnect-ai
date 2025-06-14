@@ -42,9 +42,21 @@ export const authMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Prefer Authorization header ("Bearer <token>") but fall back to signed cookie
     const authHeader = req.headers.authorization;
 
-    if (!authHeader?.startsWith('Bearer ')) {
+    // Attempt to extract token from "Authorization" header (if it exists and is correctly formatted)
+    let token: string | undefined = authHeader?.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : undefined;
+
+    // Fallback to JWT stored in an httpOnly cookie named "token"
+    if (!token && req.cookies?.token) {
+      token = req.cookies.token as string;
+    }
+
+    // If we still don't have a token, block the request
+    if (!token) {
       if (req.originalUrl.startsWith('/api')) {
         res.status(401).json({ error: 'Authentication required' });
         return;
@@ -52,8 +64,6 @@ export const authMiddleware = async (
       res.redirect('/admin/login');
       return;
     }
-
-    const token = authHeader.split(' ')[1];
 
     if (!process.env.JWT_SECRET) {
       console.error('JWT_SECRET is not defined');

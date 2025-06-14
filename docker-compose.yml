@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   app:
     container_name: studioconnect-ai-app
@@ -7,21 +9,21 @@ services:
       # Map port 3000 on your Mac to port 3000 in the container
       - "3000:3000"
     volumes:
-      # Mount your current project directory into the container at /usr/src/app
+      # Mount your current project directory into the container at /app
       # This allows live code changes to be reflected without rebuilding the image.
-      - .:/usr/src/app
+      - .:/app
       # This is an anonymous volume for node_modules. It ensures that the
       # node_modules installed INSIDE the container (by Dockerfile's yarn install)
       # is used, and not overwritten by a local node_modules folder if it exists.
-      - /usr/src/app/node_modules
+      - /app/node_modules
       # Anonymous volume for generated directory to preserve container's Prisma client
-      - /usr/src/app/generated
+      - /app/generated
     environment:
       NODE_ENV: development
       PORT: 3000
       # Database URL points to the 'db' service name, using the credentials defined for it
-      DATABASE_URL: postgresql://db_user:db_password@db:5432/app_db?schema=public
-      DIRECT_URL: postgresql://db_user:db_password@db:5432/app_db?schema=public
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DATABASE_URL}
       # These will be picked up from your local .env file (if it exists in your project root)
       # or from your shell environment if set there.
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -32,8 +34,6 @@ services:
     depends_on:
       db:
         condition: service_healthy # Wait for the DB to be healthy before starting the app
-    # Command to run when the container starts (overrides Dockerfile's CMD for development)
-    command: sh -c "yarn prisma:generate && yarn dev:watch"
 
   db:
     container_name: studioconnect-ai-db
