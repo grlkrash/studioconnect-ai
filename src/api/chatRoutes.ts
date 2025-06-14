@@ -37,7 +37,13 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       });
       return;
     }
-    const aiResponse = await processMessage(message, conversationHistory || [], businessId, currentFlow);
+    const aiResponse = await processMessage({
+      message,
+      conversationHistory: conversationHistory || [],
+      businessId,
+      currentActiveFlow: currentFlow ?? null,
+      channel: 'CHAT'
+    });
     res.status(200).json(aiResponse);
     return;
   } catch (error) {

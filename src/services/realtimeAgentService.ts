@@ -299,14 +299,14 @@ class RealtimeAgentService {
         if (!media.payload) return;
 
         try {
-          const response = await processMessage(
-            media.payload,
-            state.conversationHistory,
+          const response = await processMessage({
+            message: media.payload,
+            conversationHistory: state.conversationHistory,
             businessId,
-            state.currentFlow || null,
+            currentActiveFlow: state.currentFlow ?? null,
             callSid,
-            'VOICE'
-          );
+            channel: 'VOICE'
+          });
 
           // Update conversation history and current flow
           this.addToConversationHistory(state, 'user', media.payload);

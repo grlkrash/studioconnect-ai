@@ -97,14 +97,14 @@ router.post('/fallback-handler', customValidateTwilioRequest, asyncHandler(async
     const businessId = req.body.businessId as string | undefined
 
     if (speechResult) {
-      const aiResp = await processMessage(
-        speechResult,
-        [],
-        businessId || '',
-        null,
-        req.body.CallSid,
-        'VOICE'
-      )
+      const aiResp = await processMessage({
+        message: speechResult,
+        conversationHistory: [],
+        businessId: businessId || '',
+        currentActiveFlow: null,
+        callSid: req.body.CallSid,
+        channel: 'VOICE'
+      })
       twiml.say({ voice: 'alice' }, aiResp.reply)
     } else {
       twiml.say({ voice: 'alice' }, 'Now connecting to our standard service.')

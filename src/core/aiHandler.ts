@@ -540,7 +540,7 @@ const determineNextVoiceAction = (intent: string, currentFlow: string | null): N
  * Main AI handler that processes user messages and determines the appropriate response flow.
  * Routes to either FAQ (RAG), Lead Capture, or fallback flow based on intent.
  */
-export const processMessage = async (
+const _processMessage = async (
   message: string,
   conversationHistory: any[],
   businessId: string,
@@ -827,3 +827,56 @@ export async function handleIncomingMessage(message: string, sessionId: string, 
   // Implementation for handling incoming messages
   return { response: 'AI response' }
 }
+
+// PROCESS MESSAGE WRAPPER START
+
+// Define an input shape for the object-based variant
+interface ProcessMessageInput {
+  message: string
+  conversationHistory: any[]
+  businessId: string
+  currentActiveFlow?: string | null
+  callSid?: string
+  channel?: 'VOICE' | 'CHAT'
+}
+
+// Overload signatures for better type safety
+export function processMessage(params: ProcessMessageInput): ReturnType<typeof _processMessage>
+export function processMessage(
+  message: string,
+  conversationHistory: any[],
+  businessId: string,
+  currentActiveFlow?: string | null,
+  callSid?: string,
+  channel?: 'VOICE' | 'CHAT'
+): ReturnType<typeof _processMessage>
+
+// Implementation accepting either variant
+export function processMessage(...args: any[]): ReturnType<typeof _processMessage> {
+  // Object-based variant
+  if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])) {
+    const {
+      message,
+      conversationHistory,
+      businessId,
+      currentActiveFlow = null,
+      callSid,
+      channel = 'VOICE'
+    } = args[0] as ProcessMessageInput
+    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel)
+  }
+
+  // Positional-argument fallback (legacy support)
+  const [
+    message,
+    conversationHistory,
+    businessId,
+    currentActiveFlow = null,
+    callSid,
+    channel = 'VOICE'
+  ] = args as [string, any[], string, string | null | undefined, string | undefined, 'VOICE' | 'CHAT']
+
+  return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel)
+}
+
+// PROCESS MESSAGE WRAPPER END
