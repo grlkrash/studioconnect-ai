@@ -31,19 +31,37 @@ router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: R
     const callSid = req.body.CallSid as string
     console.log(`[VOICE STREAM] Incoming call received: ${callSid}`)
 
-    // Build WebSocket URL — prefer primary URL if set
     const host = process.env.APP_PRIMARY_URL || `https://${req.hostname}`
-    const wsUrl = host.replace(/^https?:\/\//, 'wss://')
+    const baseWsUrl = host.replace(/^https?:\/\//, 'wss://')
+
+    /*
+     * Ensure the generated WebSocket URL always contains a path character ("/") *before* the query string.
+     * If the slash is missing, Node's URL parser will treat the "?" as the beginning of the pathname instead
+     * of the search params, which breaks the downstream logic that expects `req.url` to start with "/?".
+     *
+     * Example of the bug:
+     *   wss://example.com?callSid=123   ->   req.url === "?callSid=123"   ->   new URL("?callSid=123", "http://localhost") throws `ERR_INVALID_URL`
+     *
+     * Corrected format:
+     *   wss://example.com/?callSid=123  ->   req.url === "/?callSid=123"   ✅
+     */
+    const wsBaseWithPath = baseWsUrl.endsWith('/') ? baseWsUrl : `${baseWsUrl}/`
+
+    // Build WebSocket URL with required query parameters so the WS server can parse them immediately
+    let wsUrl = `${wsBaseWithPath}?callSid=${encodeURIComponent(callSid)}`
+
+    if (req.body.businessId) {
+      wsUrl += `&businessId=${encodeURIComponent(req.body.businessId as string)}`
+    }
+
     console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl}`)
 
     const response = new VoiceResponse()
     const connect = response.connect()
     const stream = connect.stream({ url: wsUrl })
 
-    // Pass CallSid to the websocket server
+    // Still pass parameters for redundancy (they will be available inside the START event too)
     stream.parameter({ name: 'callSid', value: callSid })
-
-    // Forward optional businessId from the original call
     if (req.body.businessId) {
       stream.parameter({ name: 'businessId', value: req.body.businessId })
     }
