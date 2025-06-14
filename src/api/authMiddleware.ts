@@ -40,22 +40,25 @@ export const authMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<Response | void> => {
+): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
       if (req.originalUrl.startsWith('/api')) {
-        return res.status(401).json({ error: 'Authentication required' });
+        res.status(401).json({ error: 'Authentication required' });
+        return;
       }
-      return res.redirect('/admin/login');
+      res.redirect('/admin/login');
+      return;
     }
 
     const token = authHeader.split(' ')[1];
 
     if (!process.env.JWT_SECRET) {
       console.error('JWT_SECRET is not defined');
-      return res.status(500).json({ error: 'Server configuration error' });
+      res.status(500).json({ error: 'Server configuration error' });
+      return;
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET) as UserPayload;
@@ -67,7 +70,8 @@ export const authMiddleware = async (
     });
 
     if (!user?.business) {
-      return res.status(401).json({ error: 'User or business not found' });
+      res.status(401).json({ error: 'User or business not found' });
+      return;
     }
 
     // Attach validated user payload
@@ -85,9 +89,11 @@ export const authMiddleware = async (
   } catch (error) {
     console.error('Authentication error:', error);
     if (req.originalUrl.startsWith('/api')) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
     }
-    return res.redirect('/admin/login');
+    res.redirect('/admin/login');
+    return;
   }
 };
 
@@ -96,13 +102,15 @@ export const requireAuth = authMiddleware;
 
 // Role-based authorization middleware
 export const requireRole = (roles: UserRole[]) => {
-  return (req: Request, res: Response, next: NextFunction): Response | void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      res.status(403).json({ error: 'Insufficient permissions' });
+      return;
     }
 
     next();
@@ -111,14 +119,16 @@ export const requireRole = (roles: UserRole[]) => {
 
 // Plan tier validation middleware
 export const requirePlan = (requiredTier: PlanTier) => {
-  return (req: Request, res: Response, next: NextFunction): Response | void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     if (!isAuthenticatedRequest(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
     const userPlanTier = req.user.business.planTier;
     if (userPlanTier !== requiredTier && userPlanTier !== PlanTier.ENTERPRISE) {
-      return res.status(403).json({ error: 'Upgrade required' });
+      res.status(403).json({ error: 'Upgrade required' });
+      return;
     }
 
     next();

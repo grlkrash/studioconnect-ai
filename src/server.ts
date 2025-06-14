@@ -222,7 +222,7 @@ app.get('/widget.js', (req: Request, res: Response) => {
     if (fs.existsSync(widgetPath)) {
       console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
       res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
-      res.sendFile(widgetPath, (err) => {
+      res.sendFile(widgetPath, (err: Error | null) => {
         if (err) {
           console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
           if (!res.headersSent) {
@@ -253,12 +253,12 @@ app.get('/health', (req: Request, res: Response) => {
 })
 
 // 5. Debug route to test routing
-app.get('/admin-test', (req, res) => {
+app.get('/admin-test', (req: Request, res: Response) => {
   res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
 })
 
 // 6. Root route handler
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   res.send('Application Root - Hello from Deployed App!');
 });
 

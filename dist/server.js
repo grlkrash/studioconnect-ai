@@ -11,18 +11,14 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
 const openai_1 = __importDefault(require("openai"));
-// Load environment variables
 dotenv_1.default.config();
-// Import Redis and session service
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
 const websocketServer_1 = require("./services/websocketServer");
-// Import route handlers
 const chatRoutes_1 = __importDefault(require("./api/chatRoutes"));
 const admin_1 = __importDefault(require("./api/admin"));
 const viewRoutes_1 = __importDefault(require("./api/viewRoutes"));
 const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
-// At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -38,14 +34,11 @@ console.log("FRONTEND_PRODUCTION_URL:", process.env.FRONTEND_PRODUCTION_URL);
 console.log("<<<<< END STARTUP ENV VAR CHECK >>>>>");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
-// CORS configuration - MUST BE FIRST MIDDLEWARE
 const corsOptions = {
     origin: function (origin, callback) {
-        // Only log detailed CORS info for actual browser requests (not health checks/internal calls)
         if (origin) {
             console.log("[CORS Debug] Request Origin:", origin);
         }
-        // Debug logs for environment variables at the moment of CORS check (only for requests with origin)
         if (origin) {
             console.log("[CORS Env Check] APP_PRIMARY_URL:", process.env.APP_PRIMARY_URL);
             console.log("[CORS Env Check] ADMIN_CUSTOM_DOMAIN_URL:", process.env.ADMIN_CUSTOM_DOMAIN_URL);
@@ -59,15 +52,14 @@ const corsOptions = {
             process.env.WIDGET_DEMO_URL,
             process.env.WIDGET_TEST_URL,
             process.env.FRONTEND_PRODUCTION_URL,
-            'http://127.0.0.1:8080', // Local development server
-            'http://localhost:8080' // Local development server
+            'http://127.0.0.1:8080',
+            'http://localhost:8080'
         ]
-            .filter(Boolean) // Remove undefined/null values
-            .filter((value, index, self) => self.indexOf(value) === index); // Remove duplicates
+            .filter(Boolean)
+            .filter((value, index, self) => self.indexOf(value) === index);
         if (origin) {
             console.log("[CORS Debug] Constructed allowedOrigins array:", allowedOrigins);
         }
-        // Allow requests without origin (same-origin, Postman, curl, health checks, etc.)
         if (!origin || allowedOrigins.includes(origin)) {
             if (origin) {
                 console.log("[CORS Debug] Allowing origin:", origin, "Allowed List:", allowedOrigins);
@@ -76,7 +68,7 @@ const corsOptions = {
         }
         else {
             console.log("[CORS Debug] Blocking origin:", origin, "| Allowed List:", allowedOrigins);
-            callback(null, false); // Changed from Error to false for better handling
+            callback(null, false);
         }
     },
     credentials: true,
@@ -85,9 +77,7 @@ const corsOptions = {
     preflightContinue: false,
     optionsSuccessStatus: 204
 };
-// Apply CORS middleware first
 app.use((0, cors_1.default)(corsOptions));
-// Body parsing middleware - MUST BE BEFORE ROUTES
 app.use(express_1.default.json({
     limit: '10mb',
     verify: (req, res, buf) => {
@@ -105,7 +95,6 @@ app.use(express_1.default.urlencoded({
     limit: '10mb'
 }));
 app.use((0, cookie_parser_1.default)());
-// Test route for diagnosing Twilio timeout issues - MUST BE BEFORE API ROUTES
 app.post('/test-voice', (req, res) => {
     console.log('[VOICE TEST] The /test-voice endpoint was successfully reached.');
     const VoiceResponse = require('twilio').twiml.VoiceResponse;
@@ -115,7 +104,6 @@ app.post('/test-voice', (req, res) => {
     res.type('text/xml');
     res.send(twiml.toString());
 });
-// Test route for WebSocket server status
 app.get('/test-realtime', async (req, res) => {
     try {
         console.log('[REALTIME TEST] The /test-realtime endpoint was reached.');
@@ -141,7 +129,6 @@ app.get('/test-realtime', async (req, res) => {
         });
     }
 });
-// Test route for OpenAI API key validation
 app.get('/test-key', async (req, res) => {
     console.log('[KEY TEST] Starting OpenAI API Key test...');
     try {
@@ -151,9 +138,7 @@ app.get('/test-key', async (req, res) => {
             res.status(500).json({ status: 'error', message: 'OPENAI_API_KEY is not set.' });
             return;
         }
-        // Use a fresh OpenAI client to ensure no other configurations interfere
         const openai = new openai_1.default({ apiKey: apiKey });
-        // Make the simplest possible, lightweight API call
         await openai.models.list();
         console.log('[KEY TEST] SUCCESS: The API Key is valid and successfully connected to OpenAI.');
         res.status(200).json({ status: 'success', message: 'API Key is valid and operational.' });
@@ -172,21 +157,13 @@ app.get('/test-key', async (req, res) => {
         });
     }
 });
-// Set up EJS for server-side rendering
 app.set('view engine', 'ejs');
 app.set('views', path_1.default.join(__dirname, '../views'));
-// =======================
-// ROUTE MOUNTING ORDER
-// =======================
-// 1. Mount admin view routes FIRST
 app.use('/admin', viewRoutes_1.default);
-// 2. Mount API routes
 app.use('/api/chat', chatRoutes_1.default);
 app.use('/api/admin', admin_1.default);
 app.use('/api/voice', voiceRoutes_1.default);
-// 3. Specific file serving routes
 app.get('/widget.js', (req, res) => {
-    // Using process.cwd() for more explicit path resolution
     const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
     console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
     try {
@@ -217,24 +194,19 @@ app.get('/widget.js', (req, res) => {
         }
     }
 });
-// 4. Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'healthy',
         timestamp: new Date().toISOString()
     });
 });
-// 5. Debug route to test routing
 app.get('/admin-test', (req, res) => {
     res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
 });
-// 6. Root route handler
 app.get('/', (req, res) => {
     res.send('Application Root - Hello from Deployed App!');
 });
-// 7. Static file serving (general)
 app.use('/static', express_1.default.static(path_1.default.join(__dirname, '../public')));
-// Debug logs for static path
 const staticPath = path_1.default.join(__dirname, '../public');
 console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
 try {
@@ -244,9 +216,6 @@ try {
 catch (e) {
     console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
 }
-// =======================
-// WILDCARD 404 HANDLER - MUST BE LAST!
-// =======================
 app.use('*', (req, res) => {
     res.status(404).json({
         error: 'Route not found',
@@ -254,7 +223,6 @@ app.use('*', (req, res) => {
         method: req.method
     });
 });
-// Global error handler
 app.use((err, req, res, next) => {
     console.error('Error:', err.stack);
     res.status(500).json({
@@ -262,7 +230,6 @@ app.use((err, req, res, next) => {
         message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
     });
 });
-// Initialize Redis connection
 async function initializeRedis() {
     try {
         const redisManager = redis_1.default.getInstance();
@@ -271,34 +238,28 @@ async function initializeRedis() {
         const sessionService = voiceSessionService_1.default.getInstance();
         setInterval(async () => {
             await sessionService.cleanupExpiredSessions();
-        }, 5 * 60 * 1000); // Run cleanup every 5 minutes
+        }, 5 * 60 * 1000);
     }
     catch (error) {
         console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error);
     }
 }
-// Start server
 const httpServer = http_1.default.createServer(app);
-// Add upgrade event listener for WebSocket debugging
 httpServer.on('upgrade', (request, socket, head) => {
     console.log('--- HTTP UPGRADE REQUEST RECEIVED ---');
     console.log('Request URL:', request.url);
     console.log('Request Headers:', JSON.stringify(request.headers, null, 2));
     console.log('------------------------------------');
 });
-// Setup WebSocket Server
 (0, websocketServer_1.setupWebSocketServer)(httpServer);
-// Start the server
 const server = httpServer.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
-    // Initialize Redis after server starts
     await initializeRedis();
 });
-// Graceful shutdown
 process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
     try {
