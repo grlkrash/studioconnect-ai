@@ -66,6 +66,19 @@
     <div class="container">
         <h1 class="mb-4">Manage Knowledge Base Entries</h1>
 
+        <!-- Project Filter -->
+        <% if (projects && projects.length > 0) { %>
+          <form method="get" class="mb-4 d-flex align-items-center" id="projectFilterForm">
+            <label for="projectId" class="form-label me-2 mb-0">Filter by project:</label>
+            <select name="projectId" id="projectId" class="form-select w-auto" onchange="document.getElementById('projectFilterForm').submit()">
+              <option value="" <%= !selectedProjectId ? 'selected' : '' %> >All Projects</option>
+              <% projects.forEach(p => { %>
+                <option value="<%= p.id %>" <%= selectedProjectId === p.id ? 'selected' : '' %>><%= p.name %></option>
+              <% }) %>
+            </select>
+          </form>
+        <% } %>
+
         <!-- Existing Knowledge Base Entries -->
         <div class="knowledge-list">
             <h2>Current Knowledge Base</h2>
@@ -138,6 +151,18 @@
                         >
                         <div class="form-text">Add a reference URL if this content comes from a specific source.</div>
                     </div>
+                    
+                    <% if (projects && projects.length > 0) { %>
+                    <div class="mb-3">
+                        <label for="kbProjectId" class="form-label">Associated Project (optional):</label>
+                        <select id="kbProjectId" name="projectId" class="form-select">
+                            <option value="">General (no specific project)</option>
+                            <% projects.forEach(p => { %>
+                              <option value="<%= p.id %>" <%= selectedProjectId === p.id ? 'selected' : '' %>><%= p.name %></option>
+                            <% }) %>
+                        </select>
+                    </div>
+                    <% } %>
                     
                     <button type="submit" class="btn btn-primary">Add Entry</button>
                 </form>

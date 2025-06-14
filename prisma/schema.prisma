@@ -94,6 +94,7 @@ model LeadCaptureQuestion {
 model KnowledgeBase {
   id         String                 @id @default(cuid())
   businessId String
+  projectId  String?
   content    String
   sourceURL  String?
   embedding  Unsupported("vector")?
@@ -101,8 +102,10 @@ model KnowledgeBase {
   createdAt  DateTime               @default(now())
   updatedAt  DateTime               @updatedAt
   business   Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  project    Project?               @relation(fields: [projectId], references: [id])
 
   @@map("knowledge_base")
+  @@index([businessId, projectId])
 }
 
 model Lead {
@@ -199,6 +202,7 @@ model Project {
   updatedAt    DateTime  @updatedAt
   business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  knowledgeBaseEntries KnowledgeBase[]
 
   @@map("projects")
 }

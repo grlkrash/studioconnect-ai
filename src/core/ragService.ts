@@ -1,4 +1,5 @@
 import { prisma } from '../services/db'
+import { Prisma } from '@prisma/client'
 import { getEmbedding } from '../services/openai'
 import { getChatCompletion } from '../services/openai'
 
@@ -6,6 +7,7 @@ interface SearchContext {
   isExistingClient?: boolean
   clientId?: string
   intent?: string
+  projectId?: string
 }
 
 /**
@@ -120,9 +122,12 @@ export const findRelevantKnowledge = async (
       }
     }
 
-    // Priority 2: Search general knowledge base
+    // Priority 2: Search general or project-scoped knowledge base
     const queryEmbeddingVector = await getEmbedding(userQuery)
     const vectorString = JSON.stringify(queryEmbeddingVector)
+
+    // Build optional project filter
+    const projectFilter = context?.projectId ? Prisma.sql` AND "projectId" = ${context.projectId}` : Prisma.empty
 
     const results = await prisma.$queryRaw<
       Array<{ id: string; content: string; sourceURL: string | null; similarity: number }>
@@ -134,21 +139,7 @@ export const findRelevantKnowledge = async (
         1 - (embedding <=> ${vectorString}::vector) AS similarity
       FROM knowledge_base
       WHERE "businessId" = ${businessId}
-        AND embedding IS NOT NULL
+        AND embedding IS NOT NULL ${projectFilter}
       ORDER BY similarity DESC
       LIMIT ${limit}
     `
-    
-    // Optionally filter by minimum similarity threshold
-    // For now, returning all results up to the limit
-    
-    console.log(`[RAG Service] Found ${results.length} relevant knowledge entries for query: "${userQuery}"`)
-    
-    return results
-  } catch (error) {
-    console.error(`Error finding relevant knowledge for query "${userQuery}":`, error)
-    throw error
-  }
-}
-
-export default { generateAndStoreEmbedding, findRelevantKnowledge } 

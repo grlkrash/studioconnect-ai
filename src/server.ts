@@ -23,6 +23,7 @@ import viewRoutes from './api/viewRoutes'
 import voiceRoutes from './api/voiceRoutes'
 import projectRoutes from './api/projectRoutes'
 import clientRoutes from './api/clientRoutes'
+import knowledgeBaseRoutes from './api/knowledgeBaseRoutes'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -218,6 +219,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/voice', voiceRoutes)
 app.use('/api/clients', clientRoutes)
 app.use('/api/projects', projectRoutes)
+app.use('/api/knowledge-base', knowledgeBaseRoutes)
 
 // 3. Specific file serving routes
 app.get('/widget.js', (req: Request, res: Response) => {
