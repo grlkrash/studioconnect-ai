@@ -34,8 +34,17 @@ router.get('/dashboard', authMiddleware, async (req: Request, res: Response) => 
 router.get('/settings', authMiddleware, async (req: Request, res: Response) => {
   if (!req.user) return res.redirect('/admin/login')
   try {
-    const agentConfig = await prisma.agentConfig.findUnique({ where: { businessId: req.user.businessId } })
-    res.render('agent-settings', { businessId: req.user.businessId, agentConfig })
+    // Fetch agent config and business details to ensure template variables are available
+    const [agentConfig, business] = await Promise.all([
+      prisma.agentConfig.findUnique({ where: { businessId: req.user.businessId } }),
+      prisma.business.findUnique({ where: { id: req.user.businessId } })
+    ])
+
+    res.render('agent-settings', {
+      businessId: req.user.businessId,
+      business, // needed for plan tier checks inside template
+      agentConfig
+    })
   } catch (error) {
     console.error('[VIEW ROUTES] Failed to load agent settings:', error)
     res.status(500).json({ error: 'Internal server error', message: 'Something went wrong' })
@@ -66,10 +75,18 @@ router.get('/knowledge-base', authMiddleware, async (req: Request, res: Response
     const whereClause: any = { businessId: req.user.businessId }
     if (projectId) whereClause.projectId = projectId
 
-    const entries = await prisma.knowledgeBase.findMany({ where: whereClause, orderBy: { updatedAt: 'desc' } })
+    const knowledgeEntries = await prisma.knowledgeBase.findMany({
+      where: whereClause,
+      orderBy: { updatedAt: 'desc' }
+    })
     const projects = await prisma.project.findMany({ where: { businessId: req.user.businessId }, select: { id: true, name: true } })
 
-    res.render('knowledge-base', { businessId: req.user.businessId, entries, projects, selectedProjectId: projectId })
+    res.render('knowledge-base', {
+      businessId: req.user.businessId,
+      knowledgeEntries,
+      projects,
+      selectedProjectId: projectId
+    })
   } catch (error) {
     console.error('[VIEW ROUTES] Failed to load knowledge base:', error)
     res.status(500).json({ error: 'Internal server error', message: 'Something went wrong' })
