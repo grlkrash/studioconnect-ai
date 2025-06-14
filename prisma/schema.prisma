@@ -16,37 +16,37 @@ model Business {
   id                      String          @id @default(cuid())
   name                    String
   businessType            BusinessType    @default(OTHER)
-  planTier                PlanTier        @default(PRO)
-  twilioPhoneNumber       String?         @unique
-  notificationEmail       String?
-  notificationPhoneNumber String?
-  businessHours          Json?           @default("{\"monday\":{\"start\":\"9:00\",\"end\":\"17:00\"},\"tuesday\":{\"start\":\"9:00\",\"end\":\"17:00\"},\"wednesday\":{\"start\":\"9:00\",\"end\":\"17:00\"},\"thursday\":{\"start\":\"9:00\",\"end\":\"17:00\"},\"friday\":{\"start\":\"9:00\",\"end\":\"17:00\"}}")
-  timezone               String?         @default("America/New_York")
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
+  notificationEmail       String?
+  notificationPhoneNumber String?
+  planTier                PlanTier        @default(PRO)
+  twilioPhoneNumber       String?         @unique
+  businessHours           Json?           @default("{\"friday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"monday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"tuesday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"thursday\": {\"end\": \"17:00\", \"start\": \"9:00\"}, \"wednesday\": {\"end\": \"17:00\", \"start\": \"9:00\"}}")
+  timezone                String?         @default("America/New_York")
   agentConfig             AgentConfig?
-  knowledgeBase           KnowledgeBase[]
-  leads                   Lead[]
-  users                   User[]
   callLogs                CallLog[]
   clients                 Client[]
-  projects                Project[]
-  integrations            Integration[]
   conversations           Conversation[]
+  integrations            Integration[]
+  knowledgeBase           KnowledgeBase[]
+  leads                   Lead[]
+  projects                Project[]
+  users                   User[]
 
   @@map("businesses")
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  role         UserRole @default(USER)
-  businessId   String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  role          UserRole @default(USER)
+  businessId    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   assignedLeads Lead[]
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@map("users")
 }
@@ -62,16 +62,16 @@ model AgentConfig {
   updatedAt                    DateTime              @updatedAt
   leadCaptureCompletionMessage String?
   voiceCompletionMessage       String?
-  voiceEmergencyMessage        String?              // For urgent project issues requiring immediate attention
+  voiceEmergencyMessage        String?
   voiceEndCallMessage          String?
   voiceGreetingMessage         String?
-  openaiVoice                  OpenAiVoice           @default(ALLOY)
-  useOpenaiTts                 Boolean               @default(true)
   openaiModel                  String                @default("tts-1")
-  realtimeInstructions         String?              // Custom AI instructions for realtime
-  vad_threshold                Decimal?             // VAD threshold for voice detection
-  silence_duration_ms          Int?                 // Silence duration for VAD
-  prefix_padding_ms            Int?                 // Audio padding for VAD
+  useOpenaiTts                 Boolean               @default(true)
+  openaiVoice                  OpenAiVoice           @default(ALLOY)
+  prefix_padding_ms            Int?
+  realtimeInstructions         String?
+  silence_duration_ms          Int?
+  vad_threshold                Decimal?
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 
@@ -110,48 +110,44 @@ model KnowledgeBase {
 }
 
 model Lead {
-  id                      String               @id @default(cuid())
-  businessId              String
-  capturedData            Json                 // Stores all Q&A pairs
-  conversationTranscript  String?              // Full conversation JSON
-  status                  LeadStatus           @default(NEW)
-  priority                LeadPriority         @default(NORMAL)
-  assignedToUserId        String?
-  clientId                String?              // Optional reference to Client if lead becomes a client
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-  
-  // Contact information fields (mapped from specific questions)
-  contactName             String?
-  contactEmail            String?
-  contactPhone            String?
-  address                 String?              // New field for emergency location info
-  notes                   String?
-  
-  business                Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  assignedTo              User?                @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  client                  Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  id                     String       @id @default(cuid())
+  businessId             String
+  capturedData           Json
+  conversationTranscript String?
+  status                 LeadStatus   @default(NEW)
+  contactEmail           String?
+  contactPhone           String?
+  contactName            String?
+  notes                  String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  priority               LeadPriority @default(NORMAL)
+  address                String?
+  assignedToUserId       String?
+  clientId               String?
+  assignedTo             User?        @relation(fields: [assignedToUserId], references: [id])
+  business               Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client                 Client?      @relation(fields: [clientId], references: [id])
 
   @@map("leads")
 }
 
 model Conversation {
-  id           String    @id @default(cuid())
-  businessId   String
-  sessionId    String    @unique
-  messages     Json      @default("[]")
-  metadata     Json?     @default("{}")
-  phoneNumber  String?
-  clientId     String?
-  startedAt    DateTime  @default(now())
-  endedAt      DateTime?
-  leadId       String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  client       Client?   @relation(fields: [clientId], references: [id])
-  callLogs     CallLog[]
+  id          String    @id @default(cuid())
+  businessId  String
+  sessionId   String    @unique
+  messages    Json      @default("[]")
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  leadId      String?
+  clientId    String?
+  createdAt   DateTime  @default(now())
+  metadata    Json?     @default("{}")
+  phoneNumber String?
+  updatedAt   DateTime  @updatedAt
+  callLogs    CallLog[]
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client      Client?   @relation(fields: [clientId], references: [id])
 
   @@map("conversations")
 }
@@ -159,19 +155,18 @@ model Conversation {
 model CallLog {
   id             String        @id @default(cuid())
   businessId     String
-  conversationId String
   callSid        String        @unique
   from           String
   to             String
-  direction      CallDirection
-  type           CallType
-  status         CallStatus
   source         String
-  content        String?
   metadata       Json?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-
+  content        String?
+  conversationId String
+  type           CallType
+  direction      CallDirection
+  status         CallStatus
   business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -179,19 +174,18 @@ model CallLog {
 }
 
 model Client {
-  id           String    @id @default(cuid())
-  businessId   String
-  name         String
-  email        String?
-  phone        String?   // For client recognition by phone number
-  externalId   String?   @unique // For PM tool sync
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  projects     Project[]
-  leads        Lead[]    // A lead can become a client (optional)
+  id            String         @id @default(cuid())
+  businessId    String
+  name          String
+  email         String?
+  phone         String?
+  externalId    String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   conversations Conversation[]
+  leads         Lead[]
+  projects      Project[]
 
   @@map("clients")
 }
@@ -201,13 +195,12 @@ model Project {
   businessId   String
   clientId     String
   name         String
-  status       String    // e.g., "In Progress", "Completed", "On Hold"
-  details      String?   // Brief description from PM tool
-  lastSyncedAt DateTime? // Timestamp of last successful sync
-  externalId   String?   @unique // Unique ID from PM tool (Asana Task ID, Jira Issue Key)
+  status       String
+  details      String?
+  lastSyncedAt DateTime?
+  externalId   String?   @unique
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-
   business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -215,17 +208,16 @@ model Project {
 }
 
 model Integration {
-  id           String    @id @default(cuid())
-  businessId   String
-  type         String    // e.g., "ASANA", "JIRA", "GOOGLE_SHEETS"
-  apiKey       String?   // API token/key for integration
-  webhookSecret String?  // Secret for validating webhooks
-  settings     Json?     // Any additional settings for the integration
-  isEnabled    Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  businessId    String
+  type          String
+  apiKey        String?
+  webhookSecret String?
+  settings      Json?
+  isEnabled     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@map("integrations")
 }
@@ -260,8 +252,6 @@ enum UserRole {
 }
 
 enum PlanTier {
-  FREE
-  BASIC
   PRO
   ENTERPRISE
 }
@@ -293,12 +283,12 @@ enum CallDirection {
 
 enum CallType {
   VOICE
-  SMS
   CHAT
 }
 
 enum CallStatus {
   INITIATED
+  RINGING
   IN_PROGRESS
   COMPLETED
   FAILED

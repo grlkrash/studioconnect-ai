@@ -437,6 +437,7 @@ const processMessage = async (message, conversationHistory, businessId, currentA
             }
         }
         let intent;
+        let isEmergency = false;
         if ((currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('LEAD_CAPTURE')) || (currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('NEW_LEAD_QUALIFICATION'))) {
             intent = 'NEW_LEAD_QUALIFICATION';
             console.log('Continuing NEW_LEAD_QUALIFICATION flow based on state.');
@@ -476,7 +477,8 @@ const processMessage = async (message, conversationHistory, businessId, currentA
             const intentResponse = await (0, openai_1.getChatCompletion)(intentPrompt, "You are an intent classification expert for a creative agency. Respond with only: NEW_LEAD_QUALIFICATION, PROJECT_STATUS_INQUIRY, CLIENT_FAQ, AGENCY_GENERAL_FAQ, END_CALL, or OTHER.");
             intent = cleanVoiceResponse(intentResponse || 'OTHER').trim().toUpperCase();
         }
-        console.log(`Effective intent: ${intent}`);
+        isEmergency = intent === 'EMERGENCY';
+        console.log(`Effective intent: ${intent}  (isEmergency: ${isEmergency})`);
         if (intent === 'PROJECT_STATUS_INQUIRY') {
             console.log('Entering PROJECT_STATUS_INQUIRY flow...');
             if (!isExistingClient) {
