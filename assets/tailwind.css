@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white shadow hover:bg-brand/90 transition;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm hover:bg-gray-50 transition;
+  }
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md;
+  }
+  .card-header {
+    @apply flex items-center justify-between px-6 py-4 border-b;
+  }
+  .card-title {
+    @apply text-lg font-semibold text-gray-900;
+  }
+  .card-body {
+    @apply p-6 text-sm text-gray-700;
+  }
+  .table {
+    @apply w-full text-sm text-left text-gray-700;
+  }
+  .table-head {
+    @apply bg-gray-50 text-xs uppercase tracking-wider text-gray-500;
+  }
+} 

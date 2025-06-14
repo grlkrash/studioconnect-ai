@@ -20,6 +20,7 @@ RUN npx prisma generate
 
 # Build the application
 RUN yarn build
+RUN yarn tailwind:build
 
 # ---- Production Stage ----
 # This stage creates the final, smaller image with only production dependencies
