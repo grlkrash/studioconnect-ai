@@ -608,6 +608,7 @@ export const processMessage = async (
 
     // Step 1: Intent Recognition (Modified)
     let intent: string
+    let isEmergency = false
     if (currentActiveFlow?.startsWith('LEAD_CAPTURE') || currentActiveFlow?.startsWith('NEW_LEAD_QUALIFICATION')) {
       intent = 'NEW_LEAD_QUALIFICATION'
       console.log('Continuing NEW_LEAD_QUALIFICATION flow based on state.')
@@ -652,7 +653,8 @@ export const processMessage = async (
       )
       intent = cleanVoiceResponse(intentResponse || 'OTHER').trim().toUpperCase()
     }
-    console.log(`Effective intent: ${intent}`)
+    isEmergency = intent === 'EMERGENCY'
+    console.log(`Effective intent: ${intent}  (isEmergency: ${isEmergency})`)
 
     // Step 2: Route based on intent and plan tier
     if (intent === 'PROJECT_STATUS_INQUIRY') {

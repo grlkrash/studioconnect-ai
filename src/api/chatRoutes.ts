@@ -61,12 +61,12 @@ router.post('/initiate-call', async (req, res, next) => {
       res.status(400).json({ error: 'Business has no notification phone number configured' });
       return;
     }
-    const callResult = await initiateClickToCall(
+    const callResult = await initiateClickToCall({
       phoneNumber,
-      business.notificationPhoneNumber,
-      business.name,
+      businessNotificationPhoneNumber: business.notificationPhoneNumber,
+      businessName: business.name,
       conversationHistory,
-    );
+    });
     res.status(200).json({
       success: true,
       message: 'Call initiated successfully',

@@ -517,29 +517,32 @@ export async function sendLeadConfirmationToCustomer(
   }
 }
 
-export async function initiateClickToCall(
-  phoneNumber: string,
-  businessNotificationPhoneNumber: string,
-  businessName: string,
+export interface ClickToCallParams {
+  phoneNumber: string
+  businessNotificationPhoneNumber: string
+  businessName: string
   conversationHistory: any[]
-): Promise<{ success: boolean; callSid: string }> {
+}
+
+export async function initiateClickToCall({
+  phoneNumber,
+  businessNotificationPhoneNumber,
+  businessName,
+  conversationHistory
+}: ClickToCallParams): Promise<{ success: boolean; callSid: string }> {
   try {
     // Validate Twilio configuration
-    if (!validateTwilioConfig()) {
-      throw new Error('Twilio configuration is incomplete.');
-    }
+    if (!validateTwilioConfig()) throw new Error('Twilio configuration is incomplete.')
 
     // Format conversation history for context
-    const formattedHistory = conversationHistory
-      .map(msg => `${msg.role}: ${msg.content}`)
-      .join('\n');
+    const formattedHistory = conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')
 
     // Create TwiML for the call
-    const twiml = new VoiceResponse();
-    twiml.say({
-      voice: 'Polly.Amy',
-      language: 'en-GB'
-    }, `You have an emergency call request from a chat user. Here's the conversation history: ${formattedHistory}`);
+    const twiml = new VoiceResponse()
+    twiml.say(
+      { voice: 'Polly.Amy', language: 'en-GB' },
+      `You have an emergency call request from a chat user for ${businessName}. Here's the conversation history: ${formattedHistory}`
+    )
 
     // Initiate the call using Twilio
     const call = await twilioClient.calls.create({
@@ -549,16 +552,14 @@ export async function initiateClickToCall(
       statusCallback: `${process.env.API_BASE_URL}/api/calls/status`,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'
-    });
+    })
 
-    // Get business ID from Prisma
-    const business = await prisma.business.findFirst({
-      where: { notificationPhoneNumber: businessNotificationPhoneNumber }
-    });
+    // Retrieve business by notification number
+    const business = await prisma.business.findFirst({ where: { notificationPhoneNumber: businessNotificationPhoneNumber } })
 
     if (!business) {
-      console.error('Business not found for logging click-to-call.');
-      return { success: true, callSid: call.sid };
+      console.error('Business not found for logging click-to-call.')
+      return { success: true, callSid: call.sid }
     }
 
     // Create a new conversation for the call
@@ -571,7 +572,7 @@ export async function initiateClickToCall(
           customerPhoneNumber: phoneNumber
         }
       }
-    });
+    })
 
     // Log the call initiation
     await prisma.callLog.create({
@@ -586,15 +587,12 @@ export async function initiateClickToCall(
         status: CallStatus.INITIATED,
         source: 'CLICK_TO_CALL'
       }
-    });
+    })
 
-    return {
-      success: true,
-      callSid: call.sid
-    };
+    return { success: true, callSid: call.sid }
   } catch (error) {
-    console.error('Error initiating click-to-call:', error);
-    throw error;
+    console.error('Error initiating click-to-call:', error)
+    throw error
   }
 }
 
