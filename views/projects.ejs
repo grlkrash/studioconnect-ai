@@ -12,7 +12,7 @@
     <main class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-bold">Projects</h1>
-            <button class="btn-primary">Create New Project</button>
+            <button id="addProjectBtn" class="btn-primary">Create New Project</button>
         </div>
 
         <% if (successMessage) { %>
@@ -51,6 +51,6 @@
     </main>
 
     <%- include('partials/footer') %>
-    <script src="/js/projects.js"></script>
+    <script src="/static/js/projects.js"></script>
 </body>
 </html> 

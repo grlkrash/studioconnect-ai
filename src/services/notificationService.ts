@@ -120,7 +120,7 @@ export async function sendLeadNotificationEmail(
 
   const fromEmail = process.env.FROM_EMAIL || '"AI Lead Agent" <noreply@example.com>';
   const contactName = leadDetails.contactName || (leadDetails.capturedData && leadDetails.capturedData["What is your full name, please?"]) || "N/A";
-  const subject = `New ${leadPriority || 'NORMAL'} Priority Lead for ${businessName}: ${contactName}`;
+  const subject = `New ${leadPriority || 'NORMAL'} Priority Request for ${businessName}: ${contactName}`;
 
   // --- Start Building Human-Readable HTML Body ---
   let htmlBody = `<p>Hello ${businessName} team,</p>`;
@@ -129,7 +129,7 @@ export async function sendLeadNotificationEmail(
   if (leadPriority === 'URGENT' && leadDetails.capturedData && leadDetails.capturedData.emergency_notes) {
     htmlBody += `
       <div style="background-color: #fef2f2; border: 3px solid #ef4444; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 URGENT EMERGENCY ALERT 🚨</h2>
+        <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 24px; text-transform: uppercase;">🚨 URGENT PROJECT REQUEST 🚨</h2>
         <p style="font-size: 18px; font-weight: bold; color: #991b1b; margin: 0; line-height: 1.4;">
           Customer Stated: "${leadDetails.capturedData.emergency_notes}"
         </p>
@@ -137,9 +137,9 @@ export async function sendLeadNotificationEmail(
     `;
   }
   
-  htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> lead captured by your AI Studio Manager.</p>`;
+  htmlBody += `<p>You have a new <strong>${leadPriority || 'NORMAL'} priority</strong> request captured by your AI Studio Manager.</p>`;
   
-  htmlBody += `<h3>Lead Details:</h3>`;
+  htmlBody += `<h3>Request Details:</h3>`;
   htmlBody += "<ul>";
   if (leadDetails.contactName) {
     htmlBody += `<li><strong>Contact Name:</strong> ${leadDetails.contactName}</li>`;
@@ -206,7 +206,7 @@ export async function sendLeadNotificationEmail(
     }
   }
   
-  htmlBody += `<p>Please log in to your dashboard to view full details and manage this lead.</p>`;
+  htmlBody += `<p>Please log in to your dashboard to view full details and manage this request.</p>`;
   htmlBody += `<p>Best regards,<br>Your AI Studio Manager</p>`;
 
   const mailOptions = {
@@ -320,15 +320,15 @@ export async function initiateEmergencyVoiceCall(
     const messageToSay = 
       `<prosody rate="fast"><emphasis level="strong">Urgent Alert!</emphasis></prosody>` +
       `<break strength="medium"/>` +
-      `This is an emergency <phoneme alphabet="ipa" ph="li藧d">lead</phoneme> notification for ${safeBusinessName}.` +
+      `This is an urgent project request notification for ${safeBusinessName}.` +
       `<break strength="medium"/>` +
-      `A customer has reported an emergency. Issue stated: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
+      `A customer has requested immediate assistance. Details: <prosody rate="medium"><emphasis level="moderate">${safeLeadSummary}</emphasis></prosody>.` +
       `<break strength="medium"/>` +
-      `Please check your email or dashboard immediately for full details and contact information.` +
+      `Please check your email or dashboard right away for full information.` +
       `<break strength="strong"/>` +
       `Repeating: <break time="300ms"/> ` +
-      `<emphasis level="strong">Urgent</emphasis> emergency <phoneme alphabet="ipa" ph="li藧d">lead</phoneme> for ${safeBusinessName}. ` +
-      `Issue: <emphasis level="moderate">${safeLeadSummary}</emphasis>. ` +
+      `<emphasis level="strong">Urgent</emphasis> project request for ${safeBusinessName}. ` +
+      `Details: <emphasis level="moderate">${safeLeadSummary}</emphasis>. ` +
       `Check your email for complete details.`
 
     // Create TwiML response using Twilio VoiceResponse class

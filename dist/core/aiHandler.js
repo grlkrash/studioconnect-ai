@@ -3,8 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateRecoveryResponse = exports.processMessage = void 0;
+exports.generateRecoveryResponse = void 0;
 exports.handleIncomingMessage = handleIncomingMessage;
+exports.processMessage = processMessage;
 const db_1 = require("../services/db");
 const openai_1 = require("../services/openai");
 const ragService_1 = require("./ragService");
@@ -396,7 +397,7 @@ const determineNextVoiceAction = (intent, currentFlow) => {
         return 'TRANSFER';
     return 'CONTINUE';
 };
-const processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
+const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
     try {
         console.log(`AI Handler processing message for business ${businessId}: "${message}"`);
         console.log('Received currentActiveFlow:', currentActiveFlow);
@@ -623,7 +624,6 @@ const processMessage = async (message, conversationHistory, businessId, currentA
         nextAction: 'CONTINUE'
     };
 };
-exports.processMessage = processMessage;
 const generateRecoveryResponse = () => {
     const recoveryMessages = [
         "I do apologize, it seems I'm experiencing a technical issue with my connection right now. I can still take a message for the team if you'd like.",
@@ -637,5 +637,13 @@ const generateRecoveryResponse = () => {
 exports.generateRecoveryResponse = generateRecoveryResponse;
 async function handleIncomingMessage(message, sessionId, businessId) {
     return { response: 'AI response' };
+}
+function processMessage(...args) {
+    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])) {
+        const { message, conversationHistory, businessId, currentActiveFlow = null, callSid, channel = 'VOICE' } = args[0];
+        return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel);
+    }
+    const [message, conversationHistory, businessId, currentActiveFlow = null, callSid, channel = 'VOICE'] = args;
+    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel);
 }
 //# sourceMappingURL=aiHandler.js.map
