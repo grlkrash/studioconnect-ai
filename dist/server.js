@@ -11,6 +11,7 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
 const openai_1 = __importDefault(require("openai"));
+const next_1 = __importDefault(require("next"));
 dotenv_1.default.config();
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
@@ -167,6 +168,19 @@ app.set('views', [
     path_1.default.join(__dirname, '../views'),
     path_1.default.join(__dirname, '../src/views')
 ]);
+const devNext = process.env.NODE_ENV !== 'production';
+const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__dirname, '../dashboard') });
+const handleNext = nextApp.getRequestHandler();
+await nextApp.prepare();
+app.use('/_next', (req, res) => {
+    return handleNext(req, res);
+});
+app.use('/admin', (req, res, nextFn) => {
+    if (viewRoutes_1.default.stack.some((r) => { var _a; return ((_a = r.route) === null || _a === void 0 ? void 0 : _a.path) && req.path.startsWith(r.route.path); })) {
+        return nextFn();
+    }
+    return handleNext(req, res);
+});
 app.use('/admin', viewRoutes_1.default);
 app.use('/api/chat', chatRoutes_1.default);
 app.use('/api/admin', admin_1.default);
