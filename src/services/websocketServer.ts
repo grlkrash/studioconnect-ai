@@ -12,11 +12,24 @@ export function setupWebSocketServer(httpServer: Server): WebSocketServer {
 
     try {
       // `req.url` contains the path + query string sent by Twilio (e.g. "/?callSid=...&businessId=...")
-      const requestUrl = req.url || '/'
+      // In production we occasionally see it as `undefined` or just `/`.  Handle those cases gracefully.
 
-      // Use a dummy base because URL requires an absolute URL string
-      const fullUrl = new URL(requestUrl, 'http://localhost')
-      const params = new URLSearchParams(fullUrl.search)
+      const rawUrl = typeof req.url === 'string' && req.url.trim() !== '' ? req.url : '/'
+
+      // Always give URL an absolute base so Node's parser never throws.
+      let fullUrl: URL
+      try {
+        fullUrl = new URL(rawUrl, 'http://localhost')
+      } catch (parseErr) {
+        // Fallback – should never happen, but guarantees we keep the socket alive.
+        console.warn('Invalid request URL received for WebSocket upgrade – falling back to root', {
+          rawUrl,
+          error: parseErr instanceof Error ? parseErr.message : parseErr
+        })
+        fullUrl = new URL('/', 'http://localhost')
+      }
+
+      const params = fullUrl.searchParams
 
       callSid = params.get('callSid') || undefined
 
