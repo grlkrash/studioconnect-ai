@@ -126,8 +126,10 @@ export const findRelevantKnowledge = async (
     const queryEmbeddingVector = await getEmbedding(userQuery)
     const vectorString = JSON.stringify(queryEmbeddingVector)
 
-    // Build optional project filter
-    const projectFilter = context?.projectId ? Prisma.sql` AND "projectId" = ${context.projectId}` : Prisma.empty
+    // Prepare optional project filter to avoid nested template literals within the main query
+    const projectFilter = context?.projectId
+      ? Prisma.sql` AND "projectId" = ${context.projectId}`
+      : Prisma.sql``
 
     const results = await prisma.$queryRaw<
       Array<{ id: string; content: string; sourceURL: string | null; similarity: number }>
@@ -139,7 +141,17 @@ export const findRelevantKnowledge = async (
         1 - (embedding <=> ${vectorString}::vector) AS similarity
       FROM knowledge_base
       WHERE "businessId" = ${businessId}
-        AND embedding IS NOT NULL ${projectFilter}
+        AND embedding IS NOT NULL
+        ${projectFilter}
       ORDER BY similarity DESC
       LIMIT ${limit}
     `
+
+    return results
+  } catch (error) {
+    console.error('[RAG Service] Error finding relevant knowledge:', error)
+    return []
+  }
+}
+
+export default { generateAndStoreEmbedding, findRelevantKnowledge }
