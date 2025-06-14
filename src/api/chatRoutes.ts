@@ -23,7 +23,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         res.status(404).json({ error: 'Business not found' });
         return;
       }
-      const showBranding = business.planTier === 'FREE' || business.planTier === 'BASIC';
+      // Show branding for the PRO plan (branding is hidden only on ENTERPRISE)
+      const showBranding = business.planTier === 'PRO';
       let welcomeMessage = 'Hey! How can I help you today?';
       if (business.agentConfig?.welcomeMessage) {
         welcomeMessage = business.agentConfig.welcomeMessage.replace(/\{businessName\}/gi, business.name);

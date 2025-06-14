@@ -73,19 +73,16 @@ export const PLAN_FEATURES: Record<string, PlanFeature> = {
 type Feature = 'basic_chat' | 'lead_capture' | 'knowledge_base' | 'voice_calls' | 'project_management' | 'integrations'
 
 export class PlanUtils {
+  // Plan hierarchy where a higher numeric value unlocks all lower-tier features
   private static readonly PLAN_HIERARCHY = {
-    FREE: 0,
-    BASIC: 1,
-    PRO: 2,
-    ENTERPRISE: 3
+    PRO: 0,
+    ENTERPRISE: 1
   } as const
 
   private static readonly FEATURES: Record<PlanTier, Feature[]> = {
-    FREE: ['basic_chat'],
-    BASIC: ['basic_chat', 'lead_capture'],
     PRO: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls'],
     ENTERPRISE: ['basic_chat', 'lead_capture', 'knowledge_base', 'voice_calls', 'project_management', 'integrations']
-  }
+  } as Record<PlanTier, Feature[]>
 
   static isPlanSufficient(userPlan: PlanTier, requiredPlan: PlanTier): boolean {
     return this.PLAN_HIERARCHY[userPlan] >= this.PLAN_HIERARCHY[requiredPlan]
@@ -99,7 +96,10 @@ export class PlanUtils {
     return this.FEATURES[plan].includes(feature)
   }
 
+  /**
+   * Branding is shown on the PRO plan and hidden on ENTERPRISE.
+   */
   static shouldShowBranding(planTier: PlanTier): boolean {
-    return planTier !== 'ENTERPRISE'
+    return planTier === 'PRO'
   }
 } 
