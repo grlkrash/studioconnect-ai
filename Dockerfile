@@ -10,7 +10,7 @@ RUN apk add --no-cache libc6-compat openssl python3 make g++
 
 # Copy package manifests and install dependencies
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 100000
+RUN yarn install --frozen-lockfile --production=false --network-timeout 100000
 
 # Copy entire project context
 COPY . .
