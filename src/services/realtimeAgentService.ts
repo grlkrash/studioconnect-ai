@@ -189,28 +189,18 @@ class RealtimeAgentService {
     const businessId = params.get('businessId');
     const fromNumber = params.get('fromPhoneNumber');
 
-    // Previously we closed the connection when either parameter was missing, which caused Twilio
-    // to drop the call before it had a chance to send its initial `start` message (containing the
-    // real CallSid & custom parameters).  We now keep the socket open and defer validation until
-    // that event arrives.
-
-    // Twilio sometimes omits the query string when establishing the WebSocket.  In that case we
-    // still allow the socket to remain open and rely on the first `start` event message (sent by
-    // Twilio after the upgrade) to supply the real CallSid / business context.  Only enforce the
-    // presence of these parameters if *both* are missing **and** the connection does not provide
-    // them later on in the `start` payload.
-    if (!callSid) {
-      console.warn('[REALTIME AGENT] callSid not present in WebSocket URL – will wait for START event')
-    }
-    if (!businessId) {
-      console.warn('[REALTIME AGENT] businessId not present in WebSocket URL – will derive it from call details later')
-    }
-
+    // Allow connections even if callSid or businessId is missing – they can be
+    // derived from the Twilio START event that follows the websocket upgrade.
     if (!callSid || !businessId) {
-      console.error('[REALTIME AGENT] Missing required parameters:', { callSid, businessId });
-      ws.close(1008, 'Missing required parameters');
-      return;
+      console.warn('[REALTIME AGENT] Missing callSid or businessId in WebSocket URL – will derive from START event', {
+        callSid,
+        businessId
+      })
     }
+
+    // Twilio sometimes omits the query string when establishing the WebSocket – do *not* close
+    // the connection here. We rely on the subsequent START event to provide the definitive
+    // CallSid and will derive the business context at that point.
 
     this.callSid = callSid;
     console.log(`[REALTIME AGENT] New connection for call ${callSid} to business ${businessId}`);
@@ -253,10 +243,9 @@ class RealtimeAgentService {
     const connectionKey = callSid ?? crypto.randomUUID();
     this.connections.set(connectionKey, state);
 
-    // Only register Twilio listeners if we already know the CallSid (outbound calls, test harnesses, etc.)
-    if (callSid) {
-      this.setupTwilioListeners(state);
-    }
+    // Register lifecycle listeners for this WebSocket so we can clean up if the
+    // client disconnects before the START event arrives.
+    this.setupWebSocketListeners(state);
 
     // Send a welcome message and log the call only when we already have the essential identifiers
     // (typically available for outbound calls or local tests).  For inbound calls we wait until the
