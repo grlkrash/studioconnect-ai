@@ -33,7 +33,7 @@ export default function AgentSettings() {
     }
   }
 
-  const [settings, setSettings] = useState<Settings>({
+  const defaultSettings: Settings = {
     agentName: "AI Assistant",
     personaPrompt: "You are a helpful assistant.",
     welcomeMessage: "Hello! How can I help you today?",
@@ -50,7 +50,10 @@ export default function AgentSettings() {
       radius: "16px",
       blur: "0px",
     },
-  })
+  }
+
+  const [settings, setSettings] = useState<Settings>(defaultSettings)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   // Fetch existing config
   useEffect(() => {
@@ -59,7 +62,7 @@ export default function AgentSettings() {
         const res = await fetch("/api/agent-config", { credentials: "include" })
         if (res.ok) {
           const data = await res.json()
-          if (data.config) setSettings({ ...settings, ...data.config })
+          if (data.config) setSettings({ ...defaultSettings, ...data.config })
         }
       } catch (err) {
         console.error("Failed to load agent config", err)
@@ -132,7 +135,7 @@ export default function AgentSettings() {
                       onValueChange={(value) => setSettings({ ...settings, openaiVoice: value })}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select voice" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ALLOY">ALLOY (Professional Male)</SelectItem>
@@ -154,7 +157,7 @@ export default function AgentSettings() {
                       onValueChange={(value) => setSettings({ ...settings, openaiModel: value })}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select model" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="tts-1">TTS-1 (fast)</SelectItem>
@@ -318,9 +321,10 @@ export default function AgentSettings() {
                 <div className="space-y-2">
                   <Label>Embed Snippet</Label>
                   <pre className="bg-slate-900 text-green-400 rounded p-4 text-xs overflow-auto select-all">
-                    {`<script
-                      src="https://studioconnect.ai/widget.js"
-                      data-business-id="${process.env.NEXT_PUBLIC_BUSINESS_ID || 'YOUR_BUSINESS_ID'}"
+                    {`<script defer
+                      src="https://app.cincyaisolutions.com/widget.js"
+                      data-business-id="YOUR_BUSINESS_ID_HERE"
+                      data-api-url="https://app.cincyaisolutions.com"
                       data-primary="${settings.widgetTheme?.primary}"
                       data-primary-dark="${settings.widgetTheme?.primaryDark}"
                       data-bg="${settings.widgetTheme?.bg}"
@@ -361,6 +365,10 @@ export default function AgentSettings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">Business ID</span>
+                  <span className="text-xs font-mono">{process.env.NEXT_PUBLIC_BUSINESS_ID || '—'}</span>
+                </div>
+                <div className="flex justify-between items-center">
                   <span className="text-sm text-slate-600">Agent Status</span>
                   <Badge className="bg-green-50 text-green-700 border-green-200">Online</Badge>
                 </div>
@@ -392,9 +400,42 @@ export default function AgentSettings() {
                       "Hello! I'm your AI assistant. How can I help you today?"
                     </p>
                   </div>
-                  <Button variant="outline" className="w-full">
-                    <Play className="w-4 h-4 mr-2" />
-                    Play Preview
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={previewLoading}
+                    onClick={async () => {
+                      try {
+                        setPreviewLoading(true)
+                        const res = await fetch("/api/voice-preview", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            text: settings.welcomeMessage,
+                            model: settings.openaiModel,
+                            voice: settings.openaiVoice,
+                          }),
+                        })
+                        if (!res.ok) throw new Error("failed")
+                        const data = await res.json()
+                        const audio = new Audio(`data:audio/mp3;base64,${data.audioBase64}`)
+                        await audio.play()
+                      } catch (err) {
+                        toast({ title: "Error", description: "Could not play preview", variant: "destructive" })
+                      } finally {
+                        setPreviewLoading(false)
+                      }
+                    }}
+                  >
+                    {previewLoading ? (
+                      <>
+                        <Play className="w-4 h-4 mr-2 animate-spin" /> Generating…
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" /> Play Preview
+                      </>
+                    )}
                   </Button>
                 </div>
               </CardContent>

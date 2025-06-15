@@ -24,7 +24,18 @@ export function useLeadQuestions() {
       const res = await fetch('/api/lead-questions', { credentials: 'include' })
       if (!res.ok) throw new Error('failed')
       const data = await res.json()
-      setQuestions(data.questions)
+      // Normalize to the UI shape
+      const mapped = data.questions.map((q: any) => ({
+        id: q.id,
+        questionText: q.questionText,
+        question: q.questionText,
+        expectedFormat: q.expectedFormat,
+        type: q.expectedFormat?.toLowerCase() || 'text',
+        order: q.order,
+        isRequired: q.isRequired,
+        required: q.isRequired,
+      }))
+      setQuestions(mapped)
     } catch (err) {
       console.error(err)
       setError('Failed to load')
