@@ -1,34 +1,19 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { prisma } from "@/lib/prisma"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Users } from "lucide-react"
+import CallTable from "./call-table"
 
-interface CallRecord {
-  id: string
-  caller: string
-  date: string
-  duration: string
-  status: "completed" | "missed" | "voicemail"
-}
+export default async function CallHistoryPage() {
+  const business = await prisma.business.findFirst({ select: { id: true } })
 
-const callRecords: CallRecord[] = [
-  { id: "1", caller: "+1 (513) 555-0123", date: "2025-06-12 09:14", duration: "04:32", status: "completed" },
-  { id: "2", caller: "+1 (859) 555-0987", date: "2025-06-12 08:03", duration: "02:18", status: "voicemail" },
-  { id: "3", caller: "+1 (937) 555-0110", date: "2025-06-11 17:48", duration: "—", status: "missed" },
-]
+  if (!business) return <div className="p-6">No business found.</div>
 
-function getStatusBadge(status: CallRecord["status"]) {
-  switch (status) {
-    case "completed":
-      return <Badge className="bg-green-50 text-green-700 border-green-200">Completed</Badge>
-    case "missed":
-      return <Badge className="bg-red-50 text-red-700 border-red-200">Missed</Badge>
-    case "voicemail":
-      return <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200">Voicemail</Badge>
-    default:
-      return null
-  }
-}
+  const calls = await prisma.callLog.findMany({
+    where: { businessId: business.id },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  })
 
-export default function CallHistoryPage() {
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
@@ -40,27 +25,16 @@ export default function CallHistoryPage() {
         </div>
       </header>
 
-      <main className="flex-1 p-6 overflow-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-48">Caller</TableHead>
-              <TableHead className="w-48">Date & Time</TableHead>
-              <TableHead className="w-32">Duration</TableHead>
-              <TableHead className="w-32">Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {callRecords.map((record) => (
-              <TableRow key={record.id} className="hover:bg-slate-50">
-                <TableCell>{record.caller}</TableCell>
-                <TableCell>{record.date}</TableCell>
-                <TableCell>{record.duration}</TableCell>
-                <TableCell>{getStatusBadge(record.status)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <main className="flex-1 p-6 overflow-auto space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Calls</CardTitle>
+            <CardDescription>Inbound and outbound voice calls</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CallTable calls={calls} />
+          </CardContent>
+        </Card>
       </main>
     </div>
   )

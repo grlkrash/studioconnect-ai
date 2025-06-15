@@ -13,6 +13,7 @@ const http_1 = __importDefault(require("http"));
 const https_1 = __importDefault(require("https"));
 const openai_1 = __importDefault(require("openai"));
 const next_1 = __importDefault(require("next"));
+const widgetConfigRoutes_1 = __importDefault(require("./api/widgetConfigRoutes"));
 dotenv_1.default.config();
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
@@ -203,6 +204,7 @@ nextApp.prepare()
     app.use('/api/business', businessRoutes_1.default);
     app.use('/api/agent-config', agentConfigRoutes_1.default);
     app.use('/api/lead-questions', leadQuestionRoutes_1.default);
+    app.use('/api/widget-config', widgetConfigRoutes_1.default);
     app.get('/widget.js', (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
         console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);

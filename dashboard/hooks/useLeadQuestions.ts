@@ -7,6 +7,10 @@ export interface LeadQuestion {
   order: number
   isRequired: boolean
   options?: string[]
+  question?: string
+  type?: string
+  required?: boolean
+  followUp?: string
 }
 
 export function useLeadQuestions() {

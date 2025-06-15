@@ -5,6 +5,10 @@ export interface KnowledgeEntry {
   title?: string
   content: string
   updatedAt: string
+  category?: string
+  usage?: number
+  metadata?: any
+  lastUpdated?: string
 }
 
 export function useKnowledgeBase() {

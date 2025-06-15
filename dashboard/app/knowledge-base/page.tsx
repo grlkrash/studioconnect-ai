@@ -38,7 +38,7 @@ export default function KnowledgeBasePage() {
 
   const filteredItems = entries.filter((item) => {
     const matchesSearch =
-      item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.title ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.content.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = selectedCategory === "All" || item.category === selectedCategory
     return matchesSearch && matchesCategory
@@ -243,9 +243,9 @@ export default function KnowledgeBasePage() {
                     <CardTitle className="text-lg">{item.title}</CardTitle>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="text-xs">
-                        {item.category}
+                        {item.category ?? "Uncategorized"}
                       </Badge>
-                      <span className="text-xs text-slate-500">Used {item.usage} times</span>
+                      <span className="text-xs text-slate-500">Used {item.usage ?? 0} times</span>
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -261,7 +261,7 @@ export default function KnowledgeBasePage() {
               <CardContent className="space-y-4">
                 <p className="text-sm text-slate-600 line-clamp-3">{item.content}</p>
                 <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t">
-                  <span>Last updated: {item.lastUpdated}</span>
+                  <span>Last updated: {item.lastUpdated ?? item.updatedAt}</span>
                   <Button variant="outline" size="sm">
                     View Full
                   </Button>

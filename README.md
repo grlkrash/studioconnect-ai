@@ -211,27 +211,18 @@ setTimeout(() => {
 
 ### 📊 Project Management Integration
 
-**Asana/Jira Sync:**
-```typescript
-// One-way sync of project data
-const projectSync = new ProjectSyncService(agencyId);
-await projectSync.syncProjects();
++StudioConnect now ships with a **pluggable Project Sync layer** located in `src/services/projectSync/`.
+StudioConnect now ships with a **pluggable Project Sync layer** located in `src/services/projectSync/`.
++
++
 
-// Webhook-based real-time updates
-app.post('/webhooks/asana', async (req, res) => {
-  await projectSync.handleWebhook(req.body);
-  res.status(200).send('OK');
-});
-```
+Each *provider* implements a minimal `ProjectSyncProvider` interface, allowing us to bolt in Asana, Jira, Trello—or any future PM tool—without touching core logic.
 
-**Client Recognition:**
-```typescript
-// Identify existing clients by phone number
-const client = await clientService.identifyClient(phoneNumber);
-if (client) {
-  await aiService.setClientContext(client);
-}
-```
+Reference providers:
+• `mockProvider.ts` – seeds 3 demo projects for local development when `SEED_MOCK_PROJECTS=true`.
+• _AsanaProvider_ / _JiraProvider_ (coming soon) – full production sync + webhook handling.
+
+The central `ProjectSyncService` selects the correct provider based on the business' configured integration and runs in three modes: manual trigger, scheduled cron (env `PM_SYNC_INTERVAL`, default 5 min), and real-time webhook.
 
 ### 🔔 Knowledge Base Management
 
