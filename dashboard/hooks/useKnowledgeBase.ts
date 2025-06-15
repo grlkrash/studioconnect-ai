@@ -31,5 +31,44 @@ export function useKnowledgeBase() {
     fetchEntries()
   }, [])
 
-  return { entries, loading, error, refetch: fetchEntries }
+  async function addText(payload: { content: string; metadata?: any }) {
+    const res = await fetch('/api/knowledge-base', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) fetchEntries()
+  }
+
+  async function uploadFile(file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/knowledge-base/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+    if (res.ok) fetchEntries()
+  }
+
+  async function updateEntry(id: string, content: string) {
+    const res = await fetch(`/api/knowledge-base/${id}`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+    if (res.ok) fetchEntries()
+  }
+
+  async function deleteEntry(id: string) {
+    const res = await fetch(`/api/knowledge-base/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    if (res.ok) fetchEntries()
+  }
+
+  return { entries, loading, error, addText, uploadFile, updateEntry, deleteEntry, refetch: fetchEntries }
 } 

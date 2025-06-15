@@ -17,59 +17,13 @@ import {
 import { Label } from "@/components/ui/label"
 import { BookOpen, Search, Plus, Edit, Trash2, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-
-const knowledgeItems = [
-  {
-    id: 1,
-    title: "What services do we offer?",
-    category: "Services",
-    content:
-      "We offer comprehensive branding and design services including logo design, brand identity, website design, print materials, and digital marketing assets.",
-    lastUpdated: "2024-01-15",
-    usage: 45,
-  },
-  {
-    id: 2,
-    title: "What are our pricing ranges?",
-    category: "Pricing",
-    content:
-      "Our projects typically range from $5,000 for basic logo design to $50,000+ for complete brand overhauls. We provide custom quotes based on project scope.",
-    lastUpdated: "2024-01-14",
-    usage: 32,
-  },
-  {
-    id: 3,
-    title: "How long do projects take?",
-    category: "Process",
-    content:
-      "Project timelines vary: Logo design (2-3 weeks), Brand identity (4-6 weeks), Website design (6-12 weeks). We provide detailed timelines in our proposals.",
-    lastUpdated: "2024-01-13",
-    usage: 28,
-  },
-  {
-    id: 4,
-    title: "What is our revision policy?",
-    category: "Process",
-    content:
-      "We include 3 rounds of revisions in all our packages. Additional revisions are available at $150/hour. We work closely with clients to minimize revisions.",
-    lastUpdated: "2024-01-12",
-    usage: 19,
-  },
-  {
-    id: 5,
-    title: "Do we work with international clients?",
-    category: "General",
-    content:
-      "Yes, we work with clients worldwide. We use digital collaboration tools and can accommodate different time zones for meetings and communication.",
-    lastUpdated: "2024-01-11",
-    usage: 15,
-  },
-]
+import { useKnowledgeBase } from "@/hooks/useKnowledgeBase"
 
 const categories = ["All", "Services", "Pricing", "Process", "General"]
 
 export default function KnowledgeBasePage() {
   const { toast } = useToast()
+  const { entries, addText, uploadFile, deleteEntry, updateEntry } = useKnowledgeBase()
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -79,7 +33,7 @@ export default function KnowledgeBasePage() {
     content: "",
   })
 
-  const filteredItems = knowledgeItems.filter((item) => {
+  const filteredItems = entries.filter((item) => {
     const matchesSearch =
       item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.content.toLowerCase().includes(searchTerm.toLowerCase())
@@ -87,11 +41,9 @@ export default function KnowledgeBasePage() {
     return matchesSearch && matchesCategory
   })
 
-  const handleAddItem = () => {
-    toast({
-      title: "Knowledge item added",
-      description: "Your new knowledge base item has been created successfully.",
-    })
+  const handleAddItem = async () => {
+    await addText({ content: `${newItem.title}\n${newItem.content}` })
+    toast({ title: 'Saved', description: 'Article added' })
     setIsAddDialogOpen(false)
     setNewItem({ title: "", category: "General", content: "" })
   }
@@ -176,7 +128,7 @@ export default function KnowledgeBasePage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">Total Articles</p>
-                  <p className="text-2xl font-bold text-slate-900">24</p>
+                  <p className="text-2xl font-bold text-slate-900">{entries.length}</p>
                 </div>
                 <div className="p-2 bg-green-50 rounded-lg">
                   <FileText className="w-5 h-5 text-green-600" />

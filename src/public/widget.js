@@ -43,6 +43,22 @@
     return renderUrl;
   })();
 
+  // ---- Theming -----------------------------------------------------------
+  // Expose CSS custom properties that can be overridden via data-attributes
+  // on the <script src="widget.js"> tag, e.g.
+  // <script src="widget.js" data-primary="#8b5cf6" data-font="Inter" />
+  const themeVars = {
+    '--sc-primary': currentScript?.dataset.primary || '#2563eb',
+    '--sc-primary-dark': currentScript?.dataset.primaryDark || '#1d4ed8',
+    '--sc-bg': currentScript?.dataset.bg || '#ffffff',
+    '--sc-bg-secondary': currentScript?.dataset.bgSecondary || '#f8fafc',
+    '--sc-font': currentScript?.dataset.font || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    '--sc-radius': currentScript?.dataset.radius || '16px',
+  }
+  Object.entries(themeVars).forEach(([key, value]) => {
+    document.documentElement.style.setProperty(key, value)
+  })
+
   // State
   let conversationHistory = [];
   let isOpen = false;

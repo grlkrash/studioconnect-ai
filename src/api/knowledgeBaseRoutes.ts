@@ -107,4 +107,71 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
   }
 })
 
+// GET list (optional project filter via query)
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'unauthorized' })
+    const { projectId } = req.query
+    const where: any = { businessId: req.user.businessId }
+    if (projectId) where.projectId = projectId
+
+    const entries = await prisma.knowledgeBase.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+    })
+    res.json(entries)
+  } catch (err) {
+    console.error('[KB ROUTES] list', err)
+    res.status(500).json({ error: 'failed to fetch knowledge base' })
+  }
+})
+
+// GET stats
+router.get('/stats', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'unauthorized' })
+    const [articles, categoriesAgg] = await Promise.all([
+      prisma.knowledgeBase.count({ where: { businessId: req.user.businessId } }),
+      prisma.knowledgeBase.groupBy({
+        by: ['metadata'],
+        where: { businessId: req.user.businessId },
+        _count: { _all: true },
+      }),
+    ])
+    const categories = categoriesAgg.length
+    res.json({ articles, categories })
+  } catch (err) {
+    console.error('[KB ROUTES] stats', err)
+    res.status(500).json({ error: 'failed to fetch stats' })
+  }
+})
+
+// UPDATE entry
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { content, metadata } = req.body
+    const updated = await prisma.knowledgeBase.update({
+      where: { id },
+      data: { content, metadata },
+    })
+    res.json(updated)
+  } catch (err) {
+    console.error('[KB ROUTES] update', err)
+    res.status(500).json({ error: 'failed to update entry' })
+  }
+})
+
+// DELETE entry
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params
+    await prisma.knowledgeBase.delete({ where: { id } })
+    res.status(204).end()
+  } catch (err) {
+    console.error('[KB ROUTES] delete', err)
+    res.status(500).json({ error: 'failed to delete entry' })
+  }
+})
+
 export default router 
