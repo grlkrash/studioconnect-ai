@@ -382,7 +382,7 @@ export async function initiateEmergencyVoiceCall(
           from: twilioPhoneNumber,
           to: toPhoneNumber,
           direction: 'OUTBOUND',
-          status: call.status ? call.status.replace(/-/g, '_').toUpperCase() : 'INITIATED',
+          status: (call.status ? call.status.replace(/-/g, '_').toUpperCase() : 'INITIATED') as any,
           source: 'EMERGENCY_CALL_NOTIFICATION',
           type: 'VOICE',
           metadata: {

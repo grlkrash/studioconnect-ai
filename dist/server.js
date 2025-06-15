@@ -23,6 +23,9 @@ const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
 const projectRoutes_1 = __importDefault(require("./api/projectRoutes"));
 const clientRoutes_1 = __importDefault(require("./api/clientRoutes"));
 const knowledgeBaseRoutes_1 = __importDefault(require("./api/knowledgeBaseRoutes"));
+const businessRoutes_1 = __importDefault(require("./api/businessRoutes"));
+const agentConfigRoutes_1 = __importDefault(require("./api/agentConfigRoutes"));
+const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes"));
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -197,6 +200,9 @@ nextApp.prepare()
     app.use('/api/clients', clientRoutes_1.default);
     app.use('/api/projects', projectRoutes_1.default);
     app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
+    app.use('/api/business', businessRoutes_1.default);
+    app.use('/api/agent-config', agentConfigRoutes_1.default);
+    app.use('/api/lead-questions', leadQuestionRoutes_1.default);
     app.get('/widget.js', (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
         console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);

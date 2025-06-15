@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Settings, Save } from "lucide-react"
+import { Settings, Save, RotateCcw, Play } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export default function AgentSettings() {
@@ -22,6 +22,15 @@ export default function AgentSettings() {
     openaiModel: string
     useOpenaiTts: boolean
     voiceGreetingMessage: string
+    widgetTheme?: {
+      primary?: string
+      primaryDark?: string
+      bg?: string
+      bgSecondary?: string
+      font?: string
+      radius?: string
+      blur?: string
+    }
   }
 
   const [settings, setSettings] = useState<Settings>({
@@ -32,6 +41,15 @@ export default function AgentSettings() {
     openaiModel: "tts-1",
     useOpenaiTts: true,
     voiceGreetingMessage: "Hello! I'm your AI assistant. How can I help you today?",
+    widgetTheme: {
+      primary: "#2563eb",
+      primaryDark: "#1d4ed8",
+      bg: "#ffffffee",
+      bgSecondary: "#f8fafc",
+      font: "Inter, sans-serif",
+      radius: "16px",
+      blur: "0px",
+    },
   })
 
   // Fetch existing config
@@ -184,6 +202,113 @@ export default function AgentSettings() {
               </CardHeader>
               <CardContent>
                 <ComingSoon />
+              </CardContent>
+            </Card>
+
+            {/* Widget Appearance */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Widget Appearance</CardTitle>
+                <CardDescription>Customize chat widget colors & style</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="primaryColor">Primary Color</Label>
+                    <Input
+                      id="primaryColor"
+                      type="color"
+                      value={settings.widgetTheme?.primary}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, primary: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="primaryDarkColor">Primary Dark</Label>
+                    <Input
+                      id="primaryDarkColor"
+                      type="color"
+                      value={settings.widgetTheme?.primaryDark}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, primaryDark: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bgColor">Background</Label>
+                    <Input
+                      id="bgColor"
+                      type="color"
+                      value={settings.widgetTheme?.bg}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, bg: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bgSecondaryColor">Bg Secondary</Label>
+                    <Input
+                      id="bgSecondaryColor"
+                      type="color"
+                      value={settings.widgetTheme?.bgSecondary}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, bgSecondary: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="font">Font Stack</Label>
+                    <Input
+                      id="font"
+                      value={settings.widgetTheme?.font}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, font: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="radius">Radius (px)</Label>
+                    <Input
+                      id="radius"
+                      value={settings.widgetTheme?.radius}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, radius: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="blur">Blur (e.g., 14px)</Label>
+                    <Input
+                      id="blur"
+                      value={settings.widgetTheme?.blur}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          widgetTheme: { ...settings.widgetTheme, blur: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>

@@ -66,6 +66,7 @@ model AgentConfig {
   colorTheme                   Json                  @default("{\"primary\": \"#0ea5e9\", \"secondary\": \"#64748b\"}")
   createdAt                    DateTime              @default(now())
   updatedAt                    DateTime              @updatedAt
+  widgetTheme                  Json?                 @default("{}")
   leadCaptureCompletionMessage String?
   voiceCompletionMessage       String?
   voiceEmergencyMessage        String?
