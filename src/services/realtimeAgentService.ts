@@ -450,6 +450,15 @@ class RealtimeAgentService {
         state.businessId = business.id
         state.fromNumber = fromNumber
         state.toNumber = toNumber
+
+        // Send the business-specific welcome message now that we have context
+        try {
+          const welcomeMessage = await this.getWelcomeMessage(state)
+          this.sendTwilioMessage(callSid, welcomeMessage)
+        } catch (error) {
+          console.error('[REALTIME AGENT] Error sending welcome message after START:', error)
+          this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
+        }
       }
 
       // Connect to OpenAI if needed
@@ -502,16 +511,18 @@ class RealtimeAgentService {
         break
       }
       case 'media': {
+        // Ignore media frames until we have resolved the business context.
+        if (!state.businessId) return
+
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        const { businessId } = state
         const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
         processMessage({
           message: mediaPayload,
           conversationHistory: state.conversationHistory,
-          businessId: businessId ?? '',
+          businessId: state.businessId,
           currentActiveFlow: state.currentFlow ?? null,
           callSid,
           channel: 'VOICE'
