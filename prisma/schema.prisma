@@ -235,6 +235,11 @@ enum OpenAiVoice {
   ONYX
   NOVA
   SHIMMER
+  ASH
+  BALLAD
+  CORAL
+  SAGE
+  VERSE
 }
 
 enum BusinessType {

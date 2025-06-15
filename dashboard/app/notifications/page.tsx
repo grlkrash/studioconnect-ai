@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -101,6 +101,27 @@ export default function NotificationsPage() {
   const [channels, setChannels] = useState(notificationChannels)
   const [types, setTypes] = useState(notificationTypes)
 
+  // --- NEW: multiple email addresses ---
+  const [emailInput, setEmailInput] = useState("")
+  const [emails, setEmails] = useState<string[]>([])
+
+  // Fetch existing emails on mount
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch("/api/business/notification-emails", {
+          credentials: "include",
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data.notificationEmails)) setEmails(data.notificationEmails)
+        }
+      } catch (err) {
+        console.error("Failed to load notification emails", err)
+      }
+    })()
+  }, [])
+
   const handleChannelToggle = (channelId: string) => {
     setChannels(
       channels.map((channel) => (channel.id === channelId ? { ...channel, enabled: !channel.enabled } : channel)),
@@ -124,6 +145,37 @@ export default function NotificationsPage() {
       title: "Test notification sent",
       description: "Check your configured channels for the test message.",
     })
+  }
+
+  const handleAddEmail = () => {
+    const trimmed = emailInput.trim()
+    if (!trimmed) return
+    if (emails.includes(trimmed)) return
+    setEmails([...emails, trimmed])
+    setEmailInput("")
+  }
+
+  const handleRemoveEmail = (email: string) => {
+    setEmails(emails.filter((e) => e !== email))
+  }
+
+  const handleSaveEmails = async () => {
+    try {
+      const res = await fetch("/api/business/notification-emails", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails }),
+      })
+      if (res.ok) {
+        toast({ title: "Saved", description: "Notification emails updated." })
+      } else {
+        toast({ title: "Error", description: "Could not save emails", variant: "destructive" })
+      }
+    } catch (err) {
+      console.error(err)
+      toast({ title: "Error", description: "Could not save emails", variant: "destructive" })
+    }
   }
 
   return (
@@ -188,6 +240,46 @@ export default function NotificationsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Notification Emails */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Email Recipients</CardTitle>
+            <CardDescription>All addresses will receive client notifications</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex space-x-2">
+              <Input
+                placeholder="name@company.com"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+              />
+              <Button type="button" onClick={handleAddEmail} disabled={!emailInput.trim()}>
+                Add
+              </Button>
+            </div>
+
+            {emails.length > 0 && (
+              <ul className="space-y-2">
+                {emails.map((email) => (
+                  <li key={email} className="flex items-center justify-between bg-slate-50 p-2 rounded">
+                    <span className="text-sm text-slate-700">{email}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveEmail(email)}
+                      aria-label="Remove email"
+                    >
+                      ×
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <Button onClick={handleSaveEmails}>Save Emails</Button>
+          </CardContent>
+        </Card>
 
         {/* Notification Channels */}
         <Card>

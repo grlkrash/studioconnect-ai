@@ -15,71 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
-const dashboardCards = [
-  {
-    title: "Agent Settings",
-    description: "Configure your AI agent's personality, welcome message, and appearance.",
-    icon: Settings,
-    href: "/agent-settings",
-    status: "configured",
-    color: "from-blue-500 to-blue-600",
-    stats: "Voice: Professional | Language: English",
-  },
-  {
-    title: "Client Intake Questions",
-    description: "Set up the questions your AI agent will ask to capture lead information.",
-    icon: MessageSquare,
-    href: "/intake-questions",
-    status: "needs-attention",
-    color: "from-red-500 to-red-600",
-    stats: "7 questions configured",
-  },
-  {
-    title: "Knowledge Base",
-    description: "Add and manage the information your AI agent uses to answer customer questions.",
-    icon: BookOpen,
-    href: "/knowledge-base",
-    status: "configured",
-    color: "from-green-500 to-green-600",
-    stats: "24 articles | Last updated 2 days ago",
-  },
-  {
-    title: "Clients & Requests",
-    description: "View and manage all clients captured by your AI agent.",
-    icon: Users,
-    href: "/clients",
-    status: "active",
-    color: "from-purple-500 to-purple-600",
-    stats: "156 clients | 8 new this week",
-  },
-  {
-    title: "Notification Settings",
-    description: "Configure where you receive notifications when new leads are captured.",
-    icon: Bell,
-    href: "/notifications",
-    status: "configured",
-    color: "from-yellow-500 to-yellow-600",
-    stats: "Email & SMS enabled",
-  },
-  {
-    title: "Projects",
-    description: "View and manage all projects synced from your PM tool.",
-    icon: FolderOpen,
-    href: "/projects",
-    status: "synced",
-    color: "from-indigo-500 to-indigo-600",
-    stats: "23 active projects | Synced 1 hour ago",
-  },
-  {
-    title: "Integrations",
-    description: "Connect your project management and messaging tools.",
-    icon: Plug,
-    href: "/integrations",
-    status: "partial",
-    color: "from-teal-500 to-teal-600",
-    stats: "Asana connected | Slack pending",
-  },
-]
+import { getDashboardCounts } from "@/lib/dashboard-stats"
 
 const getStatusIcon = (status: string) => {
   switch (status) {
@@ -132,7 +68,75 @@ const getStatusBadge = (status: string) => {
   }
 }
 
-export function DashboardCards() {
+export async function DashboardCards() {
+  const counts = await getDashboardCounts()
+
+  const dashboardCards = [
+    {
+      title: "Agent Settings",
+      description: "Fine-tune your AI agent's persona and voice.",
+      icon: Settings,
+      href: "/agent-settings",
+      status: "configured",
+      color: "from-blue-500 to-blue-600",
+      stats: "Voice: Professional | English",
+    },
+    {
+      title: "Client Intake Questions",
+      description: "Edit the lead-capture flow.",
+      icon: MessageSquare,
+      href: "/intake-questions",
+      status: "needs-attention",
+      color: "from-red-500 to-red-600",
+      stats: "7 questions configured",
+    },
+    {
+      title: "Knowledge Base",
+      description: "Manage canned answers & FAQs.",
+      icon: BookOpen,
+      href: "/knowledge-base",
+      status: "configured",
+      color: "from-green-500 to-green-600",
+      stats: "24 articles | 2 days ago",
+    },
+    {
+      title: "Clients & Requests",
+      description: "All captured clients at a glance.",
+      icon: Users,
+      href: "/clients",
+      status: "active",
+      color: "from-purple-500 to-purple-600",
+      stats: `${counts.clientsTotal} clients • ${counts.leadsTotal} requests`,
+    },
+    {
+      title: "Notification Settings",
+      description: "Emails, SMS & Slack alerts.",
+      icon: Bell,
+      href: "/notifications",
+      status: "configured",
+      color: "from-yellow-500 to-yellow-600",
+      stats: "Email & SMS enabled",
+    },
+    {
+      title: "Projects",
+      description: "Synced from your PM tool.",
+      icon: FolderOpen,
+      href: "/projects",
+      status: "synced",
+      color: "from-indigo-500 to-indigo-600",
+      stats: `${counts.projectsTotal} projects | ${counts.projectsActive} active`,
+    },
+    {
+      title: "Integrations",
+      description: "Connect PM & messaging tools.",
+      icon: Plug,
+      href: "/integrations",
+      status: "partial",
+      color: "from-teal-500 to-teal-600",
+      stats: "Asana connected | Slack pending",
+    },
+  ]
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {dashboardCards.map((card) => (
@@ -152,7 +156,9 @@ export function DashboardCards() {
             </div>
             <div className="space-y-1">
               <CardTitle className="text-lg font-semibold text-slate-900">{card.title}</CardTitle>
-              <CardDescription className="text-slate-600 text-sm leading-relaxed">{card.description}</CardDescription>
+              <CardDescription className="text-slate-600 text-sm leading-relaxed">
+                {card.description}
+              </CardDescription>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
