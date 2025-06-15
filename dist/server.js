@@ -188,7 +188,10 @@ nextApp.prepare()
         req.url = req.originalUrl.replace('/admin', '');
         return handleNext(req, res);
     });
-    app.use('/admin', (req, res) => handleNext(req, res));
+    app.use('/admin', (req, res) => {
+        req.url = req.originalUrl;
+        return handleNext(req, res);
+    });
     app.use('/api/chat', chatRoutes_1.default);
     app.use('/api/admin', admin_1.default);
     app.use('/api/clients', clientRoutes_1.default);
