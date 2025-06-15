@@ -15,12 +15,12 @@
     "start:prod": "NODE_ENV=production node dist/server.js",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:generate": "npx prisma generate",
+    "seed": "npx prisma db seed",
     "tailwind:build": "tailwindcss -i ./assets/tailwind.css -o ./public/css/ui.css --minify",
     "tailwind:watch": "tailwindcss -i ./assets/tailwind.css -o ./public/css/ui.css --watch --minify",
     "build:dashboard": "npm --prefix dashboard run build",
     "start:dashboard": "npm --prefix dashboard run start -- -p 3100",
-    "postinstall": "npm --prefix dashboard install --legacy-peer-deps",
-    "seed:mock-projects": "ts-node scripts/seedMockProjects.ts"
+    "postinstall": "npm --prefix dashboard install --legacy-peer-deps"
   },
   "_moduleAliases": {
     "@": "dist"
@@ -28,6 +28,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "prisma": {
+    "seed": "ts-node --transpile-only scripts/seedMockProjects.ts"
+  },
   "devDependencies": {
     "@prisma/client": "^6.9.0",
     "@tailwindcss/aspect-ratio": "^0.4.2",
@@ -74,6 +77,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "redis": "^4.7.1",
+    "swr": "^2.3.3",
     "twilio": "^5.7.0",
     "ws": "^8.18.2",
     "zod": "^3.22.4"
