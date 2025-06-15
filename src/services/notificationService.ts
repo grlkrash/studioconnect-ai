@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer'
 import Mail from 'nodemailer/lib/mailer'
 import twilio from 'twilio'
 import sgTransport from 'nodemailer-sendgrid-transport'
-import { PrismaClient, CallStatus, CallType, CallDirection } from '@prisma/client'
+import { PrismaClient } from '@prisma/client'
 import VoiceResponse = require('twilio/lib/twiml/VoiceResponse')
 import crypto from 'crypto'
 
@@ -108,11 +108,14 @@ initializeTransporter()
  * @param businessName - The name of the business
  */
 export async function sendLeadNotificationEmail(
-  toEmail: string,
+  toEmail: string | string[],
   leadDetails: any,
   leadPriority: string | null,
   businessName: string
 ): Promise<void> {
+  // Normalize to array for unified processing
+  const recipients = Array.isArray(toEmail) ? toEmail : [toEmail]
+
   if (!transporter) {
     console.error('Email transporter not initialized. Cannot send HSP notification.');
     return;
@@ -209,23 +212,20 @@ export async function sendLeadNotificationEmail(
   htmlBody += `<p>Please log in to your dashboard to view full details and manage this request.</p>`;
   htmlBody += `<p>Best regards,<br>Your AI Studio Manager</p>`;
 
-  const mailOptions = {
+  const mailOptionsBase = {
     from: fromEmail,
-    to: toEmail,
     subject,
-    html: htmlBody
-  };
+    html: htmlBody,
+  } as const
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Studio lead notification email sent. Full info object:`, JSON.stringify(info, null, 2));
-    if (info && (info.messageId || (info.message && info.message.includes('success')) || (info.response && info.response.includes('250')) )) {
-      console.log(`Studio Email successfully processed by provider. Message ID: ${info.messageId}`);
-    } else {
-      console.warn('Studio Email processed by provider, but messageId might be missing or in a different field. Response:', info);
+    for (const recipient of recipients) {
+      const info = await transporter.sendMail({ ...mailOptionsBase, to: recipient })
+
+      console.log(`Studio lead notification email sent to ${recipient}.`, info.messageId)
     }
   } catch (error) {
-    console.error(`Error sending studio notification email to ${toEmail}:`, error);
+    console.error(`Error sending studio notification email to recipients:`, error);
   }
 }
 
@@ -381,10 +381,10 @@ export async function initiateEmergencyVoiceCall(
           callSid: call.sid,
           from: twilioPhoneNumber,
           to: toPhoneNumber,
-          direction: CallDirection.OUTBOUND,
-          status: call.status as CallStatus,
+          direction: 'OUTBOUND',
+          status: call.status ? call.status.replace(/-/g, '_').toUpperCase() : 'INITIATED',
           source: 'EMERGENCY_CALL_NOTIFICATION',
-          type: CallType.VOICE,
+          type: 'VOICE',
           metadata: {
             leadSummary: safeLeadSummary,
             leadId: businessId
@@ -582,9 +582,9 @@ export async function initiateClickToCall({
         callSid: call.sid,
         from: process.env.TWILIO_PHONE_NUMBER as string,
         to: businessNotificationPhoneNumber,
-        direction: CallDirection.OUTBOUND,
-        type: CallType.VOICE,
-        status: CallStatus.INITIATED,
+        direction: 'OUTBOUND',
+        type: 'VOICE',
+        status: 'INITIATED',
         source: 'CLICK_TO_CALL'
       }
     })

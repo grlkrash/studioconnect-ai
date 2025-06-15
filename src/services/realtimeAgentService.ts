@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import twilio from 'twilio';
-import { PrismaClient, CallStatus, CallType, CallDirection } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
@@ -18,6 +18,8 @@ import { normalizePhoneNumber } from '../utils/phoneHelpers';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
+
+// Prisma enums are emitted as string union types, so we'll use string literals for values
 
 // Initialize Twilio REST client for fetching call details
 const twilioClient = twilio(
@@ -253,10 +255,10 @@ class RealtimeAgentService {
     if (callSid && businessId) {
       try {
         const welcomeMessage = await this.getWelcomeMessage(state)
-        this.sendTwilioMessage(callSid, welcomeMessage)
+        this.sendTwilioMessage(state, welcomeMessage)
       } catch (error) {
         console.error('[REALTIME AGENT] Error sending welcome message:', error)
-        this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
+        this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
       }
 
       await prisma.callLog.create({
@@ -266,9 +268,9 @@ class RealtimeAgentService {
           callSid,
           from: fromNumber ?? '',
           to: '',
-          direction: CallDirection.INBOUND,
-          type: CallType.VOICE,
-          status: CallStatus.INITIATED,
+          direction: 'INBOUND',
+          type: 'VOICE',
+          status: 'INITIATED',
           source: 'TWILIO'
         }
       })
@@ -340,12 +342,50 @@ class RealtimeAgentService {
     this.callSid = null;
   }
 
-  private sendTwilioMessage(callSid: string, message: string): void {
+  /**
+   * Sends a TTS message to the caller **without** terminating the existing media stream.
+   * The strategy is:
+   * 1.  Issue a `Call.update()` with TwiML that first <Say>s the message.
+   * 2.  Immediately after the <Say>, we <Connect><Stream> back to **the same** WebSocket
+   *     endpoint so Twilio re-establishes the media stream once playback is finished.
+   * 3.  We keep a long <Pause> at the end of the TwiML so the call remains open for
+   *     additional interactions.
+   *
+   * This avoids the premature hang-ups the user experienced where updating TwiML with only
+   * a <Say> caused Twilio to drop the stream (and therefore the call) once playback ended.
+   */
+  private sendTwilioMessage(state: ConnectionState, message: string): void {
+    const { callSid, businessId } = state
+
+    if (!callSid) {
+      console.error('[REALTIME AGENT] Attempted to send Twilio message without CallSid')
+      return
+    }
+
     try {
-      this.twilioClient.calls(callSid)
-        .update({ twiml: `<Response><Say>${message}</Say></Response>` });
+      // Build the WebSocket URL that Twilio should reconnect to after speaking
+      const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
+      const wsBase = host.replace(/^https?:\/\//, 'wss://')
+      const wsUrl = `${wsBase}/?callSid=${encodeURIComponent(callSid)}${businessId ? `&businessId=${encodeURIComponent(businessId)}` : ''}`
+
+      const twiml = new twilio.twiml.VoiceResponse()
+
+      // Use a higher-quality Amazon Polly voice for a more natural sound
+      twiml.say({ voice: 'Polly.Amy', language: 'en-US' }, message)
+
+      const connect = twiml.connect()
+      const stream = connect.stream({ url: wsUrl })
+      stream.parameter({ name: 'callSid', value: callSid })
+      if (businessId) {
+        stream.parameter({ name: 'businessId', value: businessId })
+      }
+
+      // Keep the call alive for up to 4 hours
+      twiml.pause({ length: 14400 })
+
+      this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
     } catch (error) {
-      console.error(`[REALTIME AGENT] Error sending Twilio message:`, error);
+      console.error('[REALTIME AGENT] Error sending Twilio message:', error)
     }
   }
 
@@ -447,7 +487,7 @@ class RealtimeAgentService {
 
         // Provide a generic greeting so callers are not met with silence
         try {
-          this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
+          this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to send generic welcome message:', err)
         }
@@ -468,9 +508,9 @@ class RealtimeAgentService {
             callSid,
             from: fromNumber,
             to: toNumber,
-            direction: CallDirection.INBOUND,
-            type: CallType.VOICE,
-            status: CallStatus.INITIATED,
+            direction: 'INBOUND',
+            type: 'VOICE',
+            status: 'INITIATED',
             source: 'VOICE_CALL',
             conversationId: conversation.id,
             metadata: {
@@ -487,10 +527,10 @@ class RealtimeAgentService {
         // Send the business-specific welcome message now that we have context
         try {
           const welcomeMessage = await this.getWelcomeMessage(state)
-          this.sendTwilioMessage(callSid, welcomeMessage)
+          this.sendTwilioMessage(state, welcomeMessage)
         } catch (error) {
           console.error('[REALTIME AGENT] Error sending welcome message after START:', error)
-          this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
+          this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
         }
       }
 
@@ -569,13 +609,11 @@ class RealtimeAgentService {
               state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
             }
 
-            if (state.callSid) this.sendTwilioMessage(state.callSid, response.reply)
+            this.sendTwilioMessage(state, response.reply)
           })
           .catch((err) => {
             console.error('[REALTIME AGENT] Error processing MEDIA payload:', err)
-            if (state.callSid) {
-              this.sendTwilioMessage(state.callSid, 'I encountered an error while processing your request. Please try again.')
-            }
+            this.sendTwilioMessage(state, 'I encountered an error while processing your request. Please try again.')
           })
         break
       }

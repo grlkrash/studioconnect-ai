@@ -18,6 +18,12 @@ model Business {
   businessType            BusinessType    @default(OTHER)
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
+  /**
+   * One or more email addresses that will receive notifications (comma-separated
+   * string array in Postgres). Replaces the old single `notificationEmail`
+   * field but we keep the original for backward-compat until data is migrated.
+   */
+  notificationEmails      String[]        @default([])
   notificationEmail       String?
   notificationPhoneNumber String?
   planTier                PlanTier        @default(PRO)
