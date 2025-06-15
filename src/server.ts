@@ -202,6 +202,20 @@ app.get('/test-key', async (req: Request, res: Response) => {
   }
 });
 
+// ────────────────────────────────────────────────────────────
+// EARLY HEALTH CHECK ROUTE
+// Register this before any async operations (e.g., nextApp.prepare())
+// so that Render and other platforms can immediately receive a 200
+// during container startup.
+// ────────────────────────────────────────────────────────────
+
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  })
+})
+
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
 app.set('views', [
@@ -282,25 +296,17 @@ nextApp.prepare()
       }
     })
 
-    // 4. Health check endpoint
-    app.get('/health', (req: Request, res: Response) => {
-      res.status(200).json({
-        status: 'healthy',
-        timestamp: new Date().toISOString()
-      });
-    })
-
-    // 5. Debug route to test routing
+    // 4. Debug route to test routing
     app.get('/admin-test', (req: Request, res: Response) => {
       res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
     })
 
-    // 6. Root route handler
+    // 5. Root route handler
     app.get('/', (req: Request, res: Response) => {
       res.send('Application Root - Hello from Deployed App!');
     });
 
-    // 7. Static file serving (general)
+    // 6. Static file serving (general)
     app.use('/static', express.static(path.join(__dirname, '../public')))
 
     // Debug logs for static path
