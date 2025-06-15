@@ -584,9 +584,53 @@
     }
   `;
 
+  // -----------------------------------------------------------------------
+  // Styles that apply the CSS variables defined in themeVars. These override
+  // the hard-coded colours so agency clients can brand the widget without
+  // touching the source code.
+  const themeStyles = `
+    /* Font family */
+    .smb-chat-widget *, .smb-chat-window, .smb-chat-bubble {
+      font-family: var(--sc-font);
+    }
+
+    /* Primary coloured elements */
+    .smb-chat-bubble {
+      background: var(--sc-primary);
+    }
+
+    .smb-chat-header {
+      background: linear-gradient(135deg, var(--sc-primary) 0%, var(--sc-primary-dark) 100%);
+    }
+
+    .smb-chat-send {
+      background: linear-gradient(135deg, var(--sc-primary) 0%, var(--sc-primary-dark) 100%);
+    }
+
+    .smb-chat-input:focus {
+      border-color: var(--sc-primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Message bubbles */
+    .smb-chat-message.user .smb-chat-message-content {
+      background: linear-gradient(135deg, var(--sc-primary) 0%, var(--sc-primary-dark) 100%);
+    }
+
+    /* Container backgrounds & radius */
+    .smb-chat-window {
+      background: var(--sc-bg);
+      border-radius: var(--sc-radius);
+    }
+
+    .smb-chat-messages {
+      background: var(--sc-bg-secondary);
+    }
+  `;
+
   // Inject styles
   const styleSheet = document.createElement('style');
-  styleSheet.textContent = styles;
+  styleSheet.textContent = styles + themeStyles;
   document.head.appendChild(styleSheet);
 
   // Create HTML elements
