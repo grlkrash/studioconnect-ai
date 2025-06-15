@@ -54,6 +54,7 @@
     '--sc-bg-secondary': currentScript?.dataset.bgSecondary || '#f8fafc',
     '--sc-font': currentScript?.dataset.font || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     '--sc-radius': currentScript?.dataset.radius || '16px',
+    '--sc-blur': currentScript?.dataset.blur || '0px',
   }
   Object.entries(themeVars).forEach(([key, value]) => {
     document.documentElement.style.setProperty(key, value)
@@ -621,6 +622,8 @@
     .smb-chat-window {
       background: var(--sc-bg);
       border-radius: var(--sc-radius);
+      backdrop-filter: blur(var(--sc-blur));
+      -webkit-backdrop-filter: blur(var(--sc-blur));
     }
 
     .smb-chat-messages {
