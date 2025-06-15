@@ -40,7 +40,12 @@ export function useLeadQuestions() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    if (res.ok) fetchQuestions()
+    if (res.ok) {
+      await fetchQuestions()
+      return true
+    }
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to add question')
   }
 
   async function updateQuestion(id: string, updates: Partial<LeadQuestion>) {

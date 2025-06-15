@@ -38,7 +38,12 @@ export function useKnowledgeBase() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    if (res.ok) fetchEntries()
+    if (res.ok) {
+      await fetchEntries()
+      return true
+    }
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to add entry')
   }
 
   async function uploadFile(file: File) {
@@ -49,7 +54,12 @@ export function useKnowledgeBase() {
       credentials: 'include',
       body: form,
     })
-    if (res.ok) fetchEntries()
+    if (res.ok) {
+      await fetchEntries()
+      return true
+    }
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Upload failed')
   }
 
   async function updateEntry(id: string, content: string) {
@@ -59,7 +69,12 @@ export function useKnowledgeBase() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
     })
-    if (res.ok) fetchEntries()
+    if (res.ok) {
+      await fetchEntries()
+      return true
+    }
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to update')
   }
 
   async function deleteEntry(id: string) {
@@ -67,7 +82,11 @@ export function useKnowledgeBase() {
       method: 'DELETE',
       credentials: 'include',
     })
-    if (res.ok) fetchEntries()
+    if (res.ok) {
+      await fetchEntries()
+      return true
+    }
+    throw new Error('Failed to delete')
   }
 
   return { entries, loading, error, addText, uploadFile, updateEntry, deleteEntry, refetch: fetchEntries }

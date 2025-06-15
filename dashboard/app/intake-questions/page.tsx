@@ -41,10 +41,14 @@ export default function IntakeQuestionsPage() {
   const [editingQ, setEditingQ] = useState<{id:string, text:string}|null>(null)
 
   const handleAddQuestion = async () => {
-    await addQuestion({ questionText: newQuestion.question, expectedFormat: 'TEXT', isRequired: newQuestion.required })
-    toast({ title: 'Saved', description: 'Question added' })
-    setIsAddDialogOpen(false)
-    setNewQuestion({ question: '', type: 'text', required: true, followUp: '', options: [''] })
+    try {
+      await addQuestion({ questionText: newQuestion.question, expectedFormat: 'TEXT', isRequired: newQuestion.required })
+      toast({ title: 'Saved', description: 'Question added' })
+      setIsAddDialogOpen(false)
+      setNewQuestion({ question: '', type: 'text', required: true, followUp: '', options: [''] })
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Could not add question', variant: 'destructive' })
+    }
   }
 
   const handleTestFlow = () => {

@@ -24,8 +24,11 @@ router.post('/', authMiddleware, async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'unauthorized' })
 
-    const config = await prisma.agentConfig.findUnique({ where: { businessId: req.user.businessId } })
-    if (!config) return res.status(400).json({ error: 'agent config not found' })
+    let config = await prisma.agentConfig.findUnique({ where: { businessId: req.user.businessId } })
+    if (!config) {
+      // Create minimal config to support lead questions
+      config = await prisma.agentConfig.create({ data: { businessId: req.user.businessId } })
+    }
 
     const { questionText, expectedFormat, isRequired = true, mapsToLeadField, isEssentialForEmergency } = req.body
     if (!questionText) return res.status(400).json({ error: 'questionText required' })

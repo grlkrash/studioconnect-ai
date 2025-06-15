@@ -45,15 +45,23 @@ export default function KnowledgeBasePage() {
   })
 
   const handleAddItem = async () => {
-    await addText({ content: `${newItem.title}\n${newItem.content}` })
-    toast({ title: 'Saved', description: 'Article added' })
-    setIsAddDialogOpen(false)
-    setNewItem({ title: "", category: "General", content: "" })
+    try {
+      await addText({ content: `${newItem.title}\n${newItem.content}` })
+      toast({ title: 'Saved', description: 'Article added' })
+      setIsAddDialogOpen(false)
+      setNewItem({ title: "", category: "General", content: "" })
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Could not add article', variant: 'destructive' })
+    }
   }
 
   const handleFileUpload = async (file: File) => {
-    await uploadFile(file)
-    toast({ title: 'Uploaded', description: file.name })
+    try {
+      await uploadFile(file)
+      toast({ title: 'Uploaded', description: file.name })
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Upload failed', variant: 'destructive' })
+    }
   }
 
   return (
