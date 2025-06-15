@@ -9,6 +9,7 @@ import https from 'https'
 import OpenAI from 'openai'
 import { UserPayload } from './api/authMiddleware'
 import next from 'next'
+import widgetConfigRoutes from './api/widgetConfigRoutes'
 
 // Load environment variables
 dotenv.config()
@@ -293,6 +294,7 @@ nextApp.prepare()
     app.use('/api/business', businessRoutes)
     app.use('/api/agent-config', agentConfigRoutes)
     app.use('/api/lead-questions', leadQuestionRoutes)
+    app.use('/api/widget-config', widgetConfigRoutes)
 
     // 3. Specific file serving routes
     app.get('/widget.js', (req: Request, res: Response) => {

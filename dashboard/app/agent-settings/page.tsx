@@ -309,6 +309,23 @@ export default function AgentSettings() {
                     />
                   </div>
                 </div>
+                {/* Code snippet */}
+                <div className="space-y-2">
+                  <Label>Embed Snippet</Label>
+                  <pre className="bg-slate-900 text-green-400 rounded p-4 text-xs overflow-auto select-all">
+                    {`<script
+                      src="https://studioconnect.ai/widget.js"
+                      data-business-id="${process.env.NEXT_PUBLIC_BUSINESS_ID || 'YOUR_BUSINESS_ID'}"
+                      data-primary="${settings.widgetTheme?.primary}"
+                      data-primary-dark="${settings.widgetTheme?.primaryDark}"
+                      data-bg="${settings.widgetTheme?.bg}"
+                      data-bg-secondary="${settings.widgetTheme?.bgSecondary}"
+                      data-font="${settings.widgetTheme?.font}"
+                      data-radius="${settings.widgetTheme?.radius}"
+                      data-blur="${settings.widgetTheme?.blur}"
+                    ></script>`}
+                  </pre>
+                </div>
               </CardContent>
             </Card>
           </div>
