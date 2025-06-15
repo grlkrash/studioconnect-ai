@@ -89,6 +89,7 @@ const managementItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const normalizedPath = pathname.replace(/^\/admin/, "") || "/"
 
   return (
     <Sidebar className="border-r border-slate-200">
@@ -111,7 +112,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {navigationItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                  <SidebarMenuButton asChild isActive={normalizedPath === item.url}>
                     <Link href={item.url}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>
@@ -131,7 +132,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {managementItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                  <SidebarMenuButton asChild isActive={normalizedPath === item.url}>
                     <Link href={item.url}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>

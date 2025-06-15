@@ -414,10 +414,44 @@ class RealtimeAgentService {
       if (!business) {
         console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
 
+        // Try a more lenient in-memory match by normalizing digits of stored phone numbers
+        const allBusinesses = await prisma.business.findMany({
+          where: {
+            twilioPhoneNumber: {
+              not: null
+            }
+          },
+          select: {
+            id: true,
+            twilioPhoneNumber: true
+          }
+        })
+
+        // Ensure we have the 10-digit national significant number for comparison
+        const lastTen = digitsOnly.slice(-10)
+
+        const matchBySanitized = allBusinesses.find((b: { id: string; twilioPhoneNumber: string | null }) => {
+          const storedDigits = (b.twilioPhoneNumber || '').replace(/[^0-9]/g, '')
+          return storedDigits.endsWith(lastTen)
+        })
+
+        if (matchBySanitized) {
+          business = await prisma.business.findUnique({ where: { id: matchBySanitized.id } }) ?? null
+        }
+      }
+
+      if (!business) {
         // Even without a business context, populate minimal state so the call can continue.
         state.businessId = null
         state.fromNumber = fromNumber
         state.toNumber = toNumber
+
+        // Provide a generic greeting so callers are not met with silence
+        try {
+          this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
+        } catch (err) {
+          console.error('[REALTIME AGENT] Failed to send generic welcome message:', err)
+        }
       } else {
         // Create conversation for a recognized business
         const conversation = await prisma.conversation.create({
