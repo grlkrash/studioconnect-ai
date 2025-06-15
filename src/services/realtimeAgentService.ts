@@ -14,7 +14,6 @@ import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 import { getBusinessWelcomeMessage } from './businessService';
 import { getClientByPhoneNumber } from './clientService';
 import crypto from 'crypto';
-import { Prisma } from '@prisma/client';
 import { normalizePhoneNumber } from '../utils/phoneHelpers';
 
 const prisma = new PrismaClient();
