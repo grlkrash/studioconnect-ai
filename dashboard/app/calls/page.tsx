@@ -38,4 +38,6 @@ export default async function CallHistoryPage() {
       </main>
     </div>
   )
-} 
+}
+
+export const dynamic = 'force-dynamic' 

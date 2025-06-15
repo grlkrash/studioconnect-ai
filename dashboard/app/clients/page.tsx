@@ -113,3 +113,5 @@ export default async function ClientsPage() {
     </div>
   )
 }
+
+export const dynamic = 'force-dynamic'
