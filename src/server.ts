@@ -232,6 +232,13 @@ app.set('views', [
   path.join(__dirname, '../src/views')     // source views for ts-node/dev
 ])
 
+// -------------------------------------------------
+// TEMPORARY: Preserve legacy login page at /admin/login
+// -------------------------------------------------
+app.get('/admin/login', (req: Request, res: Response) => {
+  res.render('login', { error: null })
+})
+
 // ────────────────────────────────────────────────────────────
 // NEXT.JS DASHBOARD (dir: /dashboard) will be prepared below
 // We first declare the app & handler, then defer route mounting
@@ -249,21 +256,12 @@ const handleNext = nextApp.getRequestHandler()
 // 1. Mount admin view routes FIRST
 nextApp.prepare()
   .then(() => {
-    // Serve Next assets and pages under /admin after Next.js is ready
-    app.use('/_next', (req: Request, res: Response) => handleNext(req, res))
+    // Explicitly route asset requests first (e.g. /admin/_next/static/...)
+    app.use('/admin/_next', (req: Request, res: Response) => handleNext(req, res))
 
-    // Next pages under /admin
-    app.use('/admin', (req: Request, res: Response, nextFn: NextFunction) => {
-      // If the request matches an existing EJS legacy route (e.g. /admin/settings)
-      // that we still want to serve, delegate to viewRoutes via next()
-      if (viewRoutes.stack.some((r) => (r as any).route?.path && req.path.startsWith((r as any).route.path))) {
-        return nextFn()
-      }
-      return handleNext(req, res)
-    })
-
-    // Legacy EJS admin routes as fallback
-    app.use('/admin', viewRoutes)
+    // All admin routes are now handled by the Next.js dashboard.
+    // If React pages fail to build, we can temporarily restore the fallback.
+    app.use('/admin', (req: Request, res: Response) => handleNext(req, res))
 
     // 2. Mount API routes
     app.use('/api/chat', chatRoutes)

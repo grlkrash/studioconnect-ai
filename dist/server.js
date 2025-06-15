@@ -18,7 +18,6 @@ const voiceSessionService_1 = __importDefault(require("./services/voiceSessionSe
 const websocketServer_1 = require("./services/websocketServer");
 const chatRoutes_1 = __importDefault(require("./api/chatRoutes"));
 const admin_1 = __importDefault(require("./api/admin"));
-const viewRoutes_1 = __importDefault(require("./api/viewRoutes"));
 const voiceRoutes_1 = __importDefault(require("./api/voiceRoutes"));
 const projectRoutes_1 = __importDefault(require("./api/projectRoutes"));
 const clientRoutes_1 = __importDefault(require("./api/clientRoutes"));
@@ -163,89 +162,86 @@ app.get('/test-key', async (req, res) => {
         });
     }
 });
-app.set('view engine', 'ejs');
-app.set('views', [
-    path_1.default.join(__dirname, '../views'),
-    path_1.default.join(__dirname, '../src/views')
-]);
-const devNext = process.env.NODE_ENV !== 'production';
-const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__dirname, '../dashboard') });
-const handleNext = nextApp.getRequestHandler();
-await nextApp.prepare();
-app.use('/_next', (req, res) => {
-    return handleNext(req, res);
-});
-app.use('/admin', (req, res, nextFn) => {
-    if (viewRoutes_1.default.stack.some((r) => { var _a; return ((_a = r.route) === null || _a === void 0 ? void 0 : _a.path) && req.path.startsWith(r.route.path); })) {
-        return nextFn();
-    }
-    return handleNext(req, res);
-});
-app.use('/admin', viewRoutes_1.default);
-app.use('/api/chat', chatRoutes_1.default);
-app.use('/api/admin', admin_1.default);
-app.use('/api/voice', voiceRoutes_1.default);
-app.use('/api/clients', clientRoutes_1.default);
-app.use('/api/projects', projectRoutes_1.default);
-app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
-app.get('/widget.js', (req, res) => {
-    const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
-    console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
-    try {
-        if (fs_1.default.existsSync(widgetPath)) {
-            console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
-            res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
-            res.sendFile(widgetPath, (err) => {
-                if (err) {
-                    console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
-                    if (!res.headersSent) {
-                        res.status(500).send('// Server error: Could not send widget file.');
-                    }
-                }
-                else {
-                    console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
-                }
-            });
-        }
-        else {
-            console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
-            res.status(404).send('// Widget script not found.');
-        }
-    }
-    catch (e) {
-        console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
-        if (!res.headersSent) {
-            res.status(500).send('// Server error processing widget request.');
-        }
-    }
-});
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'healthy',
         timestamp: new Date().toISOString()
     });
 });
-app.get('/admin-test', (req, res) => {
-    res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
+app.use('/api/voice', voiceRoutes_1.default);
+app.set('view engine', 'ejs');
+app.set('views', [
+    path_1.default.join(__dirname, '../views'),
+    path_1.default.join(__dirname, '../src/views')
+]);
+app.get('/admin/login', (req, res) => {
+    res.render('login', { error: null });
 });
-app.get('/', (req, res) => {
-    res.send('Application Root - Hello from Deployed App!');
-});
-app.use('/static', express_1.default.static(path_1.default.join(__dirname, '../public')));
-const staticPath = path_1.default.join(__dirname, '../public');
-console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
-try {
-    const files = fs_1.default.readdirSync(staticPath);
-    console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
-}
-catch (e) {
-    console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
-}
-app.use('*', (req, res) => {
-    res.status(404).json({
-        error: 'Route not found',
-        path: req.originalUrl,
-        method: req.method
+const devNext = process.env.NODE_ENV !== 'production';
+const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__dirname, '../dashboard') });
+const handleNext = nextApp.getRequestHandler();
+nextApp.prepare()
+    .then(() => {
+    app.use('/admin/_next', (req, res) => handleNext(req, res));
+    app.use('/admin', (req, res) => handleNext(req, res));
+    app.use('/api/chat', chatRoutes_1.default);
+    app.use('/api/admin', admin_1.default);
+    app.use('/api/clients', clientRoutes_1.default);
+    app.use('/api/projects', projectRoutes_1.default);
+    app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
+    app.get('/widget.js', (req, res) => {
+        const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
+        console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
+        try {
+            if (fs_1.default.existsSync(widgetPath)) {
+                console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
+                res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+                res.sendFile(widgetPath, (err) => {
+                    if (err) {
+                        console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
+                        if (!res.headersSent) {
+                            res.status(500).send('// Server error: Could not send widget file.');
+                        }
+                    }
+                    else {
+                        console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
+                    }
+                });
+            }
+            else {
+                console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
+                res.status(404).send('// Widget script not found.');
+            }
+        }
+        catch (e) {
+            console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
+            if (!res.headersSent) {
+                res.status(500).send('// Server error processing widget request.');
+            }
+        }
+    });
+    app.get('/admin-test', (req, res) => {
+        res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
+    });
+    app.get('/', (req, res) => {
+        res.send('Application Root - Hello from Deployed App!');
+    });
+    app.use('/static', express_1.default.static(path_1.default.join(__dirname, '../public')));
+    const staticPath = path_1.default.join(__dirname, '../public');
+    console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+    try {
+        const files = fs_1.default.readdirSync(staticPath);
+        console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+    }
+    catch (e) {
+        console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+    }
+    app.use('*', (req, res) => {
+        res.status(404).json({
+            error: 'Route not found',
+            path: req.originalUrl,
+            method: req.method
+        });
     });
 });
 app.use((err, req, res, next) => {
