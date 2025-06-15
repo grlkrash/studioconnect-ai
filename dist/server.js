@@ -205,9 +205,9 @@ nextApp.prepare()
     app.use('/api/agent-config', agentConfigRoutes_1.default);
     app.use('/api/lead-questions', leadQuestionRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
-    app.get('/widget.js', (req, res) => {
+    const widgetHandler = (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
-        console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
+        console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
         try {
             if (fs_1.default.existsSync(widgetPath)) {
                 console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
@@ -230,12 +230,14 @@ nextApp.prepare()
             }
         }
         catch (e) {
-            console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
+            console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
             if (!res.headersSent) {
                 res.status(500).send('// Server error processing widget request.');
             }
         }
-    });
+    };
+    app.get('/widget.js', widgetHandler);
+    app.get('/embed.js', widgetHandler);
     app.get('/admin-test', (req, res) => {
         res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
     });

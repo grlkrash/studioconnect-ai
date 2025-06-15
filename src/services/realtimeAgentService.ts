@@ -520,9 +520,10 @@ class RealtimeAgentService {
           }
         })
 
-        // Log the call
-        await prisma.callLog.create({
-          data: {
+        // Log the call – use upsert to avoid duplicate key errors when Twilio reconnects
+        await prisma.callLog.upsert({
+          where: { callSid },
+          create: {
             businessId: business.id,
             callSid,
             from: fromNumber,
@@ -535,6 +536,13 @@ class RealtimeAgentService {
             metadata: {
               streamSid: state.streamSid
             }
+          },
+          update: {
+            // Update metadata if we reconnect and have a new streamSid
+            metadata: {
+              streamSid: state.streamSid
+            },
+            updatedAt: new Date()
           }
         })
 

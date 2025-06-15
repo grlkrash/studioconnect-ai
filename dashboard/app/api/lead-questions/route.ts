@@ -7,8 +7,23 @@ import { prisma } from '@/lib/prisma'
 // have auth + multi-tenant context wired up.
 export async function GET() {
   try {
-    const business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) return NextResponse.json({ questions: [] })
+    /**
+     * Ensure a Business record exists so that first-time users can start
+     * adding questions immediately without running a separate seed script.
+     * If no business is found we create a placeholder record.
+     *
+     * NOTE: in a multi-tenant environment the business context should come
+     * from auth/session. This fallback is purely for local/demo use.
+     */
+    let business = await prisma.business.findFirst({ select: { id: true } })
+    if (!business) {
+      business = await prisma.business.create({
+        data: {
+          name: "Demo Business",
+        },
+        select: { id: true },
+      })
+    }
 
     const config = await prisma.agentConfig.findUnique({
       where: { businessId: business.id },
@@ -41,8 +56,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'questionText is required' }, { status: 400 })
     }
 
-    const business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) return NextResponse.json({ error: 'No business found' }, { status: 400 })
+    /**
+     * Ensure a Business record exists so that first-time users can start
+     * adding questions immediately without running a separate seed script.
+     * If no business is found we create a placeholder record.
+     *
+     * NOTE: in a multi-tenant environment the business context should come
+     * from auth/session. This fallback is purely for local/demo use.
+     */
+    let business = await prisma.business.findFirst({ select: { id: true } })
+    if (!business) {
+      business = await prisma.business.create({
+        data: {
+          name: "Demo Business",
+        },
+        select: { id: true },
+      })
+    }
 
     // Ensure an AgentConfig exists for the business
     const config = await prisma.agentConfig.upsert({

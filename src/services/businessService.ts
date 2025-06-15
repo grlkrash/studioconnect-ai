@@ -1,5 +1,4 @@
 import { prisma } from './db';
-import { Business, AgentConfig } from '@prisma/client';
 import { normalizePhoneNumber } from '../utils/phoneHelpers';
 
 export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise<string | null> {
@@ -14,9 +13,10 @@ export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise
 }
 
 export async function getBusinessWelcomeMessage(businessId: string): Promise<string> {
-  const business = await prisma.business.findUnique({
-    where: { id: businessId },
-    include: { agentConfig: true }
-  });
-  return business?.agentConfig?.welcomeMessage || 'Welcome to our service!';
+  const agentConfig = await prisma.agentConfig.findUnique({
+    where: { businessId },
+    select: { welcomeMessage: true }
+  })
+
+  return agentConfig?.welcomeMessage || 'Welcome to our service!'
 } 

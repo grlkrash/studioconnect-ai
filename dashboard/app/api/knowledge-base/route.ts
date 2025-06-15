@@ -3,8 +3,11 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET() {
   try {
-    const business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) return NextResponse.json([])
+    // Ensure a Business record exists so that the dashboard works out-of-the-box
+    let business = await prisma.business.findFirst({ select: { id: true } })
+    if (!business) {
+      business = await prisma.business.create({ data: { name: 'Demo Business' }, select: { id: true } })
+    }
 
     const kb = await prisma.knowledgeBase.findMany({
       where: { businessId: business.id },
@@ -24,8 +27,11 @@ export async function POST(req: NextRequest) {
     const { content, metadata } = body
     if (!content) return NextResponse.json({ error: 'content required' }, { status: 400 })
 
-    const business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) return NextResponse.json({ error: 'No business' }, { status: 400 })
+    // Ensure a Business record exists so that the dashboard works out-of-the-box
+    let business = await prisma.business.findFirst({ select: { id: true } })
+    if (!business) {
+      business = await prisma.business.create({ data: { name: 'Demo Business' }, select: { id: true } })
+    }
 
     const entry = await prisma.knowledgeBase.create({
       data: { businessId: business.id, content, metadata },

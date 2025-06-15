@@ -415,10 +415,6 @@ const _processMessage = async (message, conversationHistory, businessId, current
         }
         const showBranding = business.planTier === 'PRO';
         console.log(`Business planTier: ${business.planTier}, Show Branding: ${showBranding}`);
-        const agentConfig = await db_1.prisma.agentConfig.findUnique({
-            where: { businessId },
-            include: { questions: { orderBy: { order: 'asc' } } }
-        });
         let isExistingClient = false;
         let client = null;
         let fromNumber = null;

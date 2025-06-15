@@ -292,46 +292,37 @@ export default function IntakeQuestionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Conversation Preview</CardTitle>
-            <CardDescription>Here's how the conversation might flow with a potential client</CardDescription>
+            <CardDescription>
+              This is an approximate preview of how the agent will walk through the questions in order.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-white" />
+              {questions.sort((a,b)=>a.order-b.order).map((q, idx) => (
+                <div key={q.id} className="space-y-4">
+                  {/* Agent asks */}
+                  <div className="flex items-start space-x-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center">
+                      <MessageSquare className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="bg-slate-100 rounded-lg p-3 max-w-md">
+                      <p className="text-sm">{q.questionText}</p>
+                    </div>
+                  </div>
+                  {/* Caller response placeholder */}
+                  <div className="flex items-start space-x-3 justify-end">
+                    <div className="bg-blue-500 text-white rounded-lg p-3 max-w-md">
+                      <p className="text-sm italic">Caller response…</p>
+                    </div>
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-medium">{idx+1}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-slate-100 rounded-lg p-3 max-w-md">
-                  <p className="text-sm">
-                    Hello! I'm Aurora Assistant from Aurora Branding & Co. I'd love to learn more about your project.
-                    What's your name and company?
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-3 justify-end">
-                <div className="bg-blue-500 text-white rounded-lg p-3 max-w-md">
-                  <p className="text-sm">Hi! I'm Sarah Johnson from TechStart Inc.</p>
-                </div>
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-medium">SJ</span>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-white" />
-                </div>
-                <div className="bg-slate-100 rounded-lg p-3 max-w-md">
-                  <p className="text-sm">
-                    Thank you Sarah! And what's the best way to reach you? Could you share your phone number and email
-                    address?
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-center text-sm text-slate-500 py-2">
-                ... conversation continues through all {questions.length} questions ...
-              </div>
+              ))}
+              {questions.length === 0 && (
+                <p className="text-sm text-center text-slate-500 py-4">No questions yet – add one to see a preview.</p>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getBusiness } from '@/lib/getBusiness'
 
-// Utility: first business fallback while auth is WIP
-async function getBusiness() {
-  return prisma.business.findFirst({ select: { id: true } })
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const biz = await getBusiness()
+    const biz = await getBusiness(req)
     if (!biz) return NextResponse.json({ config: null })
 
     const config = await prisma.agentConfig.findUnique({ where: { businessId: biz.id } })
@@ -22,7 +18,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
-    const biz = await getBusiness()
+    const biz = await getBusiness(req)
     if (!biz) return NextResponse.json({ error: 'No business found' }, { status: 400 })
 
     const allowedFields = [

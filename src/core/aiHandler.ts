@@ -2,15 +2,28 @@ import { prisma } from '../services/db'
 import { getChatCompletion, getEmbedding } from '../services/openai'
 import { findRelevantKnowledge } from './ragService'
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from '../services/notificationService'
-import type { LeadCaptureQuestion, PlanTier } from '@prisma/client'
 import VoiceSessionService from '../services/voiceSessionService'
 import twilio from 'twilio'
 import { requireAuth } from '../api/authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
 import { validateRequest } from '../middleware/validateRequest'
 
+// Local runtime type for LeadCaptureQuestion shape (avoid direct Prisma type import to prevent missing-field errors)
+interface LeadCaptureQuestionBase {
+  id?: string
+  configId?: string
+  questionText: string
+  expectedFormat: string | number
+  order: number
+  isRequired: boolean
+  mapsToLeadField?: string
+  isEssentialForEmergency?: boolean
+  createdAt?: Date
+  updatedAt?: Date
+}
+
 // Extend the LeadCaptureQuestion type to include isEssentialForEmergency
-type ExtendedLeadCaptureQuestion = LeadCaptureQuestion & {
+type ExtendedLeadCaptureQuestion = LeadCaptureQuestionBase & {
   isEssentialForEmergency: boolean
 }
 
@@ -578,12 +591,6 @@ const _processMessage = async (
     // Determine if branding should be shown
     const showBranding = business.planTier === 'PRO'
     console.log(`Business planTier: ${business.planTier}, Show Branding: ${showBranding}`)
-
-    // Fetch agent configuration for persona and settings
-    const agentConfig = await prisma.agentConfig.findUnique({
-      where: { businessId },
-      include: { questions: { orderBy: { order: 'asc' } } }
-    })
 
     // Client identification
     let isExistingClient = false
