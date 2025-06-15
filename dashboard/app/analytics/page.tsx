@@ -23,11 +23,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
 
-// live data states
-const [revenueData, setRevenueData] = useState<any[]>([])
-const [callVolumeData, setCallVolumeData] = useState<any[]>([])
-const [projectTypeData, setProjectTypeData] = useState<any[]>([])
-
 const efficiencyMetrics = [
   { metric: "Client Response Time", current: "2.3 min", previous: "45 min", improvement: 95 },
   { metric: "Qualification Accuracy", current: "87%", previous: "62%", improvement: 40 },
@@ -42,6 +37,11 @@ export default function AnalyticsPage() {
   const [pipelineIncrease, setPipelineIncrease] = useState<number | "">("")
   const [responseReduction, setResponseReduction] = useState<number | "">("")
   const [utilizationGain, setUtilizationGain] = useState<number | "">("")
+
+  // Live data states
+  const [revenueData, setRevenueData] = useState<any[]>([])
+  const [callVolumeData, setCallVolumeData] = useState<any[]>([])
+  const [projectTypeData, setProjectTypeData] = useState<any[]>([])
 
   const numeric = (v: number | "") => (typeof v === "number" && !isNaN(v) ? v : 0)
   const totalROI =
