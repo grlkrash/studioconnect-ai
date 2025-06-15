@@ -385,49 +385,44 @@ class RealtimeAgentService {
       });
 
       if (!business) {
-        console.error('[RealtimeAgent] Business not found for phone number:', toNumber);
-        this.cleanup('Business not found');
-        return;
-      }
+        console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
 
-      // Create conversation
-      const conversation = await prisma.conversation.create({
-        data: {
-          businessId: business.id,
-          sessionId: crypto.randomUUID(),
-          messages: []
-        }
-      });
-
-      // Log the call
-      await prisma.callLog.create({
-        data: {
-          businessId: business.id,
-          callSid,
-          from: fromNumber,
-          to: toNumber,
-          direction: CallDirection.INBOUND,
-          type: CallType.VOICE,
-          status: CallStatus.INITIATED,
-          source: 'VOICE_CALL',
-          conversationId: conversation.id,
-          metadata: {
-            streamSid: state.streamSid
+        // Even without a business context, populate minimal state so the call can continue.
+        state.businessId = null
+        state.fromNumber = fromNumber
+        state.toNumber = toNumber
+      } else {
+        // Create conversation for a recognized business
+        const conversation = await prisma.conversation.create({
+          data: {
+            businessId: business.id,
+            sessionId: crypto.randomUUID(),
+            messages: []
           }
-        }
-      });
+        })
 
-      // Update state
-      state.businessId = business.id;
-      state.fromNumber = fromNumber;
-      state.toNumber = toNumber;
+        // Log the call
+        await prisma.callLog.create({
+          data: {
+            businessId: business.id,
+            callSid,
+            from: fromNumber,
+            to: toNumber,
+            direction: CallDirection.INBOUND,
+            type: CallType.VOICE,
+            status: CallStatus.INITIATED,
+            source: 'VOICE_CALL',
+            conversationId: conversation.id,
+            metadata: {
+              streamSid: state.streamSid
+            }
+          }
+        })
 
-      // Now that we have both callSid and business context, send the welcome greeting to the caller.
-      try {
-        const welcomeMessage = await this.getWelcomeMessage(state)
-        this.sendTwilioMessage(callSid, welcomeMessage)
-      } catch (err) {
-        console.error('[RealtimeAgent] Error sending welcome message after START event:', err)
+        // Update state when business is recognized
+        state.businessId = business.id
+        state.fromNumber = fromNumber
+        state.toNumber = toNumber
       }
 
       // Connect to OpenAI if needed

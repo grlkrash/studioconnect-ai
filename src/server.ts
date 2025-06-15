@@ -326,18 +326,18 @@ nextApp.prepare()
     } catch (e: any) {
       console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
     }
-  })
 
-// =======================
-// WILDCARD 404 HANDLER - MUST BE LAST!
-// =======================
-app.use('*', (req: express.Request, res: express.Response) => {
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.originalUrl,
-    method: req.method
+    // =======================
+    // WILDCARD 404 HANDLER - MUST BE LAST!
+    // =======================
+    app.use('*', (req: express.Request, res: express.Response) => {
+      res.status(404).json({
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+      })
+    })
   })
-})
 
 // Global error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
