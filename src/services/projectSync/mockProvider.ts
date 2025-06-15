@@ -10,6 +10,17 @@ export const mockProjectProvider: ProjectSyncProvider = {
   async syncProjects(businessId: string): Promise<void> {
     if (process.env.SEED_MOCK_PROJECTS !== 'true') return
 
+    // Ensure we have a mock client to associate with the demo projects
+    const mockClient = await prisma.client.upsert({
+      where: { externalId: `MOCK-${businessId}` },
+      update: { name: 'Mock Client' },
+      create: {
+        businessId,
+        name: 'Mock Client',
+        externalId: `MOCK-${businessId}`,
+      },
+    })
+
     const mockProjects = [
       {
         name: 'Website Redesign',
@@ -37,11 +48,12 @@ export const mockProjectProvider: ProjectSyncProvider = {
           name: project.name,
           status: project.status,
           details: project.details,
+          clientId: mockClient.id,
           lastSyncedAt: new Date(),
         },
         create: {
           businessId,
-          clientId: undefined, // no real client association for mock data
+          clientId: mockClient.id,
           name: project.name,
           status: project.status,
           details: project.details,
