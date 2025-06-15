@@ -384,10 +384,32 @@ class RealtimeAgentService {
 
       console.log('[DEBUG] 3b. Call details fetched:', { toNumber, fromNumber });
 
-      // Find business by phone number
-      const business = await prisma.business.findFirst({
+      // Find business by phone number using multiple matching strategies to account for formatting differences
+      const digitsOnly = toNumber.replace(/[^0-9]/g, '')
+
+      // Attempt exact E.164 match first
+      let business = await prisma.business.findFirst({
         where: { twilioPhoneNumber: toNumber }
-      });
+      })
+
+      // Fallback: try digits-only match (common if number stored without '+')
+      if (!business) {
+        business = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: digitsOnly }
+        })
+      }
+
+      // Fallback: try matching numbers that *end* with the 10-digit national significant number
+      if (!business && digitsOnly.length >= 10) {
+        const lastTen = digitsOnly.slice(-10)
+        business = await prisma.business.findFirst({
+          where: {
+            twilioPhoneNumber: {
+              endsWith: lastTen
+            }
+          }
+        })
+      }
 
       if (!business) {
         console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
