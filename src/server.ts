@@ -272,8 +272,14 @@ nextApp.prepare()
     })
 
     // All admin routes are now handled by the Next.js dashboard.
-    // If React pages fail to build, we can temporarily restore the fallback.
-    app.use('/admin', (req: Request, res: Response) => handleNext(req, res))
+    // IMPORTANT: Preserve the full "/admin" segment when delegating to Next.
+    // Express strips the mount path ("/admin") from `req.url` which breaks
+    // Next.js routing when `basePath: \"/admin\"` is enabled. Re-attach the
+    // original URL so that Next can correctly match `/admin/*` routes.
+    app.use('/admin', (req: Request, res: Response) => {
+      req.url = req.originalUrl // restore `/admin` basePath for Next
+      return handleNext(req, res)
+    })
 
     // 2. Mount API routes
     app.use('/api/chat', chatRoutes)
