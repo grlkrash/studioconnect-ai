@@ -19,7 +19,8 @@
     "tailwind:watch": "tailwindcss -i ./assets/tailwind.css -o ./public/css/ui.css --watch --minify",
     "build:dashboard": "npm --prefix dashboard run build",
     "start:dashboard": "npm --prefix dashboard run start -- -p 3100",
-    "postinstall": "npm --prefix dashboard install --legacy-peer-deps"
+    "postinstall": "npm --prefix dashboard install --legacy-peer-deps",
+    "seed:mock-projects": "ts-node scripts/seedMockProjects.ts"
   },
   "_moduleAliases": {
     "@": "dist"

@@ -1386,7 +1386,12 @@ leads-support-agent-smb/
 │   │   ├── voiceSessionService.ts # ENHANCED: Enterprise Redis session management
 │   │   ├── notificationService.ts # Enhanced with voice notifications
 │   │   ├── openai.ts             # ENHANCED: Realtime API integration
-│   │   └── db.ts                 # Database service
+│   │   ├── db.ts                 # Database service
+│   │   ├── projectSync/            # NEW: Pluggable project-management sync providers
+│   │   │   ├── mockProvider.ts     # Example provider that seeds demo projects
+│   │   │   └── types.ts            # Provider interface definitions
+│   │   ├── businessService.ts      # Helper – business-level data access
+│   │   └── clientService.ts        # Helper – client lookup utilities
 │   ├── utils/
 │   │   ├── voiceHelpers.ts       # ENHANCED: Realtime voice processing utilities
 │   │   ├── planUtils.ts          # Plan tier management
@@ -1660,6 +1665,39 @@ export class RealtimeAgentService {
 }
 ```
 
+### 11.2. Project Sync Service (Pluggable Architecture)
+
+The Project Sync layer decouples external project-management (PM) tools from the StudioConnect data model via a small, composable provider interface.
+
+```typescript
+export interface ProjectSyncProvider {
+  /**
+   * Pull the latest projects for the given business and upsert them into the DB.
+   */
+  syncProjects(businessId: string): Promise<void>
+}
+```
+
+Key points:
+• Providers live in `src/services/projectSync/` and SHOULD be **side-effect free** beyond database writes.
+• A **mock provider** (`mockProvider.ts`) can seed demo data when `SEED_MOCK_PROJECTS=true` — handy for local development and screenshots.
+• Real providers (Asana, Jira, Trello) share the same shape and can add optional helpers such as `handleWebhook(event)`.
+• Providers are registered in a central `ProjectSyncService` which selects the correct provider based on the business' configured integration.
+
+Typical usage:
+```typescript
+import { mockProjectProvider } from '@/services/projectSync/mockProvider'
+
+await mockProjectProvider.syncProjects(businessId)
+```
+
+Execution modes:
+1. **Manual** — `POST /api/admin/sync/projects` triggers an immediate sync.
+2. **Scheduled** — CRON/queue driven, interval set by `PM_SYNC_INTERVAL` env var (default 5 min).
+3. **Webhook** — instant updates when the PM tool notifies changes.
+
+This architecture keeps the core clean, encourages testability, and makes adding a new PM tool a ~30-line task.
+
 ---
 
 ## 12. Database Schema
@@ -1811,46 +1849,6 @@ npm run test:voice-sessions
 
 # WebSocket health check
 npm run health:websockets
-```
-
----
-
-## 15. Deployment Guide
-
-### 15.1. Production Environment for Realtime API
-
-**Infrastructure Requirements:**
-- Node.js 20.x runtime
-- PostgreSQL 15+ with pgvector extension
-- Redis 7.x for session storage
-- **SSL certificates for HTTPS/WSS** (required for WebSocket)
-- **Twilio account with Media Streams enabled**
-- **OpenAI API access with Realtime API permissions**
-
-### 15.2. WebSocket Configuration for Production
-
-```nginx
-# Nginx configuration for WebSocket support
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-    
-    # WebSocket upgrade handling
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket specific timeouts
-        proxy_read_timeout 86400;
-        proxy_send_timeout 86400;
-    }
-}
 ```
 
 ---
