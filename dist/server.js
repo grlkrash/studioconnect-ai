@@ -181,6 +181,7 @@ app.get('/admin/login', (req, res) => {
 const devNext = process.env.NODE_ENV !== 'production';
 const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__dirname, '../dashboard') });
 const handleNext = nextApp.getRequestHandler();
+app.use('/admin/_next/static', express_1.default.static(path_1.default.join(__dirname, '../dashboard/.next/static')));
 nextApp.prepare()
     .then(() => {
     app.use('/admin/_next', (req, res) => {

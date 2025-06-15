@@ -250,6 +250,10 @@ const devNext = process.env.NODE_ENV !== 'production'
 const nextApp = next({ dev: devNext, dir: path.join(__dirname, '../dashboard') })
 const handleNext = nextApp.getRequestHandler()
 
+// Add this immediately after the Express app is initialized and before nextApp.prepare to ensure static assets are served early.
+// Serve Next.js dashboard static assets directly to avoid 404s during asset loading when using a custom basePath.
+app.use('/admin/_next/static', express.static(path.join(__dirname, '../dashboard/.next/static')))
+
 // =======================
 // ROUTE MOUNTING ORDER
 // =======================
