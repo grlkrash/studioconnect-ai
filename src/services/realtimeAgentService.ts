@@ -422,6 +422,14 @@ class RealtimeAgentService {
       state.fromNumber = fromNumber;
       state.toNumber = toNumber;
 
+      // Now that we have both callSid and business context, send the welcome greeting to the caller.
+      try {
+        const welcomeMessage = await this.getWelcomeMessage(state)
+        this.sendTwilioMessage(callSid, welcomeMessage)
+      } catch (err) {
+        console.error('[RealtimeAgent] Error sending welcome message after START event:', err)
+      }
+
       // Connect to OpenAI if needed
       if (this.connectToOpenAI) this.connectToOpenAI();
     } catch (error) {
