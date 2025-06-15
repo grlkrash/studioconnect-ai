@@ -15,6 +15,7 @@ import { getBusinessWelcomeMessage } from './businessService';
 import { getClientByPhoneNumber } from './clientService';
 import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
+import { normalizePhoneNumber } from '../utils/phoneHelpers';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -375,8 +376,12 @@ class RealtimeAgentService {
 
     try {
       const callDetails = await twilioClient.calls(callSid).fetch();
-      const toNumber = callDetails.to ?? '';
-      const fromNumber = callDetails.from ?? '';
+      const toNumberRaw = callDetails.to ?? '';
+      const fromNumberRaw = callDetails.from ?? '';
+
+      const toNumber = normalizePhoneNumber(toNumberRaw);
+      const fromNumber = normalizePhoneNumber(fromNumberRaw);
+
       console.log('[DEBUG] 3b. Call details fetched:', { toNumber, fromNumber });
 
       // Find business by phone number

@@ -1,12 +1,16 @@
 import { prisma } from './db';
 import { Business, AgentConfig } from '@prisma/client';
+import { normalizePhoneNumber } from '../utils/phoneHelpers';
 
 export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise<string | null> {
+  const normalized = normalizePhoneNumber(phoneNumber)
+
   const business = await prisma.business.findFirst({
-    where: { twilioPhoneNumber: phoneNumber },
+    where: { twilioPhoneNumber: normalized },
     select: { id: true }
-  });
-  return business?.id || null;
+  })
+
+  return business?.id || null
 }
 
 export async function getBusinessWelcomeMessage(businessId: string): Promise<string> {
