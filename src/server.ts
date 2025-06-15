@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
+import https from 'https'
 import OpenAI from 'openai'
 import { UserPayload } from './api/authMiddleware'
 import next from 'next'
@@ -256,8 +257,15 @@ const handleNext = nextApp.getRequestHandler()
 // 1. Mount admin view routes FIRST
 nextApp.prepare()
   .then(() => {
-    // Explicitly route asset requests first (e.g. /admin/_next/static/...)
-    app.use('/admin/_next', (req: Request, res: Response) => handleNext(req, res))
+    // Explicitly route asset requests (e.g. /admin/_next/static/...) and preserve the
+    // full path so Next.js can locate the file. When Express mounts a sub-app it
+    // strips the mount prefix from `req.url`, which breaks the lookup and causes
+    // 404s like `208-*.js` and `main-app-*.js`. Re-attach the `/admin` base path
+    // before delegating to Next.
+    app.use('/admin/_next', (req: Request, res: Response) => {
+      req.url = req.originalUrl.replace('/admin', '') // restore `/admin` segment
+      return handleNext(req, res)
+    })
 
     // All admin routes are now handled by the Next.js dashboard.
     // If React pages fail to build, we can temporarily restore the fallback.
@@ -363,11 +371,44 @@ async function initializeRedis() {
   }
 }
 
-// Start server
-const httpServer = http.createServer(app)
+// ────────────────────────────────────────────────────────────
+// CONDITIONAL HTTPS SUPPORT
+// If SSL_KEY_PATH and SSL_CERT_PATH are provided (and files exist),
+// the server will start in HTTPS mode. Otherwise, it will fall back
+// to regular HTTP. This prevents "An SSL error has occurred" when
+// the widget is loaded via https on production domains.
+// ────────────────────────────────────────────────────────────
+
+let server: http.Server | https.Server
+
+const sslKeyPath = process.env.SSL_KEY_PATH
+const sslCertPath = process.env.SSL_CERT_PATH
+
+const shouldUseHttps =
+  process.env.NODE_ENV === 'production' && sslKeyPath && sslCertPath &&
+  fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)
+
+if (shouldUseHttps) {
+  console.log('🔐 SSL configuration detected. Starting HTTPS server.')
+
+  const sslOptions: https.ServerOptions = {
+    key: fs.readFileSync(sslKeyPath!, 'utf8'),
+    cert: fs.readFileSync(sslCertPath!, 'utf8'),
+  }
+
+  // Optional CA chain support
+  if (process.env.SSL_CA_PATH && fs.existsSync(process.env.SSL_CA_PATH)) {
+    sslOptions.ca = fs.readFileSync(process.env.SSL_CA_PATH, 'utf8')
+  }
+
+  server = https.createServer(sslOptions, app)
+} else {
+  console.log('🌐 No valid SSL configuration found. Falling back to HTTP.')
+  server = http.createServer(app)
+}
 
 // Add upgrade event listener for WebSocket debugging
-httpServer.on('upgrade', (request, socket, head) => {
+server.on('upgrade', (request, socket, head) => {
   console.log('--- HTTP UPGRADE REQUEST RECEIVED ---')
   console.log('Request URL:', request.url)
   console.log('Request Headers:', JSON.stringify(request.headers, null, 2))
@@ -375,10 +416,10 @@ httpServer.on('upgrade', (request, socket, head) => {
 })
 
 // Setup WebSocket Server
-setupWebSocketServer(httpServer)
+setupWebSocketServer(server)
 
 // Start the server
-const server = httpServer.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📊 Health check: http://localhost:${PORT}/health`)
   console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`)

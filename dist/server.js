@@ -10,6 +10,7 @@ const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
+const https_1 = __importDefault(require("https"));
 const openai_1 = __importDefault(require("openai"));
 const next_1 = __importDefault(require("next"));
 dotenv_1.default.config();
@@ -182,7 +183,10 @@ const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__d
 const handleNext = nextApp.getRequestHandler();
 nextApp.prepare()
     .then(() => {
-    app.use('/admin/_next', (req, res) => handleNext(req, res));
+    app.use('/admin/_next', (req, res) => {
+        req.url = req.originalUrl.replace('/admin', '');
+        return handleNext(req, res);
+    });
     app.use('/admin', (req, res) => handleNext(req, res));
     app.use('/api/chat', chatRoutes_1.default);
     app.use('/api/admin', admin_1.default);
@@ -265,15 +269,34 @@ async function initializeRedis() {
         console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error);
     }
 }
-const httpServer = http_1.default.createServer(app);
-httpServer.on('upgrade', (request, socket, head) => {
+let server;
+const sslKeyPath = process.env.SSL_KEY_PATH;
+const sslCertPath = process.env.SSL_CERT_PATH;
+const shouldUseHttps = process.env.NODE_ENV === 'production' && sslKeyPath && sslCertPath &&
+    fs_1.default.existsSync(sslKeyPath) && fs_1.default.existsSync(sslCertPath);
+if (shouldUseHttps) {
+    console.log('🔐 SSL configuration detected. Starting HTTPS server.');
+    const sslOptions = {
+        key: fs_1.default.readFileSync(sslKeyPath, 'utf8'),
+        cert: fs_1.default.readFileSync(sslCertPath, 'utf8'),
+    };
+    if (process.env.SSL_CA_PATH && fs_1.default.existsSync(process.env.SSL_CA_PATH)) {
+        sslOptions.ca = fs_1.default.readFileSync(process.env.SSL_CA_PATH, 'utf8');
+    }
+    server = https_1.default.createServer(sslOptions, app);
+}
+else {
+    console.log('🌐 No valid SSL configuration found. Falling back to HTTP.');
+    server = http_1.default.createServer(app);
+}
+server.on('upgrade', (request, socket, head) => {
     console.log('--- HTTP UPGRADE REQUEST RECEIVED ---');
     console.log('Request URL:', request.url);
     console.log('Request Headers:', JSON.stringify(request.headers, null, 2));
     console.log('------------------------------------');
 });
-(0, websocketServer_1.setupWebSocketServer)(httpServer);
-const server = httpServer.listen(PORT, async () => {
+(0, websocketServer_1.setupWebSocketServer)(server);
+server.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🤖 Chat widget: http://localhost:${PORT}/widget.js`);
