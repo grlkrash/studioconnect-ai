@@ -18,12 +18,14 @@ import { Label } from "@/components/ui/label"
 import { BookOpen, Search, Plus, Edit, Trash2, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useKnowledgeBase } from "@/hooks/useKnowledgeBase"
+import { useKnowledgeStats } from "@/hooks/useKnowledgeBase"
 
 const categories = ["All", "Services", "Pricing", "Process", "General"]
 
 export default function KnowledgeBasePage() {
   const { toast } = useToast()
   const { entries, addText, uploadFile, deleteEntry, updateEntry } = useKnowledgeBase()
+  const { categories: categoryCount, mostUsed } = useKnowledgeStats(entries)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -32,6 +34,7 @@ export default function KnowledgeBasePage() {
     category: "General",
     content: "",
   })
+  const [editing, setEditing] = useState<{id:string, content:string}|null>(null)
 
   const filteredItems = entries.filter((item) => {
     const matchesSearch =
@@ -149,7 +152,7 @@ export default function KnowledgeBasePage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">Categories</p>
-                  <p className="text-2xl font-bold text-slate-900">4</p>
+                  <p className="text-2xl font-bold text-slate-900">{categoryCount}</p>
                 </div>
                 <div className="p-2 bg-blue-50 rounded-lg">
                   <BookOpen className="w-5 h-5 text-blue-600" />
@@ -162,7 +165,7 @@ export default function KnowledgeBasePage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">Most Used</p>
-                  <p className="text-2xl font-bold text-slate-900">45</p>
+                  <p className="text-2xl font-bold text-slate-900">{mostUsed}</p>
                 </div>
                 <div className="p-2 bg-purple-50 rounded-lg">
                   <Search className="w-5 h-5 text-purple-600" />
@@ -238,7 +241,7 @@ export default function KnowledgeBasePage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" onClick={() => setEditing({id:item.id, content:item.content})} aria-label="Edit">
                       <Edit className="w-4 h-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => deleteEntry(item.id)} aria-label="Delete">
@@ -259,6 +262,30 @@ export default function KnowledgeBasePage() {
             </Card>
           ))}
         </div>
+
+        {/* Edit Dialog */}
+        {editing && (
+          <Dialog open onOpenChange={() => setEditing(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Edit Article</DialogTitle>
+              </DialogHeader>
+              <Textarea
+                value={editing.content}
+                onChange={(e)=>setEditing({...editing, content:e.target.value})}
+                rows={10}
+              />
+              <div className="flex justify-end space-x-2 mt-2">
+                <Button variant="outline" onClick={()=>setEditing(null)}>Cancel</Button>
+                <Button onClick={async ()=>{
+                  await updateEntry(editing.id, editing.content)
+                  toast({title:'Updated'})
+                  setEditing(null)
+                }}>Save</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   )

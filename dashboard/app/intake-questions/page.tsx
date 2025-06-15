@@ -29,7 +29,7 @@ const questionTypes = [
 
 export default function IntakeQuestionsPage() {
   const { toast } = useToast()
-  const { questions, addQuestion, deleteQuestion } = useLeadQuestions()
+  const { questions, addQuestion, deleteQuestion, updateQuestion } = useLeadQuestions()
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newQuestion, setNewQuestion] = useState({
     question: "",
@@ -38,6 +38,7 @@ export default function IntakeQuestionsPage() {
     followUp: "",
     options: [""],
   })
+  const [editingQ, setEditingQ] = useState<{id:string, text:string}|null>(null)
 
   const handleAddQuestion = async () => {
     await addQuestion({ questionText: newQuestion.question, expectedFormat: 'TEXT', isRequired: newQuestion.required })
@@ -254,7 +255,7 @@ export default function IntakeQuestionsPage() {
                             </div>
                           </div>
                           <div className="flex space-x-1">
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => setEditingQ({id:question.id, text:question.questionText})} aria-label="Edit question">
                               <Edit className="w-4 h-4" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => deleteQuestion(question.id)} aria-label="Delete question">
@@ -330,6 +331,21 @@ export default function IntakeQuestionsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {editingQ && (
+          <Dialog open onOpenChange={()=>setEditingQ(null)}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Edit Question</DialogTitle>
+              </DialogHeader>
+              <Textarea value={editingQ.text} onChange={(e)=>setEditingQ({...editingQ, text:e.target.value})} />
+              <div className="flex justify-end space-x-2 mt-2">
+                <Button variant="outline" onClick={()=>setEditingQ(null)}>Cancel</Button>
+                <Button onClick={async()=>{await updateQuestion(editingQ.id,{questionText:editingQ.text});toast({title:'Updated'});setEditingQ(null)}}>Save</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   )
