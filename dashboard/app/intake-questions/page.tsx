@@ -18,69 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { MessageSquare, Plus, Edit, Trash2, GripVertical, Play } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-
-const questions = [
-  {
-    id: 1,
-    question: "What's your name and company?",
-    type: "text",
-    required: true,
-    order: 1,
-    followUp: "Thank you! And what's the best way to reach you?",
-  },
-  {
-    id: 2,
-    question: "What's your phone number and email address?",
-    type: "contact",
-    required: true,
-    order: 2,
-    followUp: "Perfect! Now, what type of project are you interested in?",
-  },
-  {
-    id: 3,
-    question: "What type of project do you need help with?",
-    type: "multiple-choice",
-    required: true,
-    order: 3,
-    options: ["Logo Design", "Brand Identity", "Website Design", "Print Materials", "Other"],
-    followUp: "Great choice! What's your budget range for this project?",
-  },
-  {
-    id: 4,
-    question: "What's your budget range?",
-    type: "multiple-choice",
-    required: false,
-    order: 4,
-    options: ["Under $5,000", "$5,000 - $15,000", "$15,000 - $30,000", "$30,000+", "I'm not sure"],
-    followUp: "Thanks for that information. When would you like to start?",
-  },
-  {
-    id: 5,
-    question: "When would you like to start the project?",
-    type: "multiple-choice",
-    required: false,
-    order: 5,
-    options: ["ASAP", "Within 2 weeks", "Within a month", "Within 3 months", "Just exploring"],
-    followUp: "Perfect! Is there anything specific about your project you'd like to mention?",
-  },
-  {
-    id: 6,
-    question: "Tell us more about your project or any specific requirements",
-    type: "text",
-    required: false,
-    order: 6,
-    followUp: "Thank you for all that information! Someone from our team will be in touch within 24 hours.",
-  },
-  {
-    id: 7,
-    question: "How did you hear about us?",
-    type: "multiple-choice",
-    required: false,
-    order: 7,
-    options: ["Google Search", "Social Media", "Referral", "Previous Client", "Other"],
-    followUp: "Thanks! That helps us understand how people find us.",
-  },
-]
+import { useLeadQuestions } from "@/hooks/useLeadQuestions"
 
 const questionTypes = [
   { value: "text", label: "Text Input" },
@@ -91,6 +29,7 @@ const questionTypes = [
 
 export default function IntakeQuestionsPage() {
   const { toast } = useToast()
+  const { questions, addQuestion } = useLeadQuestions()
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newQuestion, setNewQuestion] = useState({
     question: "",
@@ -100,19 +39,11 @@ export default function IntakeQuestionsPage() {
     options: [""],
   })
 
-  const handleAddQuestion = () => {
-    toast({
-      title: "Question added",
-      description: "Your new intake question has been added successfully.",
-    })
+  const handleAddQuestion = async () => {
+    await addQuestion({ questionText: newQuestion.question, expectedFormat: 'TEXT', isRequired: newQuestion.required })
+    toast({ title: 'Saved', description: 'Question added' })
     setIsAddDialogOpen(false)
-    setNewQuestion({
-      question: "",
-      type: "text",
-      required: true,
-      followUp: "",
-      options: [""],
-    })
+    setNewQuestion({ question: '', type: 'text', required: true, followUp: '', options: [''] })
   }
 
   const handleTestFlow = () => {
