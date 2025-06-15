@@ -29,7 +29,7 @@ const questionTypes = [
 
 export default function IntakeQuestionsPage() {
   const { toast } = useToast()
-  const { questions, addQuestion } = useLeadQuestions()
+  const { questions, addQuestion, deleteQuestion } = useLeadQuestions()
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newQuestion, setNewQuestion] = useState({
     question: "",
@@ -257,7 +257,7 @@ export default function IntakeQuestionsPage() {
                             <Button variant="ghost" size="icon">
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => deleteQuestion(question.id)} aria-label="Delete question">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>

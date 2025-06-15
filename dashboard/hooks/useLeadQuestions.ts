@@ -43,5 +43,23 @@ export function useLeadQuestions() {
     if (res.ok) fetchQuestions()
   }
 
-  return { questions, loading, error, addQuestion, refetch: fetchQuestions }
+  async function updateQuestion(id: string, updates: Partial<LeadQuestion>) {
+    const res = await fetch(`/api/lead-questions/${id}`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+    if (res.ok) fetchQuestions()
+  }
+
+  async function deleteQuestion(id: string) {
+    const res = await fetch(`/api/lead-questions/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    if (res.ok) fetchQuestions()
+  }
+
+  return { questions, loading, error, addQuestion, updateQuestion, deleteQuestion, refetch: fetchQuestions }
 } 

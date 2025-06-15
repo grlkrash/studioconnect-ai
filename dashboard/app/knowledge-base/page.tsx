@@ -48,6 +48,11 @@ export default function KnowledgeBasePage() {
     setNewItem({ title: "", category: "General", content: "" })
   }
 
+  const handleFileUpload = async (file: File) => {
+    await uploadFile(file)
+    toast({ title: 'Uploaded', description: file.name })
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -120,6 +125,9 @@ export default function KnowledgeBasePage() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* File Upload */}
+        <input type="file" className="my-2" onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])} />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -233,7 +241,7 @@ export default function KnowledgeBasePage() {
                     <Button variant="ghost" size="icon">
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" onClick={() => deleteEntry(item.id)} aria-label="Delete">
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>

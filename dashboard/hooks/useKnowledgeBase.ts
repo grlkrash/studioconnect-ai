@@ -71,4 +71,12 @@ export function useKnowledgeBase() {
   }
 
   return { entries, loading, error, addText, uploadFile, updateEntry, deleteEntry, refetch: fetchEntries }
-} 
+}
+
+export function useKnowledgeStats(entries: KnowledgeEntry[]) {
+  const categories = new Set(
+    entries.map((e) => (e.metadata && e.metadata.category) || 'Uncategorized')
+  )
+  const mostUsed = Math.max(...entries.map((e: any) => e.usage || 0), 0)
+  return { categories: categories.size, mostUsed }
+}
