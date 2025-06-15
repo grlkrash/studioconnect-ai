@@ -216,6 +216,15 @@ app.get('/health', (req: Request, res: Response) => {
   })
 })
 
+// ────────────────────────────────────────────────────────────
+// CRITICAL WEBHOOK ROUTES (mounted early)
+// Mount external-facing webhooks *before* the asynchronous Next.js
+// preparation to ensure 3rd-party callbacks (e.g. Twilio) never
+// receive a 404 while Next.js is still compiling.
+// ────────────────────────────────────────────────────────────
+
+app.use('/api/voice', voiceRoutes)
+
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
 app.set('views', [
@@ -259,7 +268,6 @@ nextApp.prepare()
     // 2. Mount API routes
     app.use('/api/chat', chatRoutes)
     app.use('/api/admin', adminRoutes)
-    app.use('/api/voice', voiceRoutes)
     app.use('/api/clients', clientRoutes)
     app.use('/api/projects', projectRoutes)
     app.use('/api/knowledge-base', knowledgeBaseRoutes)
