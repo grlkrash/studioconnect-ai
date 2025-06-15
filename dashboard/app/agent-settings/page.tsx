@@ -135,7 +135,12 @@ export default function AgentSettings() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="NOVA">NOVA</SelectItem>
+                        <SelectItem value="ALLOY">ALLOY (Professional Male)</SelectItem>
+                        <SelectItem value="ECHO">ECHO (Dramatic Male)</SelectItem>
+                        <SelectItem value="FABLE">FABLE (Story-teller Male)</SelectItem>
+                        <SelectItem value="ONYX">ONYX (Deep Professional Male)</SelectItem>
+                        <SelectItem value="NOVA">NOVA (Conversational Female)</SelectItem>
+                        <SelectItem value="SHIMMER">SHIMMER (Expressive Female)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

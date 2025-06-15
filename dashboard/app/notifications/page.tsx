@@ -67,13 +67,6 @@ const notificationTypes = [
     channels: ["email", "sms"],
   },
   {
-    id: "missed_call",
-    name: "Missed Call",
-    description: "When a call is not answered by the AI",
-    enabled: true,
-    channels: ["email", "sms"],
-  },
-  {
     id: "call_completed",
     name: "Call Completed",
     description: "When any call is finished",
