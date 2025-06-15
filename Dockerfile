@@ -16,15 +16,16 @@ RUN npm ci --legacy-peer-deps \
 # Copy the rest of the source code
 COPY . .
 
-# Build Prisma Client (needs DATABASE_URL)
+# Build Prisma Client and application
 ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
-RUN npx prisma generate
+# Ensure production environment for optimized builds
+ENV NODE_ENV=production
+# Generate Prisma client and compile both API and dashboard
+RUN npm run build
 
-# Expose Next.js default port
+# Expose application port (Render will set PORT env variable)
 EXPOSE 3000
-# Expose Next.js dashboard port as well
-EXPOSE 3100
 
-# Run the dev server (change to "start" if you build for prod)
-CMD ["npm", "run", "dev"] 
+# Start the production server
+CMD ["npm", "start"] 

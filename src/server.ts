@@ -224,96 +224,95 @@ const handleNext = nextApp.getRequestHandler()
 // =======================
 
 // 1. Mount admin view routes FIRST
-await nextApp.prepare()
+nextApp.prepare()
+  .then(() => {
+    // Serve Next assets and pages under /admin after Next.js is ready
+    app.use('/_next', (req: Request, res: Response) => handleNext(req, res))
 
-// Serve Next assets and pages under /admin
-app.use('/_next', (req: Request, res: Response) => {
-  return handleNext(req, res)
-})
+    // Next pages under /admin
+    app.use('/admin', (req: Request, res: Response, nextFn: NextFunction) => {
+      // If the request matches an existing EJS legacy route (e.g. /admin/settings)
+      // that we still want to serve, delegate to viewRoutes via next()
+      if (viewRoutes.stack.some((r) => (r as any).route?.path && req.path.startsWith((r as any).route.path))) {
+        return nextFn()
+      }
+      return handleNext(req, res)
+    })
 
-// Next pages under /admin
-app.use('/admin', (req: Request, res: Response, nextFn: NextFunction) => {
-  // If the request matches an existing EJS legacy route (e.g. /admin/settings)
-  // that we still want to serve, delegate to viewRoutes via next()
-  if (viewRoutes.stack.some((r) => (r as any).route?.path && req.path.startsWith((r as any).route.path))) {
-    return nextFn()
-  }
-  return handleNext(req, res)
-})
+    // Legacy EJS admin routes as fallback
+    app.use('/admin', viewRoutes)
 
-// Legacy EJS admin routes as fallback
-app.use('/admin', viewRoutes)
+    // 2. Mount API routes
+    app.use('/api/chat', chatRoutes)
+    app.use('/api/admin', adminRoutes)
+    app.use('/api/voice', voiceRoutes)
+    app.use('/api/clients', clientRoutes)
+    app.use('/api/projects', projectRoutes)
+    app.use('/api/knowledge-base', knowledgeBaseRoutes)
 
-// 2. Mount API routes
-app.use('/api/chat', chatRoutes)
-app.use('/api/admin', adminRoutes)
-app.use('/api/voice', voiceRoutes)
-app.use('/api/clients', clientRoutes)
-app.use('/api/projects', projectRoutes)
-app.use('/api/knowledge-base', knowledgeBaseRoutes)
+    // 3. Specific file serving routes
+    app.get('/widget.js', (req: Request, res: Response) => {
+      // Using process.cwd() for more explicit path resolution
+      const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
 
-// 3. Specific file serving routes
-app.get('/widget.js', (req: Request, res: Response) => {
-  // Using process.cwd() for more explicit path resolution
-  const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
-
-  console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
-  try {
-    if (fs.existsSync(widgetPath)) {
-      console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
-      res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
-      res.sendFile(widgetPath, (err: Error | null) => {
-        if (err) {
-          console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
-          if (!res.headersSent) {
-            res.status(500).send('// Server error: Could not send widget file.');
-          }
+      console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
+      try {
+        if (fs.existsSync(widgetPath)) {
+          console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
+          res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+          res.sendFile(widgetPath, (err: Error | null) => {
+            if (err) {
+              console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
+              if (!res.headersSent) {
+                res.status(500).send('// Server error: Could not send widget file.');
+              }
+            } else {
+              console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
+            }
+          });
         } else {
-          console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
+          console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
+          res.status(404).send('// Widget script not found.');
         }
+      } catch (e: any) {
+        console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
+        if (!res.headersSent) {
+          res.status(500).send('// Server error processing widget request.');
+        }
+      }
+    })
+
+    // 4. Health check endpoint
+    app.get('/health', (req: Request, res: Response) => {
+      res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString()
       });
-    } else {
-      console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
-      res.status(404).send('// Widget script not found.');
+    })
+
+    // 5. Debug route to test routing
+    app.get('/admin-test', (req: Request, res: Response) => {
+      res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
+    })
+
+    // 6. Root route handler
+    app.get('/', (req: Request, res: Response) => {
+      res.send('Application Root - Hello from Deployed App!');
+    });
+
+    // 7. Static file serving (general)
+    app.use('/static', express.static(path.join(__dirname, '../public')))
+
+    // Debug logs for static path
+    const staticPath = path.join(__dirname, '../public');
+    console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+    try {
+      const files = fs.readdirSync(staticPath);
+      console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+    } catch (e: any) {
+      console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
     }
-  } catch (e: any) {
-    console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
-    if (!res.headersSent) {
-      res.status(500).send('// Server error processing widget request.');
-    }
-  }
-})
-
-// 4. Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString()
-  });
-})
-
-// 5. Debug route to test routing
-app.get('/admin-test', (req: Request, res: Response) => {
-  res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
-})
-
-// 6. Root route handler
-app.get('/', (req: Request, res: Response) => {
-  res.send('Application Root - Hello from Deployed App!');
-});
-
-// 7. Static file serving (general)
-app.use('/static', express.static(path.join(__dirname, '../public')))
-
-// Debug logs for static path
-const staticPath = path.join(__dirname, '../public');
-console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
-try {
-  const files = fs.readdirSync(staticPath);
-  console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
-} catch (e: any) {
-  console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
-}
+  })
 
 // =======================
 // WILDCARD 404 HANDLER - MUST BE LAST!
