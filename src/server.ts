@@ -297,11 +297,14 @@ nextApp.prepare()
     app.use('/api/widget-config', widgetConfigRoutes)
 
     // 3. Specific file serving routes
-    app.get('/widget.js', (req: Request, res: Response) => {
+    // Serve the public chat widget bundle. Historically the snippet referenced
+    // both `widget.js` and `embed.js`, so we alias the two paths here to avoid
+    // breaking existing installs.
+    const widgetHandler = (req: Request, res: Response) => {
       // Using process.cwd() for more explicit path resolution
       const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
 
-      console.log(`WIDGET_DEBUG: Request for /widget.js. Attempting to send from: ${widgetPath}`);
+      console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
       try {
         if (fs.existsSync(widgetPath)) {
           console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
@@ -321,12 +324,18 @@ nextApp.prepare()
           res.status(404).send('// Widget script not found.');
         }
       } catch (e: any) {
-        console.error('WIDGET_DEBUG: Exception caught in /widget.js route handler:', e.message);
+        console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
         if (!res.headersSent) {
           res.status(500).send('// Server error processing widget request.');
         }
       }
-    })
+    };
+
+    // Main path used in documentation
+    app.get('/widget.js', widgetHandler);
+
+    // Legacy alias kept for backwards-compatibility
+    app.get('/embed.js', widgetHandler);
 
     // 4. Debug route to test routing
     app.get('/admin-test', (req: Request, res: Response) => {
