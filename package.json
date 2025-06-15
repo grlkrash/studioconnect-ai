@@ -10,7 +10,7 @@
     "dev:dashboard": "npm --prefix dashboard run dev -- -p 3100",
     "build:api": "tsc",
     "build": "npx prisma generate && npm --prefix dashboard run build && npm run build:api",
-    "postbuild": "mkdir -p dist/views && cp -R src/views/* dist/views/",
+    "postbuild": "mkdir -p dist/views && cp -R src/views/* dist/views/ && cp src/public/widget.js public/widget.js",
     "start": "node dist/server.js",
     "start:prod": "NODE_ENV=production node dist/server.js",
     "prisma:migrate": "npx prisma migrate dev",
