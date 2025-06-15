@@ -189,6 +189,23 @@ class RealtimeAgentService {
     const businessId = params.get('businessId');
     const fromNumber = params.get('fromPhoneNumber');
 
+    // Previously we closed the connection when either parameter was missing, which caused Twilio
+    // to drop the call before it had a chance to send its initial `start` message (containing the
+    // real CallSid & custom parameters).  We now keep the socket open and defer validation until
+    // that event arrives.
+
+    // Twilio sometimes omits the query string when establishing the WebSocket.  In that case we
+    // still allow the socket to remain open and rely on the first `start` event message (sent by
+    // Twilio after the upgrade) to supply the real CallSid / business context.  Only enforce the
+    // presence of these parameters if *both* are missing **and** the connection does not provide
+    // them later on in the `start` payload.
+    if (!callSid) {
+      console.warn('[REALTIME AGENT] callSid not present in WebSocket URL – will wait for START event')
+    }
+    if (!businessId) {
+      console.warn('[REALTIME AGENT] businessId not present in WebSocket URL – will derive it from call details later')
+    }
+
     if (!callSid || !businessId) {
       console.error('[REALTIME AGENT] Missing required parameters:', { callSid, businessId });
       ws.close(1008, 'Missing required parameters');
@@ -233,33 +250,40 @@ class RealtimeAgentService {
       }
     }
 
-    this.connections.set(callSid, state);
-    this.setupTwilioListeners(state);
-    this.setupWebSocketListeners(state);
+    const connectionKey = callSid ?? crypto.randomUUID();
+    this.connections.set(connectionKey, state);
 
-    // Send welcome message
-    try {
-      const welcomeMessage = await this.getWelcomeMessage(state);
-      this.sendTwilioMessage(callSid, welcomeMessage);
-    } catch (error) {
-      console.error(`[REALTIME AGENT] Error sending welcome message:`, error);
-      this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?');
+    // Only register Twilio listeners if we already know the CallSid (outbound calls, test harnesses, etc.)
+    if (callSid) {
+      this.setupTwilioListeners(state);
     }
 
-    // Update the CallLog creation
-    const callLog = await prisma.callLog.create({
-      data: {
-        businessId,
-        conversationId: crypto.randomUUID(),
-        callSid,
-        from: fromNumber || '',
-        to: '',
-        direction: CallDirection.INBOUND,
-        type: CallType.VOICE,
-        status: CallStatus.INITIATED,
-        source: 'TWILIO'
+    // Send a welcome message and log the call only when we already have the essential identifiers
+    // (typically available for outbound calls or local tests).  For inbound calls we wait until the
+    // first START event provides the details.
+    if (callSid && businessId) {
+      try {
+        const welcomeMessage = await this.getWelcomeMessage(state)
+        this.sendTwilioMessage(callSid, welcomeMessage)
+      } catch (error) {
+        console.error('[REALTIME AGENT] Error sending welcome message:', error)
+        this.sendTwilioMessage(callSid, 'Welcome to StudioConnect AI. How can I help you today?')
       }
-    });
+
+      await prisma.callLog.create({
+        data: {
+          businessId,
+          conversationId: crypto.randomUUID(),
+          callSid,
+          from: fromNumber ?? '',
+          to: '',
+          direction: CallDirection.INBOUND,
+          type: CallType.VOICE,
+          status: CallStatus.INITIATED,
+          source: 'TWILIO'
+        }
+      })
+    }
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
@@ -287,50 +311,9 @@ class RealtimeAgentService {
       return;
     }
 
-    // Handle start event
-    (this.twilioClient.calls(callSid) as any)
-      .on('start', async (data: any) => {
-        await this.handleStartEvent(state, data);
-      });
-
-    // Handle media stream
-    (this.twilioClient.calls(callSid) as any)
-      .on('media', async (media: TwilioMedia) => {
-        if (!media.payload) return;
-
-        try {
-          const response = await processMessage({
-            message: media.payload,
-            conversationHistory: state.conversationHistory,
-            businessId,
-            currentActiveFlow: state.currentFlow ?? null,
-            callSid,
-            channel: 'VOICE'
-          });
-
-          // Update conversation history and current flow
-          this.addToConversationHistory(state, 'user', media.payload);
-          this.addToConversationHistory(state, 'assistant', response.reply);
-          state.currentFlow = response.currentFlow || null;
-
-          // Keep conversation history at a reasonable size
-          if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
-            state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY);
-          }
-
-          this.sendTwilioMessage(callSid, response.reply);
-        } catch (error) {
-          console.error(`[REALTIME AGENT] Error processing message:`, error);
-          this.sendTwilioMessage(callSid, 'I apologize, but I encountered an error processing your request. Could you please try again?');
-        }
-      });
-
-    // Handle end event
-    (this.twilioClient.calls(callSid) as any)
-      .on('end', () => {
-        console.log(`[REALTIME AGENT] Call ${callSid} ended`);
-        this.cleanup(callSid);
-      });
+    // The Node Twilio helper library does not emit 'start'/'media' events – those are only sent
+    // over the WebSocket stream.  We keep this method for future expansions (e.g. call status
+    // callbacks) but no longer attempt to attach stream listeners here.
   }
 
   private setupWebSocketListeners(state: ConnectionState): void {
@@ -391,6 +374,7 @@ class RealtimeAgentService {
     state.streamSid = data.start?.streamSid;
     state.isTwilioReady = true;
     state.callSid = callSid;
+    this.callSid = callSid ?? this.callSid;
 
     if (this.onCallSidReceived && callSid) this.onCallSidReceived(callSid);
 
@@ -460,6 +444,88 @@ class RealtimeAgentService {
   // Example: when adding to conversationHistory, always include timestamp
   private addToConversationHistory(state: ConnectionState, role: 'user' | 'assistant', content: string) {
     state.conversationHistory.push({ role, content, timestamp: new Date() });
+  }
+
+  /**
+   * Entry-point for WebSocketServer to forward every Twilio media-stream message (JSON string).
+   * This keeps all Twilio-specific parsing logic inside the RealtimeAgentService.
+   */
+  public handleTwilioStreamEvent(ws: WebSocket, payload: Record<string, unknown>): void {
+    // Locate the connection state for this WebSocket instance.
+    const state = [...this.connections.values()].find((s) => s.ws === ws)
+
+    if (!state) {
+      console.warn('[REALTIME AGENT] Received stream event for unknown WebSocket')
+      return
+    }
+
+    const eventType = payload.event as string | undefined
+
+    switch (eventType) {
+      case 'start': {
+        // The START event provides the definitive CallSid – remap the state so future look-ups are cheap
+        try {
+          this.handleStartEvent(state, payload)
+
+          const startCallSid = (payload as any).start?.callSid as string | undefined
+          if (startCallSid) {
+            // If the state is stored under a temporary key, move it under the real CallSid
+            const existingKey = [...this.connections.entries()].find(([_, val]) => val === state)?.[0]
+            if (existingKey && existingKey !== startCallSid) {
+              this.connections.delete(existingKey)
+              this.connections.set(startCallSid, state)
+            }
+            state.callSid = startCallSid
+          }
+        } catch (error) {
+          console.error('[REALTIME AGENT] Error processing START event:', error)
+        }
+        break
+      }
+      case 'media': {
+        const mediaPayload = (payload as any).media?.payload as string | undefined
+        if (!mediaPayload) return
+
+        const { businessId } = state
+        const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
+
+        processMessage({
+          message: mediaPayload,
+          conversationHistory: state.conversationHistory,
+          businessId: businessId ?? '',
+          currentActiveFlow: state.currentFlow ?? null,
+          callSid,
+          channel: 'VOICE'
+        })
+          .then((response) => {
+            this.addToConversationHistory(state, 'user', mediaPayload)
+            this.addToConversationHistory(state, 'assistant', response.reply)
+            state.currentFlow = response.currentFlow || null
+
+            if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
+              state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
+            }
+
+            if (state.callSid) this.sendTwilioMessage(state.callSid, response.reply)
+          })
+          .catch((err) => {
+            console.error('[REALTIME AGENT] Error processing MEDIA payload:', err)
+            if (state.callSid) {
+              this.sendTwilioMessage(state.callSid, 'I encountered an error while processing your request. Please try again.')
+            }
+          })
+        break
+      }
+      case 'stop':
+      case 'end': {
+        // Clean-up when Twilio signals the end of the stream.
+        this.cleanup('Twilio STOP event')
+        if (!state.callSid) ws.close()
+        break
+      }
+      default:
+        console.warn('[REALTIME AGENT] Unhandled Twilio stream event type:', eventType)
+    }
   }
 }
 

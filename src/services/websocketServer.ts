@@ -41,10 +41,19 @@ export function setupWebSocketServer(httpServer: Server): WebSocketServer {
       return
     }
 
-    ws.on('message', (message: string) => {
+    ws.on('message', (raw: string | Buffer) => {
       try {
-        console.log('Received message:', message.toString())
-        // Messages are handled by RealtimeAgentService's internal Twilio listener
+        const asString = raw.toString()
+        let payload: unknown
+        try {
+          payload = JSON.parse(asString)
+        } catch (jsonErr) {
+          console.warn('Received non-JSON payload on Twilio media socket:', asString.slice(0, 100))
+          return
+        }
+
+        // Delegate Twilio media stream events to the realtime agent service for further handling.
+        realtimeAgentService.handleTwilioStreamEvent(ws, payload as Record<string, unknown>)
       } catch (error) {
         console.error('Error processing message:', error)
       }
