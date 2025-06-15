@@ -20,6 +20,8 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import { Input } from "@/components/ui/input"
+import { useState } from "react"
 
 // Sample data for charts
 const revenueData = [
@@ -60,6 +62,21 @@ const efficiencyMetrics = [
 ]
 
 export default function AnalyticsPage() {
+  /* ROI calculator state */
+  const [laborSavings, setLaborSavings] = useState<number | "">("")
+  const [additionalRevenue, setAdditionalRevenue] = useState<number | "">("")
+  const [pipelineIncrease, setPipelineIncrease] = useState<number | "">("")
+  const [responseReduction, setResponseReduction] = useState<number | "">("")
+  const [utilizationGain, setUtilizationGain] = useState<number | "">("")
+
+  const numeric = (v: number | "") => (typeof v === "number" && !isNaN(v) ? v : 0)
+  const totalROI =
+    numeric(laborSavings) +
+    numeric(additionalRevenue) +
+    numeric(pipelineIncrease) +
+    numeric(responseReduction) +
+    numeric(utilizationGain)
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -304,36 +321,60 @@ export default function AnalyticsPage() {
         {/* ROI Calculator */}
         <Card>
           <CardHeader>
-            <CardTitle>Return on Investment</CardTitle>
-            <CardDescription>Your StudioConnect AI investment impact</CardDescription>
+            <CardTitle>ROI Calculator</CardTitle>
+            <CardDescription>Estimate financial impact based on your own numbers</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <h3 className="font-medium text-slate-900">Monthly Investment</h3>
-                <p className="text-2xl font-bold text-slate-900">$999</p>
-                <p className="text-sm text-slate-600">Enterprise plan cost</p>
+                <h3 className="font-medium text-slate-900">Saved Labor Costs ($)</h3>
+                <Input
+                  type="number"
+                  placeholder="e.g. 12700"
+                  value={laborSavings}
+                  onChange={(e) => setLaborSavings(e.target.value === "" ? "" : Number(e.target.value))}
+                />
               </div>
               <div className="space-y-2">
-                <h3 className="font-medium text-slate-900">Monthly Return</h3>
-                <p className="text-2xl font-bold text-green-600">$28,450</p>
-                <p className="text-sm text-slate-600">Revenue + cost savings</p>
+                <h3 className="font-medium text-slate-900">Additional Revenue ($)</h3>
+                <Input
+                  type="number"
+                  placeholder="e.g. 15750"
+                  value={additionalRevenue}
+                  onChange={(e) => setAdditionalRevenue(e.target.value === "" ? "" : Number(e.target.value))}
+                />
               </div>
               <div className="space-y-2">
-                <h3 className="font-medium text-slate-900">ROI</h3>
-                <p className="text-2xl font-bold text-green-600">2,748%</p>
-                <p className="text-sm text-slate-600">Return on investment</p>
+                <h3 className="font-medium text-slate-900">Pipeline Value Increase ($)</h3>
+                <Input
+                  type="number"
+                  placeholder="e.g. 25000"
+                  value={pipelineIncrease}
+                  onChange={(e) => setPipelineIncrease(e.target.value === "" ? "" : Number(e.target.value))}
+                />
               </div>
-            </div>
-            <div className="mt-6 p-4 bg-green-50 rounded-lg">
-              <h4 className="font-medium text-green-900 mb-2">Key Benefits</h4>
-              <ul className="text-sm text-green-800 space-y-1">
-                <li>• $12,700 saved in labor costs (127 hours × $100/hour)</li>
-                <li>• $15,750 additional revenue from improved client capture</li>
-                <li>• 23% increase in overall pipeline value</li>
-                <li>• 95% reduction in client response time</li>
-                <li>• 24% improvement in team utilization</li>
-              </ul>
+              <div className="space-y-2">
+                <h3 className="font-medium text-slate-900">Value of Faster Response ($)</h3>
+                <Input
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={responseReduction}
+                  onChange={(e) => setResponseReduction(e.target.value === "" ? "" : Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-medium text-slate-900">Utilization Gain ($)</h3>
+                <Input
+                  type="number"
+                  placeholder="e.g. 8000"
+                  value={utilizationGain}
+                  onChange={(e) => setUtilizationGain(e.target.value === "" ? "" : Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2 flex flex-col justify-end">
+                <h3 className="font-medium text-slate-900">Estimated Total Benefit</h3>
+                <p className="text-3xl font-bold text-green-600">${totalROI.toLocaleString()}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
