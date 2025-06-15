@@ -428,13 +428,21 @@ class RealtimeAgentService {
 
       // Attempt exact E.164 match first
       let business = await prisma.business.findFirst({
-        where: { twilioPhoneNumber: toNumber }
+        where: { twilioPhoneNumber: toNumber },
+        select: {
+          id: true,
+          twilioPhoneNumber: true,
+        },
       })
 
       // Fallback: try digits-only match (common if number stored without '+')
       if (!business) {
         business = await prisma.business.findFirst({
-          where: { twilioPhoneNumber: digitsOnly }
+          where: { twilioPhoneNumber: digitsOnly },
+          select: {
+            id: true,
+            twilioPhoneNumber: true,
+          },
         })
       }
 
@@ -444,9 +452,13 @@ class RealtimeAgentService {
         business = await prisma.business.findFirst({
           where: {
             twilioPhoneNumber: {
-              endsWith: lastTen
-            }
-          }
+              endsWith: lastTen,
+            },
+          },
+          select: {
+            id: true,
+            twilioPhoneNumber: true,
+          },
         })
       }
 
@@ -475,7 +487,14 @@ class RealtimeAgentService {
         })
 
         if (matchBySanitized) {
-          business = await prisma.business.findUnique({ where: { id: matchBySanitized.id } }) ?? null
+          business =
+            (await prisma.business.findUnique({
+              where: { id: matchBySanitized.id },
+              select: {
+                id: true,
+                twilioPhoneNumber: true,
+              },
+            })) ?? null
         }
       }
 
