@@ -21,7 +21,8 @@ export function useLeadQuestions() {
   const fetchQuestions = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/lead-questions', { credentials: 'include' })
+      const url = `/api/lead-questions${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`
+      const res = await fetch(url, { credentials: 'include' })
       if (!res.ok) throw new Error('failed')
       const data = await res.json()
       // Normalize to the UI shape
@@ -49,7 +50,7 @@ export function useLeadQuestions() {
   }, [])
 
   const addQuestion = async (payload: Partial<LeadQuestion>) => {
-    const res = await fetch('/api/lead-questions', {
+    const res = await fetch(`/api/lead-questions${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -64,7 +65,7 @@ export function useLeadQuestions() {
   }
 
   async function updateQuestion(id: string, updates: Partial<LeadQuestion>) {
-    const res = await fetch(`/api/lead-questions/${id}`, {
+    const res = await fetch(`/api/lead-questions/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -74,7 +75,7 @@ export function useLeadQuestions() {
   }
 
   async function deleteQuestion(id: string) {
-    const res = await fetch(`/api/lead-questions/${id}`, {
+    const res = await fetch(`/api/lead-questions/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'DELETE',
       credentials: 'include',
     })

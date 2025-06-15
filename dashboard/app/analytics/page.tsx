@@ -21,38 +21,12 @@ import {
   Cell,
 } from "recharts"
 import { Input } from "@/components/ui/input"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
-// Sample data for charts
-const revenueData = [
-  { month: "Jan", aiClients: 45000, traditionalClients: 32000, total: 77000 },
-  { month: "Feb", aiClients: 52000, traditionalClients: 28000, total: 80000 },
-  { month: "Mar", aiClients: 61000, traditionalClients: 35000, total: 96000 },
-  { month: "Apr", aiClients: 58000, traditionalClients: 31000, total: 89000 },
-  { month: "May", aiClients: 67000, traditionalClients: 29000, total: 96000 },
-  { month: "Jun", aiClients: 74000, traditionalClients: 33000, total: 107000 },
-]
-
-const callVolumeData = [
-  { time: "9 AM", calls: 12, qualified: 8 },
-  { time: "10 AM", calls: 18, qualified: 14 },
-  { time: "11 AM", calls: 15, qualified: 11 },
-  { time: "12 PM", calls: 22, qualified: 16 },
-  { time: "1 PM", calls: 8, qualified: 6 },
-  { time: "2 PM", calls: 25, qualified: 19 },
-  { time: "3 PM", calls: 20, qualified: 15 },
-  { time: "4 PM", calls: 16, qualified: 12 },
-  { time: "5 PM", calls: 14, qualified: 10 },
-  { time: "6 PM", calls: 9, qualified: 7 },
-]
-
-const projectTypeData = [
-  { name: "Brand Identity", value: 35, color: "#8B5CF6" },
-  { name: "Website Design", value: 28, color: "#06B6D4" },
-  { name: "Logo Design", value: 20, color: "#10B981" },
-  { name: "Print Materials", value: 12, color: "#F59E0B" },
-  { name: "Other", value: 5, color: "#EF4444" },
-]
+// live data states
+const [revenueData, setRevenueData] = useState<any[]>([])
+const [callVolumeData, setCallVolumeData] = useState<any[]>([])
+const [projectTypeData, setProjectTypeData] = useState<any[]>([])
 
 const efficiencyMetrics = [
   { metric: "Client Response Time", current: "2.3 min", previous: "45 min", improvement: 95 },
@@ -76,6 +50,30 @@ export default function AnalyticsPage() {
     numeric(pipelineIncrease) +
     numeric(responseReduction) +
     numeric(utilizationGain)
+
+  // Fetch summary on mount
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const sumRes = await fetch(`/api/analytics/summary${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+        if (sumRes.ok) {
+          const sum = await sumRes.json()
+          setRevenueData(sum.revenueData)
+          setCallVolumeData(sum.callVolumeData)
+          setProjectTypeData(sum.projectTypeData)
+        }
+
+        const res = await fetch(`/api/dashboard-status${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+        if (!res.ok) return
+        const data = await res.json()
+        // crude estimate: labor cost saved = callsToday * avgDuration (sec) * $1 per second (placeholder)
+        const durationSec = parseInt((data.avgDuration || "0s").replace(/s$/, ""), 10) || 0
+        const calls = data.callsToday ?? 0
+        const estLabor = Math.round((calls * durationSec) / 60 * 25) // $25/hr salary
+        setLaborSavings(estLabor)
+      } catch {}
+    })()
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
@@ -104,7 +102,7 @@ export default function AnalyticsPage() {
                 <SelectItem value="1year">Last year</SelectItem>
               </SelectContent>
             </Select>
-            <Button>
+            <Button onClick={()=>{window.location.href=`/api/analytics/report${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`}}>
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>

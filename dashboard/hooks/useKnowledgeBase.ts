@@ -19,7 +19,8 @@ export function useKnowledgeBase() {
   const fetchEntries = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/knowledge-base', { credentials: 'include' })
+      const url = `/api/knowledge-base${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`
+      const res = await fetch(url, { credentials: 'include' })
       if (!res.ok) throw new Error('failed')
       const data = await res.json()
       setEntries(data)
@@ -36,7 +37,7 @@ export function useKnowledgeBase() {
   }, [])
 
   async function addText(payload: { content: string; metadata?: any }) {
-    const res = await fetch('/api/knowledge-base', {
+    const res = await fetch(`/api/knowledge-base${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -53,7 +54,7 @@ export function useKnowledgeBase() {
   async function uploadFile(file: File) {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch('/api/knowledge-base/upload', {
+    const res = await fetch(`/api/knowledge-base/upload${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       body: form,
@@ -67,7 +68,7 @@ export function useKnowledgeBase() {
   }
 
   async function updateEntry(id: string, content: string) {
-    const res = await fetch(`/api/knowledge-base/${id}`, {
+    const res = await fetch(`/api/knowledge-base/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -82,7 +83,7 @@ export function useKnowledgeBase() {
   }
 
   async function deleteEntry(id: string) {
-    const res = await fetch(`/api/knowledge-base/${id}`, {
+    const res = await fetch(`/api/knowledge-base/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
       method: 'DELETE',
       credentials: 'include',
     })

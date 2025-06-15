@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input"
 import { Search } from "lucide-react"
 
 interface Props {
-  calls: CallLog[]
+  calls: (CallLog & {
+    conversation?: {
+      client?: { name: string | null }
+    } | null
+  })[]
 }
 
 function getStatusBadge(status: CallLog["status"]) {
@@ -49,6 +53,7 @@ export default function CallTable({ calls }: Props) {
         <TableHeader>
           <TableRow>
             <TableHead className="w-48">Caller</TableHead>
+            <TableHead className="w-56">Client</TableHead>
             <TableHead className="w-48">Date & Time</TableHead>
             <TableHead className="w-32">Duration</TableHead>
             <TableHead className="w-32">Status</TableHead>
@@ -58,6 +63,7 @@ export default function CallTable({ calls }: Props) {
           {filtered.map((call) => (
             <TableRow key={call.id} className="hover:bg-slate-50">
               <TableCell>{call.from}</TableCell>
+              <TableCell>{call.conversation?.client?.name ?? '—'}</TableCell>
               <TableCell>{new Date(call.createdAt).toLocaleString()}</TableCell>
               <TableCell>
                 {call.metadata && (call.metadata as any).duration

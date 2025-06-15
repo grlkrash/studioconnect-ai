@@ -1,29 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getBusiness } from '@/lib/getBusiness'
 
 // GET /api/lead-questions
 // Returns all lead-capture questions for the first business in the DB. This
 // is a simplified implementation to make the dashboard functional until we
 // have auth + multi-tenant context wired up.
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    /**
-     * Ensure a Business record exists so that first-time users can start
-     * adding questions immediately without running a separate seed script.
-     * If no business is found we create a placeholder record.
-     *
-     * NOTE: in a multi-tenant environment the business context should come
-     * from auth/session. This fallback is purely for local/demo use.
-     */
-    let business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) {
-      business = await prisma.business.create({
-        data: {
-          name: "Demo Business",
-        },
-        select: { id: true },
-      })
-    }
+    const business = await getBusiness(req)
+    if (!business) return NextResponse.json({ questions: [] })
 
     const config = await prisma.agentConfig.findUnique({
       where: { businessId: business.id },
@@ -56,23 +42,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'questionText is required' }, { status: 400 })
     }
 
-    /**
-     * Ensure a Business record exists so that first-time users can start
-     * adding questions immediately without running a separate seed script.
-     * If no business is found we create a placeholder record.
-     *
-     * NOTE: in a multi-tenant environment the business context should come
-     * from auth/session. This fallback is purely for local/demo use.
-     */
-    let business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) {
-      business = await prisma.business.create({
-        data: {
-          name: "Demo Business",
-        },
-        select: { id: true },
-      })
-    }
+    const business = await getBusiness(req)
+    if (!business) return NextResponse.json({ error: 'No business found' }, { status: 400 })
 
     // Ensure an AgentConfig exists for the business
     const config = await prisma.agentConfig.upsert({

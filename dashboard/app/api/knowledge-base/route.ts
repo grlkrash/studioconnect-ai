@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getBusiness } from '@/lib/getBusiness'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    // Ensure a Business record exists so that the dashboard works out-of-the-box
-    let business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) {
-      business = await prisma.business.create({ data: { name: 'Demo Business' }, select: { id: true } })
-    }
+    const business = await getBusiness(req)
+    if (!business) return NextResponse.json([])
 
     const kb = await prisma.knowledgeBase.findMany({
       where: { businessId: business.id },
@@ -27,11 +25,8 @@ export async function POST(req: NextRequest) {
     const { content, metadata } = body
     if (!content) return NextResponse.json({ error: 'content required' }, { status: 400 })
 
-    // Ensure a Business record exists so that the dashboard works out-of-the-box
-    let business = await prisma.business.findFirst({ select: { id: true } })
-    if (!business) {
-      business = await prisma.business.create({ data: { name: 'Demo Business' }, select: { id: true } })
-    }
+    const business = await getBusiness(req)
+    if (!business) return NextResponse.json({ error: 'No business' }, { status: 400 })
 
     const entry = await prisma.knowledgeBase.create({
       data: { businessId: business.id, content, metadata },

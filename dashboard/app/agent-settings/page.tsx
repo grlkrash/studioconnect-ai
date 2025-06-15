@@ -59,7 +59,7 @@ export default function AgentSettings() {
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch("/api/agent-config", { credentials: "include" })
+        const res = await fetch(`/api/agent-config${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, { credentials: "include" })
         if (res.ok) {
           const data = await res.json()
           if (data.config) setSettings({ ...defaultSettings, ...data.config })
@@ -72,7 +72,7 @@ export default function AgentSettings() {
 
   const handleSave = async () => {
     try {
-      const res = await fetch("/api/agent-config", {
+      const res = await fetch(`/api/agent-config${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -91,6 +91,51 @@ export default function AgentSettings() {
   const ComingSoon = () => (
     <p className="text-xs text-slate-500 italic">Coming Soon 🚧</p>
   )
+
+  /* ----------------- Status metrics child component ------------------ */
+  function StatusMetrics() {
+    const [status, setStatus] = useState<any | null>(null)
+
+    useEffect(() => {
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/dashboard-status${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+          if (res.ok) setStatus(await res.json())
+        } catch {
+          /* swallow */
+        }
+      })()
+    }, [])
+
+    return (
+      <>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Business ID</span>
+          <span className="text-xs font-mono">{process.env.NEXT_PUBLIC_BUSINESS_ID || status?.businessId || '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Agent Status</span>
+          <Badge className="bg-green-50 text-green-700 border-green-200">{status?.agentStatus || '—'}</Badge>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Calls Today</span>
+          <span className="text-sm font-medium">{status?.callsToday ?? '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Avg Response Time</span>
+          <span className="text-sm font-medium">{status?.avgResponse ?? '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Avg Call Duration</span>
+          <span className="text-sm font-medium">{status?.avgDuration ?? '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Success Rate</span>
+          <span className="text-sm font-medium">{status?.successRate ?? '—'}</span>
+        </div>
+      </>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
@@ -364,26 +409,7 @@ export default function AgentSettings() {
                 <CardTitle>Current Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Business ID</span>
-                  <span className="text-xs font-mono">{process.env.NEXT_PUBLIC_BUSINESS_ID || '—'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Agent Status</span>
-                  <Badge className="bg-green-50 text-green-700 border-green-200">Online</Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Calls Today</span>
-                  <span className="text-sm font-medium">47</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Avg Response Time</span>
-                  <span className="text-sm font-medium">1.2s</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Success Rate</span>
-                  <span className="text-sm font-medium">98.5%</span>
-                </div>
+                <StatusMetrics />
               </CardContent>
             </Card>
 
