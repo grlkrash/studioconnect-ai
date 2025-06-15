@@ -615,6 +615,26 @@ The StudioConnect AI platform is built on a modern, scalable architecture using 
   - Sharing options
   - Mobile view
 
+### 10.7 Client Satisfaction Data
+
+Short-term (v1):
+• Source post-call IVR surveys collected by the voice agent (1–5 star prompt).
+• Capture thumbs-up / thumbs-down reactions in the web-chat widget.
+
+Mid-term (v2):
+• Ingest CSAT / NPS custom-field values exposed by connected PM tools (e.g., Asana custom fields, Jira custom metrics).
+
+Data Model Roadmap:
+• New `ClientSatisfaction` table (FK → Business, Client, Project) will store unified records.
+• ETL service will merge voice/chat survey results and PM-tool metrics into this table.
+• Aggregations will drive the "Client Satisfaction" KPI in the Analytics dashboard.
+
+Open Tasks:
+1. Define Prisma schema migration for `ClientSatisfaction`.
+2. Implement API endpoint `/api/client-satisfaction` for ingest & query.
+3. Extend analytics service to compute rolling CSAT & NPS.
+4. Add webhook handlers for Asana/Jira events once integration layer is live.
+
 ## 11. Cost & Pricing
 
 ### 11.1 Pricing Structure
