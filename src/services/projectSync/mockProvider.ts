@@ -41,7 +41,7 @@ export const mockProjectProvider: ProjectSyncProvider = {
         },
         create: {
           businessId,
-          clientId: null, // no real client association for mock data
+          clientId: undefined, // no real client association for mock data
           name: project.name,
           status: project.status,
           details: project.details,
