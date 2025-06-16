@@ -1945,217 +1945,87 @@ const emergencyFlow = {
 
 ---
 
-# DEVELOPER_GUIDE.md: Project Management Integrations
+# Project Management Integrations
 
 **Version:** 1.0  
 **Status:** Inception  
-**Author:** StudioConnect AI Assistant
+**Author:** StudioConnect AI Assistant  
 **Last Updated:** June 11, 2025
 
 ## 1. Overview
-
-This guide details the technical implementation of the Project Management (PM) tool integration feature. The goal is to create a one-way data sync from a client's PM tool (Asana, Jira, Monday.com) into our system, providing the AI agent with real-time project and status information.
-
-The architecture is designed to be modular and extensible, allowing for the easy addition of new PM tool providers in the future.
+This section documents the one-way data sync from client PM tools (Asana, Jira, Monday.com) into StudioConnect AI, giving the agent real-time project context.  The design is modular and easily extensible for new providers.
 
 ## 2. Core Architecture
+All provider logic lives behind a common interface, keeping the core application agnostic of third-party specifics.
 
-The integration is built on a provider-based pattern. All provider-specific logic is abstracted away from the core application, which interacts with a standardized interface.
-
-### 2.1. Directory Structure
-
-All integration code will reside in `src/services/pm-providers/`.
-
-```
+### 2.1 Directory Structure
+```text
 src/
 └── services/
     └── pm-providers/
-        ├── pm.provider.interface.ts  // Defines the common interface
-        ├── asana.provider.ts         // Asana-specific implementation
-        ├── jira.provider.ts          // Jira-specific implementation
-        └── monday.provider.ts        // Monday.com-specific implementation
+        ├── pm.provider.interface.ts  // Contract for providers
+        ├── asana.provider.ts         // Asana implementation
+        ├── jira.provider.ts          // Jira implementation
+        └── monday.provider.ts        // Monday.com implementation
 ```
 
-### 2.2. The `ProjectManagementProvider` Interface
-
-The `pm.provider.interface.ts` file defines the contract that every provider must adhere to.
-
+### 2.2 `ProjectManagementProvider` Interface
 ```typescript
 // src/services/pm-providers/pm.provider.interface.ts
-
-/**
- * Defines the contract for all Project Management tool providers.
- */
 export interface ProjectManagementProvider {
-  /**
-   * Validates credentials and establishes a connection.
-   * @param credentials - API token or other auth materials.
-   * @returns A boolean indicating if the connection was successful.
-   */
-  connect(credentials: { apiKey: string; [key: string]: any }): Promise<boolean>;
+  /** Validate credentials & establish a connection */
+  connect(credentials: { apiKey: string; [key: string]: any }): Promise<boolean>
 
-  /**
-   * Performs the initial one-way sync of all relevant project data.
-   * @param businessId - The ID of the business to sync data for.
-   * @returns A summary of synced data (e.g., project and task counts).
-   */
-  syncProjects(businessId: string): Promise<{ projectCount: number; taskCount: number }>;
+  /** One-way initial sync of all projects/tasks */
+  syncProjects(businessId: string): Promise<{ projectCount: number; taskCount: number }>
 
-  /**
-   * Programmatically creates a webhook in the third-party service.
-   * @param businessId - The ID of the business for which to set up the webhook.
-   * @returns The details of the created webhook.
-   */
-  setupWebhooks(businessId: string): Promise<{ webhookId: string }>;
+  /** Create provider-specific webhooks */
+  setupWebhooks(businessId: string): Promise<{ webhookId: string }>
 
-  /**
-   * Processes an incoming webhook event payload from the provider.
-   * @param payload - The raw, validated payload from the webhook request.
-   */
-  handleWebhook(payload: any): Promise<void>;
+  /** Handle incoming webhook payloads */
+  handleWebhook(payload: any): Promise<void>
 
-  /**
-   * Normalizes provider-specific data into our internal Project model.
-   * @param providerData - The raw data object from the provider's API.
-   * @returns A normalized Project object compatible with our Prisma schema.
-   */
-  normalizeData(providerData: any): Partial<Project>;
+  /** Translate provider data to internal Project model */
+  normalizeData(providerData: any): Partial<Project>
 }
 ```
 
-### 2.3. Data Normalization & Storage
+### 2.3 Data Normalisation & Storage
+Each provider maps external structures to our `Project` schema (Prisma).  Primary key mapping is `pmToolId`; status fields map to `status`.
 
-Each provider is responsible for transforming its unique data structures into our application's `Project` model (defined in `prisma/schema.prisma`). The local PostgreSQL database serves as the single source of truth for the AI agent.
-
-- **Key Mappings**: The provider must map the external tool's project/task ID to our `pmToolId` field and the project/task status to our `status` field.
-- **Client Linking**: The provider should attempt to link projects to existing clients in our database based on information available from the PM tool (e.g., a custom field for "Client Email").
-
-### 2.4. Webhook Handling
-
-A single API route will handle all incoming webhooks from all providers.
-
-- **Endpoint**: `POST /api/webhooks/pm/:provider` (e.g., `/api/webhooks/pm/asana`)
-- **Logic**:
-    1. The controller identifies the provider from the URL parameter.
-    2. It retrieves the appropriate provider implementation (e.g., `AsanaProvider`).
-    3. It validates the incoming request using the provider's specific method (e.g., checking the `X-Asana-Request-Signature` or Monday.com `challenge` token).
-    4. Upon successful validation, it passes the request body to the provider's `handleWebhook` method for processing.
+### 2.4 Webhook Handling
+All PM webhooks post to `POST /api/webhooks/pm/:provider`.
+1. Controller identifies provider and loads implementation.
+2. Request authenticity validated (signatures, tokens, etc.).
+3. Delegates to `handleWebhook` for upserts.
 
 ---
 
-## 3. Asana Provider Implementation
+## 3. Provider Implementations
 
-File: `src/services/pm-providers/asana.provider.ts`
+### 3.1 AsanaProvider (`asana.provider.ts`)
+• Auth: Personal Access Token (PAT)
+• Initial sync via `searchTasksInWorkspace`.  Pagination handled via `offset`.
+• Webhooks created with `POST /api/1.0/webhooks`, handshake via `X-Hook-Secret`.
+• Payload validation using `X-Hook-Signature`.
 
-### 3.1. Authentication
+### 3.2 JiraProvider (`jira.provider.ts`)
+• Auth: Basic Auth (`email:APITOKEN`)
+• Initial sync via `GET /rest/api/3/search` with JQL.
+• Webhooks via `POST /rest/api/3/webhook` subscribing to `jira:issue_*` events.
+• Optional URL token for authenticity.
 
-- **Method**: Personal Access Token (PAT).
-- **Details**: The user generates a PAT from their Asana Developer Console. This token will be used in the `Authorization: Bearer <TOKEN>` header for all API requests.
-
-### 3.2. Initial Data Sync
-
-- **Endpoint**: Use the `searchTasksInWorkspace` endpoint (`GET /api/1.0/workspaces/{workspace_gid}/tasks/search`). This is more efficient than iterating through projects and then tasks.
-- **Strategy**:
-    1. Fetch all tasks in the user's workspace. Use `opt_fields` to request necessary fields like `name`, `completed`, `assignee`, `projects`, `custom_fields`, `notes` to minimize response size.
-    2. Paginate through the results using the `offset` token provided in each response.
-    3. For each task, call the `normalizeData` function to map it to our internal `Project` model.
-    4. Use `prisma.project.upsert` to create or update the project in our database.
-
-### 3.3. Webhook Setup
-
-- **Endpoint**: `POST /api/1.0/webhooks`
-- **Strategy**:
-    1. During the initial setup, create a webhook subscribed to the workspace or specific projects.
-    2. **Resource**: The `resource` ID will be the `workspace_gid` or a `project_gid`.
-    3. **Target URL**: The URL will be `https://<our-app-domain>/api/webhooks/pm/asana`.
-    4. **Handshake**: Asana will send a `POST` request to the target URL with an `X-Hook-Secret` header. The endpoint must respond immediately with a `200 OK` and include the `X-Hook-Secret` in its response headers to confirm the webhook.
-
-### 3.4. Webhook Handling
-
-- **Validation**: The webhook endpoint must validate the `X-Hook-Signature` header. This is a HMAC-SHA256 hash of the request body, using the `X-Hook-Secret` as the key.
-- **Logic**:
-    1. The request body contains an array of `events`.
-    2. Iterate through the events. The `action` (e.g., `changed`, `added`, `deleted`) and `resource.resource_type` (e.g., `task`) determine what happened.
-    3. For a `task` event with an action of `changed`, fetch the updated task data using `GET /api/1.0/tasks/{task_gid}`.
-    4. Normalize the new data and update the corresponding `Project` record in our database.
+### 3.3 MondayProvider (`monday.provider.ts`)
+• Auth: Personal API Token (GraphQL).
+• Initial sync uses GraphQL `boards` & `items_page` queries with cursor pagination.
+• Webhooks via `create_webhook` mutation and challenge-response handshake.
 
 ---
 
-## 4. Jira Provider Implementation
-
-File: `src/services/pm-providers/jira.provider.ts`
-
-### 4.1. Authentication
-
-- **Method**: API Token.
-- **Details**: The user generates an API token from their Atlassian account settings. API requests will use Basic Authentication with the user's email as the username and the API token as the password. The header will be `Authorization: Basic <base64_encoded_email:token>`.
-
-### 4.2. Initial Data Sync
-
-- **Endpoint**: `GET /rest/api/3/search` (Jira Cloud REST API).
-- **Strategy**:
-    1. Use Jira Query Language (JQL) to fetch all relevant issues. A simple query like `project = "PROJECT_KEY"` can be used, or it can be left empty to search all accessible issues.
-    2. Use the `fields` parameter to specify which fields to return (e.g., `summary`, `status`, `description`, `assignee`, `project`).
-    3. Paginate through results using the `startAt` and `maxResults` parameters.
-    4. For each issue, call `normalizeData` to map it to our `Project` model.
-    5. Use `prisma.project.upsert` to save the data.
-
-### 4.3. Webhook Setup
-
-- **Endpoint**: `POST /rest/api/3/webhook`
-- **Strategy**:
-    1. Register a new webhook for the client's Jira instance.
-    2. **URL**: The URL will be `https://<our-app-domain>/api/webhooks/pm/jira`.
-    3. **Events**: Subscribe to relevant events, such as `jira:issue_created`, `jira:issue_updated`, and `jira:issue_deleted`.
-    4. **JQL Filter**: Optionally, use the `jqlFilter` to restrict notifications to specific projects or issue types (e.g., `"project = ABC"`).
-    5. **Secret**: Jira doesn't use a handshake secret by default for server-to-server webhooks. We can secure the endpoint by adding a unique, randomly generated token to the webhook URL itself (e.g., `.../jira?token=SECRET_TOKEN`).
-
-### 4.4. Webhook Handling
-
-- **Validation**: If a secret token is included in the URL, validate it against the one stored for the business.
-- **Logic**:
-    1. The webhook payload contains information about the event in the `webhookEvent` field (e.g., `jira:issue_updated`).
-    2. The payload also contains an `issue` object with the latest data.
-    3. There is no need for a follow-up API call. The data in the payload is sufficient.
-    4. Pass the `issue` object to the `normalizeData` function and update our database.
-
----
-
-## 5. Monday.com Provider Implementation
-
-File: `src/services/pm-providers/monday.provider.ts`
-
-### 5.1. Authentication
-
-- **Method**: Personal API Token.
-- **Details**: The user gets this from the "Developers" section of their Monday.com avatar menu. The token is sent in the `Authorization` header. Note: Monday.com's API v2 is GraphQL-based.
-
-### 5.2. Initial Data Sync
-
-- **Endpoint**: The single GraphQL endpoint (`https://api.monday.com/v2`).
-- **Strategy**:
-    1. Construct a GraphQL query to fetch `boards` (equivalent to projects).
-    2. For each board, use a nested `items_page` query to fetch all `items` (equivalent to tasks). Use cursor-based pagination on the `items_page` query.
-    3. Include `column_values` in the query to get status, dates, and other relevant fields.
-    4. For each item, call `normalizeData` to map it to our `Project` model.
-    5. Use `prisma.project.upsert` to save the data.
-
-### 5.3. Webhook Setup
-
-- **Endpoint**: Use the `create_webhook` GraphQL mutation.
-- **Strategy**:
-    1. Execute the `create_webhook` mutation.
-    2. **`board_id`**: The ID of the board to subscribe to.
-    3. **`url`**: `https://<our-app-domain>/api/webhooks/pm/monday`.
-    4. **`event`**: The type of event to subscribe to (e.g., `create_item`, `update_column_value`). We will need to create webhooks for multiple events.
-    5. **Handshake**: The `create_webhook` mutation will return a `challenge` code in its response. The webhook endpoint must be prepared to receive a POST request with this challenge in the JSON body and respond with `{ "challenge": "THE_CHALLENGE_CODE" }`.
-
-### 5.4. Webhook Handling
-
-- **Validation**: The initial request is the challenge/response handshake. Subsequent requests are the actual event notifications. The payload is not signed, so security relies on the obscurity of the webhook URL.
-- **Logic**:
-    1. The webhook payload will contain an `event` object.
-    2. The `event.type` indicates what happened. For an `update_column_value` event, the `event.columnId` will tell you which field changed (e.g., "status") and `event.value` will contain the new value.
-    3. You will need to use the `event.pulseId` (item ID) to look up the project in our database and update the appropriate field.
+## 4. Future Providers
+Implementing a new provider involves:
+1. Creating `<tool>.provider.ts` in `pm-providers`.
+2. Implementing all methods from the interface.
+3. Registering the provider in the factory used by the webhook controller.
 
 </rewritten_file>

@@ -1028,4 +1028,28 @@ Open Tasks:
   - Code optimization
   - Infrastructure scaling
   - Cache improvements
-  - Query optimization 
+  - Query optimization
+
+### Project Management Integration – Detailed Design (v1)
+
+The platform now adopts a **provider-based architecture** for connecting to third-party Project Management (PM) tools. A common `ProjectManagementProvider` interface guarantees consistent behaviour across all providers, ensuring modular, scalable, and maintainable integrations.
+
+#### Supported Platforms
+- **Asana**
+- **Jira**
+- **Monday.com**  
+  _(Trello support will be evaluated post-v1)_
+
+#### Integration Flow
+1. **Authentication** – Each business supplies a single admin API token for the chosen tool. The token is stored securely and linked to the business record.
+2. **Provider Abstraction Layer**  
+   - Directory: `src/services/pm-providers/`  
+   - Interface: `pm.provider.interface.ts` exposes `connect`, `syncProjects`, `getProjectDetails`, `setupWebhooks`, and `handleWebhook` methods.  
+   - Concrete implementations: `asana.provider.ts`, `jira.provider.ts`, `monday.provider.ts`.
+3. **One-way Initial Data Sync** – After a successful `connect`, `syncProjects` fetches all projects/tasks, normalises them into internal models (`Project`, `Client`, etc.) and persists them via Prisma.  This local cache guarantees fast, read-only access for the AI agent.
+4. **Webhook-based Real-time Updates** – Each provider registers webhooks via `setupWebhooks`.  All events are POSTed to `/api/webhooks/pm/:provider`, validated, and delegated to the provider's `handleWebhook`, which updates local records in real-time.
+5. **Data Normalization Layer** – Translates provider-specific payloads into the unified `Project` schema.  Example mappings:
+   - Asana `task.gid`  →  `Project.pmToolId`
+   - Jira  `issue.key` →  `Project.pmToolId`
+   - Monday.com `item.id` →  `Project.pmToolId`
+   - Asana `task.name` / Jira `issue.fields.summary` / Monday.com `item.name` →  `Project.name` 

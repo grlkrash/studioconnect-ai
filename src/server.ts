@@ -30,6 +30,8 @@ import knowledgeBaseRoutes from './api/knowledgeBaseRoutes'
 import businessRoutes from './api/businessRoutes'
 import agentConfigRoutes from './api/agentConfigRoutes'
 import leadQuestionRoutes from './api/leadQuestionRoutes'
+import integrationRoutes from './api/integrationRoutes'
+import webhookRoutes from './api/webhookRoutes'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -105,6 +107,10 @@ const corsOptions = {
 
 // Apply CORS middleware first
 app.use(cors(corsOptions))
+
+// --- Webhook routes (need raw body) BEFORE body parsers ---
+app.use('/api/webhooks', express.raw({ type: '*/*', limit: '10mb' }))
+app.use('/api/webhooks', webhookRoutes)
 
 // Body parsing middleware - MUST BE BEFORE ROUTES
 app.use(express.json({ 
@@ -311,6 +317,7 @@ nextApp.prepare()
     app.use('/api/business', businessRoutes)
     app.use('/api/agent-config', agentConfigRoutes)
     app.use('/api/lead-questions', leadQuestionRoutes)
+    app.use('/api/integrations', integrationRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
 
     // 3. Specific file serving routes

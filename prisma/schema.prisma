@@ -25,9 +25,9 @@ model Business {
   businessHours           Json?
   timezone                String?
   /// *
-  ///    * One or more email addresses that will receive notifications (comma-separated
-  ///    * string array in Postgres). Replaces the old single `notificationEmail`
-  ///    * field but we keep the original for backward-compat until data is migrated.
+  /// * One or more email addresses that will receive notifications (comma-separated
+  /// * string array in Postgres). Replaces the old single `notificationEmail`
+  /// * field but we keep the original for backward-compat until data is migrated.
   notificationEmails      String[]        @default([])
   agentConfig             AgentConfig?
   callLogs                CallLog[]
@@ -217,7 +217,7 @@ model Project {
 model Integration {
   id            String   @id @default(cuid())
   businessId    String
-  type          String
+  provider      String   @map("type")
   apiKey        String?
   webhookSecret String?
   settings      Json?
