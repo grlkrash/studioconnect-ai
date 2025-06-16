@@ -58,6 +58,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@aws-sdk/client-polly": "^3.828.0",
     "@openai/agents": "0.0.5",
     "@types/twilio": "^3.19.2",
     "bcrypt": "^6.0.0",

@@ -20,6 +20,7 @@ export default function AgentSettings() {
     personaPrompt: string
     openaiVoice: string
     openaiModel: string
+    ttsProvider: 'openai' | 'polly'
     useOpenaiTts: boolean
     voiceGreetingMessage: string
     widgetTheme?: {
@@ -39,6 +40,7 @@ export default function AgentSettings() {
     welcomeMessage: "Hello! How can I help you today?",
     openaiVoice: "NOVA",
     openaiModel: "tts-1",
+    ttsProvider: 'openai',
     useOpenaiTts: true,
     voiceGreetingMessage: "Hello! I'm your AI assistant. How can I help you today?",
     widgetTheme: {
@@ -76,7 +78,10 @@ export default function AgentSettings() {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({
+          ...settings,
+          ttsProvider: settings.ttsProvider,
+        }),
       })
       if (res.ok) {
         toast({ title: "Saved", description: "Agent settings updated." })
@@ -172,6 +177,21 @@ export default function AgentSettings() {
                       value={settings.agentName}
                       onChange={(e) => setSettings({ ...settings, agentName: e.target.value })}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Provider</Label>
+                    <Select
+                      value={settings.ttsProvider}
+                      onValueChange={(value) => setSettings({ ...settings, ttsProvider: value as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI (real-time)</SelectItem>
+                        <SelectItem value="polly">Amazon Polly (Twilio fallback)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="openaiVoice">Voice</Label>
@@ -440,6 +460,7 @@ export default function AgentSettings() {
                             text: settings.welcomeMessage,
                             model: settings.openaiModel,
                             voice: settings.openaiVoice,
+                            provider: settings.ttsProvider,
                           }),
                         })
                         if (!res.ok) throw new Error("failed")
