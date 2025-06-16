@@ -894,9 +894,9 @@ class RealtimeAgentService {
     // 4. Fetch Lead Capture Questions
     const agentConfig = await prisma.agentConfig.findUnique({
         where: { businessId: state.businessId },
-        include: { leadCaptureQuestions: { orderBy: { order: 'asc' } } }
+        include: { questions: { orderBy: { order: 'asc' } } }
     });
-    const leadCaptureQuestions = agentConfig?.leadCaptureQuestions || [];
+    const leadCaptureQuestions = agentConfig?.questions || [];
 
     return createVoiceSystemPrompt(business?.name || 'this creative agency', context, leadCaptureQuestions);
   }

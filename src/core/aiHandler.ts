@@ -576,7 +576,7 @@ const _processMessage = async (
       include: {
         agentConfig: {
           include: {
-            leadCaptureQuestions: { orderBy: { order: 'asc' } },
+            questions: { orderBy: { order: 'asc' } },
           },
         },
       },
@@ -643,7 +643,7 @@ const _processMessage = async (
       context = contextParts.join('\n\n')
     }
 
-    const leadCaptureQuestions = business.agentConfig?.leadCaptureQuestions || []
+    const leadCaptureQuestions = business.agentConfig?.questions || []
 
     const systemMessage = createVoiceSystemPrompt(
       business.name,
@@ -658,7 +658,10 @@ const _processMessage = async (
       // systemMessage += `\n\n**ADDITIONAL PERSONA GUIDELINES:**\n${personaPrompt}`;
     }
 
-    const finalHistory = conversationHistory.map((h: { role: string; content: string }) => ({ role: h.role, content: h.content }))
+    const finalHistory = conversationHistory.map((h: { role: string; content: string }) => ({
+      role: h.role as 'user' | 'assistant',
+      content: h.content,
+    }))
 
     console.log('[AI Handler] Generating chat completion with system message:', systemMessage.substring(0, 500) + '...')
 
@@ -668,7 +671,7 @@ const _processMessage = async (
       { role: 'user', content: message }
     ])
 
-    const reply = cleanVoiceResponse(aiResponse)
+    const reply = cleanVoiceResponse(aiResponse || '')
     
     // TEMPORARY: Forcing a simple response for now to test the pipeline
     // const reply = "This is a test response."

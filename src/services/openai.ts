@@ -35,25 +35,47 @@ export const getEmbedding = async (
 
 /**
  * Gets a chat completion from OpenAI's API.
+ * Can either take a user prompt and system prompt, or a full message history.
  * @param userPrompt The user's prompt/message.
  * @param systemPrompt An optional system message to guide the AI's behavior.
  * @param model The chat model to use.
  * @returns A promise that resolves to the AI's response text or null if no content.
  */
-export const getChatCompletion = async (
+export function getChatCompletion(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  model?: string
+): Promise<string | null>;
+export function getChatCompletion(
   userPrompt: string,
   systemPrompt?: string,
-  model: string = 'gpt-4o' // Or your preferred model like gpt-3.5-turbo
-): Promise<string | null> => {
+  model?: string
+): Promise<string | null>;
+export async function getChatCompletion(
+  promptOrMessages: string | OpenAI.Chat.ChatCompletionMessageParam[],
+  systemPromptOrModel?: string,
+  model: string = 'gpt-4o'
+): Promise<string | null> {
   try {
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    if (systemPrompt) {
-      messages.push({ role: 'system', content: systemPrompt });
+    let messages: OpenAI.Chat.ChatCompletionMessageParam[];
+    let chatModel = model;
+
+    if (Array.isArray(promptOrMessages)) {
+      messages = promptOrMessages;
+      if (systemPromptOrModel) {
+        chatModel = systemPromptOrModel;
+      }
+    } else {
+      messages = [];
+      const userPrompt = promptOrMessages;
+      const systemPrompt = systemPromptOrModel;
+      if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt });
+      }
+      messages.push({ role: 'user', content: userPrompt });
     }
-    messages.push({ role: 'user', content: userPrompt });
 
     const response = await openai.chat.completions.create({
-      model: model,
+      model: chatModel,
       messages: messages,
     });
     return response.choices[0]?.message?.content || null;
