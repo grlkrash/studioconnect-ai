@@ -221,6 +221,9 @@ app.get('/health', (req: Request, res: Response) => {
   })
 })
 
+// Server readiness flag for clearer boot-status responses
+let isServerReady = false
+
 // ────────────────────────────────────────────────────────────
 // CRITICAL WEBHOOK ROUTES (mounted early)
 // Mount external-facing webhooks *before* the asynchronous Next.js
@@ -229,6 +232,19 @@ app.get('/health', (req: Request, res: Response) => {
 // ────────────────────────────────────────────────────────────
 
 app.use('/api/voice', voiceRoutes)
+app.use('/api/chat', chatRoutes)
+
+// Fallback 503 handler during boot – must come AFTER early routes but BEFORE Next.js preparation
+app.use('*', (req: Request, res: Response, next: NextFunction) => {
+  if (!isServerReady) {
+    res.status(503).json({
+      error: 'Service Unavailable – server is still starting, please retry shortly',
+      timestamp: new Date().toISOString()
+    })
+    return
+  }
+  next()
+})
 
 // Set up EJS for server-side rendering
 app.set('view engine', 'ejs')
@@ -286,7 +302,8 @@ nextApp.prepare()
     })
 
     // 2. Mount API routes
-    app.use('/api/chat', chatRoutes)
+    // (chat route mounted earlier to avoid 404 during Next.js prepare)
+    // app.use('/api/chat', chatRoutes)
     app.use('/api/admin', adminRoutes)
     app.use('/api/clients', clientRoutes)
     app.use('/api/projects', projectRoutes)
@@ -370,6 +387,9 @@ nextApp.prepare()
         method: req.method
       })
     })
+
+    // Signal that every route has been mounted – server is ready
+    isServerReady = true
   })
 
 // Global error handler
