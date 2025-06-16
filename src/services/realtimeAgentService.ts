@@ -62,6 +62,7 @@ interface ConnectionState {
   vadThreshold: number;
   /** Indicates that we are currently recording an utterance */
   isRecording: boolean;
+  isProcessing: boolean;
   __configLoaded?: boolean;
   openaiClient?: OpenAIRealtimeClient;
 }
@@ -257,6 +258,7 @@ class RealtimeAgentService {
       vadThreshold: 25,
       /** start with no active recording */
       isRecording: false,
+      isProcessing: false,
       __configLoaded: false,
       openaiClient: undefined
     };
@@ -327,7 +329,7 @@ class RealtimeAgentService {
         await client.connect()
 
         // Relay assistant audio back to Twilio in real time
-        client.onAssistantAudio((b64) => {
+        client.on('assistantAudio', (b64) => {
           if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
             state.ws.send(JSON.stringify({
               event: 'media',
@@ -336,6 +338,18 @@ class RealtimeAgentService {
             }))
           }
         })
+
+        // Handle text responses to maintain conversation history
+        client.on('assistantMessage', (text) => {
+          this.addToConversationHistory(state, 'assistant', text);
+          console.log(`[REALTIME AGENT] Assistant: ${text}`);
+        });
+
+        // Handle errors
+        client.on('error', (error) => {
+          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
+          // could add fallback logic here
+        });
 
         state.openaiClient = client
 
@@ -347,7 +361,7 @@ class RealtimeAgentService {
           state.welcomeMessageDelivered = true
         }
       } catch (err) {
-        console.error('[RealtimeAgent] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
+        console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
       }
     }
   }
@@ -491,7 +505,6 @@ class RealtimeAgentService {
           const cfg = await prisma.agentConfig.findUnique({
             where: { businessId: state.businessId },
             select: {
-              ttsProvider: true,
               useOpenaiTts: true,
               openaiVoice: true,
               openaiModel: true,
@@ -500,7 +513,9 @@ class RealtimeAgentService {
           })
 
           if (cfg) {
-            state.ttsProvider = (cfg.ttsProvider as any) || (cfg.useOpenaiTts ? 'openai' : 'polly')
+            // Check for ttsProvider on the fetched object to be safe.
+            const provider = (cfg as any).ttsProvider
+            state.ttsProvider = provider || (cfg.useOpenaiTts ? 'openai' : 'polly')
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1'
             state.personaPrompt = cfg.personaPrompt
@@ -522,7 +537,7 @@ class RealtimeAgentService {
             state.personaPrompt || undefined, // Pass prompt; fallback to default
           )
           await client.connect()
-          client.onAssistantAudio((b64) => {
+          client.on('assistantAudio', (b64) => {
             if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
               state.ws.send(
                 JSON.stringify({
@@ -533,6 +548,18 @@ class RealtimeAgentService {
               )
             }
           })
+          
+          // Handle text responses to maintain conversation history
+          client.on('assistantMessage', (text) => {
+            this.addToConversationHistory(state, 'assistant', text);
+            console.log(`[REALTIME AGENT] Assistant: ${text}`);
+          });
+
+          // Handle errors
+          client.on('error', (error) => {
+            console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
+          });
+
           state.openaiClient = client
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to bootstrap OpenAI realtime client – will fall back to local TTS:', err)
@@ -544,6 +571,7 @@ class RealtimeAgentService {
       // If the realtime client is active, it is the single source of truth for audio.
       // Send the text to it and let it handle the TTS, then exit.
       if (state.openaiClient) {
+        this.addToConversationHistory(state, 'user', text)
         state.openaiClient.sendUserText(text)
         state.openaiClient.requestAssistantResponse()
         return
@@ -590,10 +618,17 @@ class RealtimeAgentService {
   }
 
   private async flushAudioQueue(state: ConnectionState): Promise<void> {
-    if (state.audioQueue.length === 0) return
+    if (state.audioQueue.length === 0) {
+      state.isProcessing = false
+      return
+    }
+
+    const audioToProcess = [...state.audioQueue]
+    state.audioQueue = []
+    state.isRecording = false
 
     try {
-      const rawBuffers = state.audioQueue.map((b64) => Buffer.from(b64, 'base64'))
+      const rawBuffers = audioToProcess.map((b64) => Buffer.from(b64, 'base64'))
       const rawData = Buffer.concat(rawBuffers)
 
       // Skip processing if the utterance is too short (<200 ms) to avoid Whisper 400 errors
@@ -626,10 +661,10 @@ class RealtimeAgentService {
       await cleanupTempFile(rawPath)
       await cleanupTempFile(wavPath)
 
-      // Reset queue regardless of transcription success
-      state.audioQueue = []
+      // Reset queue regardless of transcription success - This is now done at the top
+      // state.audioQueue = []
       // Mark that we have stopped recording this utterance
-      state.isRecording = false
+      // state.isRecording = false
 
       if (!transcriptRaw) return
 
@@ -663,6 +698,8 @@ class RealtimeAgentService {
       console.error('[REALTIME AGENT] Error flushing audio queue:', error)
       await this.streamTTS(state, 'I encountered an error while processing your request.')
       state.audioQueue = []
+    } finally {
+      state.isProcessing = false
     }
   }
 
@@ -930,8 +967,8 @@ class RealtimeAgentService {
         }
 
         // Flush when we\'ve been in silence for a while **and** we were previously recording
-        if (state.isRecording && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
-          state.isRecording = false
+        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
+          state.isProcessing = true
           this.flushAudioQueue(state)
         }
         break

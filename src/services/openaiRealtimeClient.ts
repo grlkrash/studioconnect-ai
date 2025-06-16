@@ -1,11 +1,12 @@
 import WebSocket from 'ws'
+import { EventEmitter } from 'events'
 
 /**
- * Minimal wrapper around the OpenAI Realtime API (experimental).
+ * Wrapper around the OpenAI Realtime API (experimental).
  * Handles session bootstrap, streaming caller audio → OpenAI and
- * emitting assistant audio deltas back to the caller in g711-ulaw.
+ * emitting events for assistant audio, text, and errors.
  */
-export class OpenAIRealtimeClient {
+export class OpenAIRealtimeClient extends EventEmitter {
   private ws: WebSocket | null = null
   private ready = false
 
@@ -13,7 +14,9 @@ export class OpenAIRealtimeClient {
     private readonly apiKey: string,
     private readonly voice: string = 'alloy',
     private readonly instructions: string = 'You are a helpful assistant.',
-  ) {}
+  ) {
+    super()
+  }
 
   /** Establishes the WebSocket connection and configures a new session. */
   async connect(endpoint = 'wss://api.openai.com/v1/realtime'): Promise<void> {
@@ -29,11 +32,14 @@ export class OpenAIRealtimeClient {
 
       this.ws.once('open', () => {
         this.configureSession()
+        this.startListening()
         this.ready = true
+        this.emit('open')
         resolve()
       })
 
       this.ws.once('error', (err) => {
+        this.emit('error', err)
         reject(err)
       })
     })
@@ -75,9 +81,12 @@ export class OpenAIRealtimeClient {
   /** Close connection. */
   close(): void {
     if (this.ws) {
-      try { this.ws.close() } catch {}
+      try {
+        this.ws.close()
+      } catch {}
       this.ws = null
       this.ready = false
+      this.removeAllListeners()
     }
   }
 
@@ -98,18 +107,41 @@ export class OpenAIRealtimeClient {
     this.ws.send(JSON.stringify(cfg))
   }
 
-  /** Register a handler for assistant audio deltas. */
-  onAssistantAudio(cb: (b64Ulaw: string) => void): void {
+  /** Start listening to messages and emitting events. */
+  private startListening(): void {
     if (!this.ws) return
+
     this.ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString())
+        this.emit('message', msg) // Generic message for logging
+
         if (msg.type === 'response.audio.delta' && msg.delta) {
-          cb(msg.delta as string)
+          this.emit('assistantAudio', msg.delta as string)
+        } else if (
+          msg.type === 'conversation.item.update' &&
+          msg.item?.role === 'assistant'
+        ) {
+          const contentItem = msg.item.content?.[0]
+          if (contentItem?.type === 'text' && contentItem.text) {
+            this.emit('assistantMessage', contentItem.text as string)
+          }
+        } else if (msg.type === 'error') {
+          this.emit(
+            'error',
+            new Error(msg.message || 'Unknown OpenAI Realtime Error'),
+          )
         }
       } catch (err) {
         console.error('[OpenAIRealtimeClient] Failed to parse message', err)
+        this.emit('error', err as Error)
       }
+    })
+
+    this.ws.on('close', (code, reason) => {
+      this.emit('close', code, reason.toString())
+      this.ready = false
+      this.ws = null
     })
   }
 } 
