@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { SidebarProvider } from "@/components/ui/sidebar"
+import { BusinessProvider } from "@/context/business-context"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Toaster } from "@/components/ui/toaster"
 
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <BusinessProvider>
         <SidebarProvider>
           <div className="flex min-h-screen w-full">
             <AppSidebar />
@@ -29,6 +31,7 @@ export default function RootLayout({
           </div>
           <Toaster />
         </SidebarProvider>
+        </BusinessProvider>
       </body>
     </html>
   )

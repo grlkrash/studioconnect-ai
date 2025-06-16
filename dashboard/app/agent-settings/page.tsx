@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Settings, Save, RotateCcw, Play } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useBusiness } from "@/context/business-context"
 
 export default function AgentSettings() {
   const { toast } = useToast()
+  const { businessId } = useBusiness()
 
   interface Settings {
     agentName: string
@@ -59,9 +61,10 @@ export default function AgentSettings() {
 
   // Fetch existing config
   useEffect(() => {
+    if (!businessId) return
     ;(async () => {
       try {
-        const res = await fetch(`/api/agent-config${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, { credentials: "include" })
+        const res = await fetch(`/api/agent-config${businessId ? `?businessId=${businessId}` : ''}`, { credentials: "include" })
         if (res.ok) {
           const data = await res.json()
           if (data.config) {
@@ -77,11 +80,11 @@ export default function AgentSettings() {
         console.error("Failed to load agent config", err)
       }
     })()
-  }, [])
+  }, [businessId])
 
   const handleSave = async () => {
     try {
-      const res = await fetch(`/api/agent-config${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+      const res = await fetch(`/api/agent-config${businessId ? `?businessId=${businessId}` : ''}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -112,19 +115,19 @@ export default function AgentSettings() {
     useEffect(() => {
       ;(async () => {
         try {
-          const res = await fetch(`/api/dashboard-status${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+          const res = await fetch(`/api/dashboard-status${businessId ? `?businessId=${businessId}` : ''}`)
           if (res.ok) setStatus(await res.json())
         } catch {
           /* swallow */
         }
       })()
-    }, [])
+    }, [businessId])
 
     return (
       <>
         <div className="flex justify-between items-center">
           <span className="text-sm text-slate-600">Business ID</span>
-          <span className="text-xs font-mono">{process.env.NEXT_PUBLIC_BUSINESS_ID || status?.businessId || '—'}</span>
+          <span className="text-xs font-mono">{businessId || status?.businessId || '—'}</span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-sm text-slate-600">Agent Status</span>

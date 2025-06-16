@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useBusiness } from '@/context/business-context'
 
 export interface KnowledgeEntry {
   id: string
@@ -15,11 +16,12 @@ export function useKnowledgeBase() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { businessId } = useBusiness()
 
   const fetchEntries = async () => {
     try {
       setLoading(true)
-      const url = `/api/knowledge-base${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`
+      const url = `/api/knowledge-base${businessId ? `?businessId=${businessId}` : ''}`
       const res = await fetch(url, { credentials: 'include' })
       if (!res.ok) throw new Error('failed')
       const data = await res.json()
@@ -33,11 +35,13 @@ export function useKnowledgeBase() {
   }
 
   useEffect(() => {
+    if (!businessId) return
     fetchEntries()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId])
 
   async function addText(payload: { content: string; metadata?: any }) {
-    const res = await fetch(`/api/knowledge-base${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/knowledge-base${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -54,7 +58,7 @@ export function useKnowledgeBase() {
   async function uploadFile(file: File) {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`/api/knowledge-base/upload${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/knowledge-base/upload${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       body: form,
@@ -68,7 +72,7 @@ export function useKnowledgeBase() {
   }
 
   async function updateEntry(id: string, content: string) {
-    const res = await fetch(`/api/knowledge-base/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/knowledge-base/${id}${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -83,7 +87,7 @@ export function useKnowledgeBase() {
   }
 
   async function deleteEntry(id: string) {
-    const res = await fetch(`/api/knowledge-base/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/knowledge-base/${id}${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'DELETE',
       credentials: 'include',
     })

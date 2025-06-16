@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useBusiness } from '@/context/business-context'
 
 export interface LeadQuestion {
   id: string
@@ -17,11 +18,12 @@ export function useLeadQuestions() {
   const [questions, setQuestions] = useState<LeadQuestion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { businessId } = useBusiness()
 
   const fetchQuestions = async () => {
     try {
       setLoading(true)
-      const url = `/api/lead-questions${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`
+      const url = `/api/lead-questions${businessId ? `?businessId=${businessId}` : ''}`
       const res = await fetch(url, { credentials: 'include' })
       if (!res.ok) throw new Error('failed')
       const data = await res.json()
@@ -46,11 +48,13 @@ export function useLeadQuestions() {
   }
 
   useEffect(() => {
+    if (!businessId) return
     fetchQuestions()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId])
 
   const addQuestion = async (payload: Partial<LeadQuestion>) => {
-    const res = await fetch(`/api/lead-questions${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/lead-questions${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -65,7 +69,7 @@ export function useLeadQuestions() {
   }
 
   async function updateQuestion(id: string, updates: Partial<LeadQuestion>) {
-    const res = await fetch(`/api/lead-questions/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/lead-questions/${id}${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -75,7 +79,7 @@ export function useLeadQuestions() {
   }
 
   async function deleteQuestion(id: string) {
-    const res = await fetch(`/api/lead-questions/${id}${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, {
+    const res = await fetch(`/api/lead-questions/${id}${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'DELETE',
       credentials: 'include',
     })

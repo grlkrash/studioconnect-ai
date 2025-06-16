@@ -22,6 +22,7 @@ import {
 } from "recharts"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
+import { useBusiness } from "@/context/business-context"
 
 const efficiencyMetrics = [
   { metric: "Client Response Time", current: "2.3 min", previous: "45 min", improvement: 95 },
@@ -43,6 +44,8 @@ export default function AnalyticsPage() {
   const [callVolumeData, setCallVolumeData] = useState<any[]>([])
   const [projectTypeData, setProjectTypeData] = useState<any[]>([])
 
+  const { businessId } = useBusiness()
+
   const numeric = (v: number | "") => (typeof v === "number" && !isNaN(v) ? v : 0)
   const totalROI =
     numeric(laborSavings) +
@@ -51,11 +54,12 @@ export default function AnalyticsPage() {
     numeric(responseReduction) +
     numeric(utilizationGain)
 
-  // Fetch summary on mount
+  // Fetch summary when businessId ready
   useEffect(() => {
+    if (!businessId) return
     ;(async () => {
       try {
-        const sumRes = await fetch(`/api/analytics/summary${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+        const sumRes = await fetch(`/api/analytics/summary${businessId ? `?businessId=${businessId}` : ''}`)
         if (sumRes.ok) {
           const sum = await sumRes.json()
           setRevenueData(sum.revenueData)
@@ -63,7 +67,7 @@ export default function AnalyticsPage() {
           setProjectTypeData(sum.projectTypeData)
         }
 
-        const res = await fetch(`/api/dashboard-status${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`)
+        const res = await fetch(`/api/dashboard-status${businessId ? `?businessId=${businessId}` : ''}`)
         if (!res.ok) return
         const data = await res.json()
         // crude estimate: labor cost saved = callsToday * avgDuration (sec) * $1 per second (placeholder)
@@ -73,7 +77,7 @@ export default function AnalyticsPage() {
         setLaborSavings(estLabor)
       } catch {}
     })()
-  }, [])
+  }, [businessId])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
@@ -102,7 +106,7 @@ export default function AnalyticsPage() {
                 <SelectItem value="1year">Last year</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={()=>{window.location.href=`/api/analytics/report${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`}}>
+            <Button onClick={()=>{window.location.href=`/api/analytics/report${businessId ? `?businessId=${businessId}` : ''}`}}>
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
