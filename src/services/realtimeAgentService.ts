@@ -51,6 +51,10 @@ interface ConnectionState {
   toNumber: string | null;
   clientId?: string;
   currentFlow: string | null;
+  ttsProvider: 'openai' | 'polly';
+  openaiVoice: string;
+  openaiModel: string;
+  __configLoaded?: boolean;
 }
 
 interface AgentSession {
@@ -105,7 +109,7 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
 
 // State management
-const activeAgents = new Map<string, AgentState>();
+const activeAgents = new Map<string, ConnectionState>();
 let cleanupInterval: NodeJS.Timeout;
 
 // Initialize cleanup interval
@@ -230,7 +234,11 @@ class RealtimeAgentService {
       welcomeMessageAttempts: 0,
       isCleaningUp: false,
       lastActivity: Date.now(),
-      toNumber: null
+      toNumber: null,
+      ttsProvider: 'openai',
+      openaiVoice: 'nova',
+      openaiModel: 'tts-1',
+      __configLoaded: false
     };
 
     // Try to identify client if phone number is available
@@ -400,7 +408,18 @@ class RealtimeAgentService {
     }
 
     try {
-      const mp3Path = await generateSpeechFromText(text)
+      // Load agent config once per call
+      if (state.businessId && !state.__configLoaded) {
+        const cfg = await prisma.agentConfig.findUnique({ where: { businessId: state.businessId } })
+        if (cfg) {
+          state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly')
+          state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
+          state.openaiModel = cfg.openaiModel || 'tts-1'
+        }
+        state.__configLoaded = true
+      }
+
+      const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, state.ttsProvider)
       if (!mp3Path) return
 
       const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`)

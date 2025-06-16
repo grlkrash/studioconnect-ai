@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
 
 dotenv.config(); // Ensures OPENAI_API_KEY is loaded from .env
 
@@ -114,8 +115,9 @@ export const getTranscription = async (
  */
 export const generateSpeechFromText = async (
   textToSpeak: string,
-  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
-  model: 'tts-1' | 'tts-1-hd' = 'tts-1'
+  voice: string = 'nova',
+  model: 'tts-1' | 'tts-1-hd' = 'tts-1',
+  provider: 'openai' | 'polly' = 'openai'
 ): Promise<string | null> => {
   if (!textToSpeak || textToSpeak.trim().length === 0) {
     console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
@@ -124,22 +126,36 @@ export const generateSpeechFromText = async (
   console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..." using model: ${model}`);
   
   try {
-    const mp3 = await openai.audio.speech.create({
-      model: model,
-      voice: voice,
-      input: textToSpeak,
-    });
+    if (provider === 'openai') {
+      const mp3 = await openai.audio.speech.create({
+        model,
+        voice: voice.toLowerCase() as any,
+        input: textToSpeak,
+      })
 
-    const tempFileName = `openai_speech_${Date.now()}.mp3`;
-    const tempFilePath = path.join(os.tmpdir(), tempFileName);
+      const tempFileName = `openai_speech_${Date.now()}.mp3`
+      const tempFilePath = path.join(os.tmpdir(), tempFileName)
+      const buffer = Buffer.from(await mp3.arrayBuffer())
+      await fs.promises.writeFile(tempFilePath, buffer)
+      return tempFilePath
+    }
 
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    await fs.promises.writeFile(tempFilePath, buffer);
-
-    console.log(`[OpenAI TTS] Speech audio file saved to: ${tempFilePath}`);
-    return tempFilePath;
+    // Polly fallback
+    const polly = new PollyClient({ region: process.env.AWS_REGION || 'us-east-1' })
+    const synth = new SynthesizeSpeechCommand({
+      Text: textToSpeak,
+      OutputFormat: 'mp3',
+      VoiceId: voice.charAt(0).toUpperCase() + voice.slice(1).toLowerCase() as any,
+    })
+    const res = await polly.send(synth)
+    const uint8 = await res.AudioStream?.transformToByteArray()
+    if (!uint8) throw new Error('Polly audio empty')
+    const tempFileName = `polly_speech_${Date.now()}.mp3`
+    const tempFilePath = path.join(os.tmpdir(), tempFileName)
+    await fs.promises.writeFile(tempFilePath, Buffer.from(uint8))
+    return tempFilePath
   } catch (error) {
-    console.error('[OpenAI TTS] Error generating speech:', error);
-    return null;
+    console.error('[TTS] Error generating speech:', error)
+    return null
   }
 }; 

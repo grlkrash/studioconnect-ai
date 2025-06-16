@@ -75,6 +75,7 @@ model AgentConfig {
   openaiModel                  String                @default("tts-1")
   useOpenaiTts                 Boolean               @default(true)
   openaiVoice                  OpenAiVoice           @default(NOVA)
+  ttsProvider                  String                @default("openai")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 

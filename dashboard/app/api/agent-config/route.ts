@@ -29,6 +29,7 @@ export async function PUT(req: NextRequest) {
       'openaiModel',
       'useOpenaiTts',
       'voiceGreetingMessage',
+      'ttsProvider',
       'widgetTheme',
     ] as const
 
