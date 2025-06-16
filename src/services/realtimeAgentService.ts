@@ -486,20 +486,60 @@ class RealtimeAgentService {
        */
       if (state.businessId && !state.__configLoaded) {
         try {
-          const cfg = await prisma.agentConfig.findUnique({ where: { businessId: state.businessId } })
+          // Fetch ONLY the columns we actually need to avoid runtime errors when the
+          // database schema is missing newer, optional columns (e.g. widgetTheme).
+          const cfg = await prisma.agentConfig.findUnique({
+            where: { businessId: state.businessId },
+            select: {
+              ttsProvider: true,
+              useOpenaiTts: true,
+              openaiVoice: true,
+              openaiModel: true,
+            },
+          })
+
           if (cfg) {
-            state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly')
+            state.ttsProvider = (cfg.ttsProvider as any) || (cfg.useOpenaiTts ? 'openai' : 'polly')
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1'
           }
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message)
-          // swallow – we already have safe defaults on the state object
         } finally {
-          // Ensure we never attempt the lookup again for this call, even if it failed
           state.__configLoaded = true
         }
       }
+
+      // If the business is configured for realtime voice and we haven't yet
+      // established a realtime session, do that now.
+      if (state.ttsProvider === 'realtime' && !state.openaiClient && process.env.OPENAI_API_KEY) {
+        try {
+          const client = new OpenAIRealtimeClient(process.env.OPENAI_API_KEY, state.openaiVoice)
+          await client.connect()
+          client.onAssistantAudio((b64) => {
+            if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+              state.ws.send(
+                JSON.stringify({
+                  event: 'media',
+                  streamSid: state.streamSid,
+                  media: { payload: b64 },
+                }),
+              )
+            }
+          })
+          state.openaiClient = client
+        } catch (err) {
+          console.error('[REALTIME AGENT] Failed to bootstrap OpenAI realtime client – will fall back to local TTS:', err)
+          // Ensure we don't attempt again in this call
+          state.ttsProvider = 'openai'
+        }
+      }
+
+      // NOTE: We currently keep the local MP3 → ulaw pipeline even when the
+      // realtime client is active.  This guarantees we have deterministic
+      // output while we continue to evaluate the quality of the LLM-generated
+      // conversational audio.  When the realtime pipeline is production-ready
+      // we can short-circuit here instead of falling back to local TTS.
 
       const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, (state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider) as 'openai' | 'polly')
       if (!mp3Path) return
