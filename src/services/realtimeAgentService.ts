@@ -59,6 +59,8 @@ interface ConnectionState {
   vadSamples: number;
   vadNoiseFloor: number;
   vadThreshold: number;
+  /** Indicates that we are currently recording an utterance */
+  isRecording: boolean;
   __configLoaded?: boolean;
   openaiClient?: OpenAIRealtimeClient;
 }
@@ -251,6 +253,8 @@ class RealtimeAgentService {
       vadSamples: 0,
       vadNoiseFloor: 0,
       vadThreshold: 25,
+      /** start with no active recording */
+      isRecording: false,
       __configLoaded: false,
       openaiClient: undefined
     };
@@ -620,6 +624,8 @@ class RealtimeAgentService {
 
       // Reset queue regardless of transcription success
       state.audioQueue = []
+      // Mark that we have stopped recording this utterance
+      state.isRecording = false
 
       if (!transcriptRaw) return
 
@@ -906,13 +912,22 @@ class RealtimeAgentService {
         const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
 
         if (energy > threshold) {
+          // Speech detected – begin or continue recording
+          if (!state.isRecording) {
+            state.isRecording = true
+            // Reset the queue at the start of a new utterance so we don\'t prepend previous noise
+            state.audioQueue = []
+          }
           state.lastSpeechMs = now
           state.audioQueue.push(mediaPayload)
-        } else {
+        } else if (state.isRecording) {
+          // Continue capturing trailing silence while recording
           state.audioQueue.push(mediaPayload)
         }
 
-        if (now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
+        // Flush when we\'ve been in silence for a while **and** we were previously recording
+        if (state.isRecording && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
+          state.isRecording = false
           this.flushAudioQueue(state)
         }
         break
