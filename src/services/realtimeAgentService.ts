@@ -6,7 +6,7 @@ import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
 import { sendLeadNotificationEmail, initiateEmergencyVoiceCall, sendLeadConfirmationToCustomer } from './notificationService';
 import OpenAI from 'openai';
-import { generateSpeechFromText } from './openai';
+import { generateSpeechFromText, getTranscription } from './openai';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -15,9 +15,13 @@ import { getBusinessWelcomeMessage } from './businessService';
 import { getClientByPhoneNumber } from './clientService';
 import crypto from 'crypto';
 import { normalizePhoneNumber } from '../utils/phoneHelpers';
+import ffmpegPath from 'ffmpeg-static';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
+const execFileAsync = promisify(execFile);
 
 // Prisma enums are emitted as string union types, so we'll use string literals for values
 
@@ -255,10 +259,10 @@ class RealtimeAgentService {
     if (callSid && businessId) {
       try {
         const welcomeMessage = await this.getWelcomeMessage(state)
-        this.sendTwilioMessage(state, welcomeMessage)
+        await this.streamTTS(state, welcomeMessage)
       } catch (error) {
         console.error('[REALTIME AGENT] Error sending welcome message:', error)
-        this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
+        await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
       }
 
       await prisma.callLog.create({
@@ -389,6 +393,111 @@ class RealtimeAgentService {
     }
   }
 
+  private async streamTTS(state: ConnectionState, text: string): Promise<void> {
+    if (!state.streamSid) {
+      console.warn('[REALTIME AGENT] No streamSid available, cannot stream audio yet')
+      return
+    }
+
+    try {
+      const mp3Path = await generateSpeechFromText(text)
+      if (!mp3Path) return
+
+      const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`)
+
+      // Convert MP3 to 8kHz mono µ-law raw audio compatible with Twilio
+      await execFileAsync(ffmpegPath as string, [
+        '-y',
+        '-i', mp3Path,
+        '-ar', '8000',
+        '-ac', '1',
+        '-f', 'mulaw',
+        ulawPath
+      ])
+
+      const ulawBuffer = await fs.promises.readFile(ulawPath)
+      const CHUNK_SIZE = 800 // 100ms of audio at 8kHz * 1 byte per sample
+
+      for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
+        const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE)
+        const payload = chunk.toString('base64')
+        state.ws.send(JSON.stringify({
+          event: 'media',
+          streamSid: state.streamSid,
+          media: { payload }
+        }))
+        // Pace the chunks so audio plays in real-time
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      // Signal end of message
+      state.ws.send(JSON.stringify({ event: 'mark', streamSid: state.streamSid, mark: { name: 'eom' } }))
+
+      await cleanupTempFile(mp3Path)
+      await cleanupTempFile(ulawPath)
+    } catch (error) {
+      console.error('[REALTIME AGENT] Error streaming TTS to Twilio:', error)
+    }
+  }
+
+  private async flushAudioQueue(state: ConnectionState): Promise<void> {
+    if (state.audioQueue.length === 0) return
+
+    try {
+      const rawBuffers = state.audioQueue.map((b64) => Buffer.from(b64, 'base64'))
+      const rawData = Buffer.concat(rawBuffers)
+      const baseName = `${state.callSid || 'unknown'}_${Date.now()}`
+      const rawPath = path.join(os.tmpdir(), `${baseName}.ulaw`)
+      const wavPath = path.join(os.tmpdir(), `${baseName}.wav`)
+
+      await fs.promises.writeFile(rawPath, rawData)
+
+      // Convert raw µ-law to WAV 8kHz mono for Whisper
+      await execFileAsync(ffmpegPath as string, [
+        '-y',
+        '-f', 'mulaw',
+        '-ar', '8000',
+        '-ac', '1',
+        '-i', rawPath,
+        wavPath
+      ])
+
+      const transcript = await getTranscription(wavPath)
+
+      await cleanupTempFile(rawPath)
+      await cleanupTempFile(wavPath)
+
+      // Reset queue regardless of transcription success
+      state.audioQueue = []
+
+      if (!transcript || transcript.trim().length === 0) return
+
+      const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
+
+      const response = await processMessage({
+        message: transcript,
+        conversationHistory: state.conversationHistory,
+        businessId: state.businessId!,
+        currentActiveFlow: state.currentFlow ?? null,
+        callSid,
+        channel: 'VOICE'
+      })
+
+      this.addToConversationHistory(state, 'user', transcript)
+      this.addToConversationHistory(state, 'assistant', response.reply)
+      state.currentFlow = response.currentFlow || null
+      if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
+        state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
+      }
+
+      await this.streamTTS(state, response.reply)
+    } catch (error) {
+      console.error('[REALTIME AGENT] Error flushing audio queue:', error)
+      await this.streamTTS(state, 'I encountered an error while processing your request.')
+      state.audioQueue = []
+    }
+  }
+
   public getConnectionStatus(): string {
     return this.connections.size > 0 ? 'active' : 'idle';
   }
@@ -506,7 +615,7 @@ class RealtimeAgentService {
 
         // Provide a generic greeting so callers are not met with silence
         try {
-          this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
+          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to send generic welcome message:', err)
         }
@@ -554,10 +663,10 @@ class RealtimeAgentService {
         // Send the business-specific welcome message now that we have context
         try {
           const welcomeMessage = await this.getWelcomeMessage(state)
-          this.sendTwilioMessage(state, welcomeMessage)
+          await this.streamTTS(state, welcomeMessage)
         } catch (error) {
           console.error('[REALTIME AGENT] Error sending welcome message after START:', error)
-          this.sendTwilioMessage(state, 'Welcome to StudioConnect AI. How can I help you today?')
+          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
         }
       }
 
@@ -617,31 +726,13 @@ class RealtimeAgentService {
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
+        // Accumulate raw audio frames for transcription
+        state.audioQueue.push(mediaPayload)
 
-        processMessage({
-          message: mediaPayload,
-          conversationHistory: state.conversationHistory,
-          businessId: state.businessId,
-          currentActiveFlow: state.currentFlow ?? null,
-          callSid,
-          channel: 'VOICE'
-        })
-          .then((response) => {
-            this.addToConversationHistory(state, 'user', mediaPayload)
-            this.addToConversationHistory(state, 'assistant', response.reply)
-            state.currentFlow = response.currentFlow || null
-
-            if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
-              state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
-            }
-
-            this.sendTwilioMessage(state, response.reply)
-          })
-          .catch((err) => {
-            console.error('[REALTIME AGENT] Error processing MEDIA payload:', err)
-            this.sendTwilioMessage(state, 'I encountered an error while processing your request. Please try again.')
-          })
+        // Flush and transcribe roughly every ~1 second of audio (50×20 ms frames)
+        if (state.audioQueue.length >= 50) {
+          this.flushAudioQueue(state)
+        }
         break
       }
       case 'stop':

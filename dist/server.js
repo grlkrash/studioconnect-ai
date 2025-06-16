@@ -173,7 +173,19 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+let isServerReady = false;
 app.use('/api/voice', voiceRoutes_1.default);
+app.use('/api/chat', chatRoutes_1.default);
+app.use('*', (req, res, next) => {
+    if (!isServerReady) {
+        res.status(503).json({
+            error: 'Service Unavailable – server is still starting, please retry shortly',
+            timestamp: new Date().toISOString()
+        });
+        return;
+    }
+    next();
+});
 app.set('view engine', 'ejs');
 app.set('views', [
     path_1.default.join(__dirname, '../views'),
@@ -196,7 +208,6 @@ nextApp.prepare()
         req.url = req.originalUrl;
         return handleNext(req, res);
     });
-    app.use('/api/chat', chatRoutes_1.default);
     app.use('/api/admin', admin_1.default);
     app.use('/api/clients', clientRoutes_1.default);
     app.use('/api/projects', projectRoutes_1.default);
@@ -261,6 +272,7 @@ nextApp.prepare()
             method: req.method
         });
     });
+    isServerReady = true;
 });
 app.use((err, req, res, next) => {
     console.error('Error:', err.stack);
