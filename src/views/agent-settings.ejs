@@ -276,18 +276,18 @@
                     <h3 style="color: #333; font-size: 18px; margin-bottom: 15px;">🎵 Voice Technology</h3>
                     
                     <div class="form-group">
-                        <label for="useOpenaiTts">
-                            <input 
-                                type="checkbox" 
-                                id="useOpenaiTts" 
-                                name="useOpenaiTts" 
-                                <%= (agentConfig && agentConfig.useOpenaiTts !== false) ? 'checked' : '' %>
-                                style="margin-right: 8px;"
-                            />
-                            Use OpenAI Text-to-Speech (Recommended)
-                        </label>
+                        <label for="ttsProvider">Voice Mode:</label>
+                        <select 
+                            id="ttsProvider" 
+                            name="ttsProvider"
+                            style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                        >
+                            <option value="realtime" <%= (agentConfig && agentConfig.ttsProvider === 'realtime') ? 'selected' : '' %>>Realtime Streaming (OpenAI)</option>
+                            <option value="openai" <%= (!agentConfig || agentConfig.ttsProvider === 'openai' || (!agentConfig.ttsProvider && agentConfig.useOpenaiTts !== false)) ? 'selected' : '' %>>OpenAI TTS (Batch)</option>
+                            <option value="polly" <%= (agentConfig && agentConfig.ttsProvider === 'polly') ? 'selected' : '' %>>Amazon Polly Fallback</option>
+                        </select>
                         <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                            OpenAI TTS provides more natural, human-like voices. Unchecking will use Twilio's text-to-speech as fallback.
+                            "Realtime" uses OpenAI's streaming voice model for the most natural experience. Choose TTS for lower latency scenarios or Polly for compliance reasons.
                         </small>
                     </div>
                     
@@ -486,7 +486,7 @@
             const voiceEndCallMessage = document.getElementById('voiceEndCallMessage')?.value || '';
             
             // Get OpenAI TTS configuration values (if PRO plan)
-            const useOpenaiTts = document.getElementById('useOpenaiTts')?.checked || false;
+            const ttsProvider = document.getElementById('ttsProvider')?.value || 'realtime';
             const openaiVoice = document.getElementById('openaiVoice')?.value || 'NOVA';
             const openaiModel = document.getElementById('openaiModel')?.value || 'tts-1';
             
@@ -507,7 +507,7 @@
                 voiceCompletionMessage,
                 voiceEmergencyMessage,
                 voiceEndCallMessage,
-                useOpenaiTts,
+                ttsProvider,
                 openaiVoice,
                 openaiModel
             };
@@ -550,22 +550,22 @@
         });
         
         // Handle OpenAI TTS checkbox toggle (if PRO plan)
-        const useOpenaiTtsCheckbox = document.getElementById('useOpenaiTts');
+        const ttsProviderSelect = document.getElementById('ttsProvider');
         const openaiVoiceSection = document.getElementById('openaiVoiceSection');
         const twilioVoiceSection = document.getElementById('twilioVoiceSection');
         
-        if (useOpenaiTtsCheckbox) {
+        if (ttsProviderSelect) {
             function toggleVoiceSections() {
-                const isOpenaiEnabled = useOpenaiTtsCheckbox.checked;
+                const ttsProvider = ttsProviderSelect.value;
                 
                 // Show/hide OpenAI voice section
                 if (openaiVoiceSection) {
-                    openaiVoiceSection.style.display = isOpenaiEnabled ? 'flex' : 'none';
+                    openaiVoiceSection.style.display = ttsProvider === 'realtime' ? 'flex' : 'none';
                 }
                 
                 // Update Twilio section visibility and styling
                 if (twilioVoiceSection) {
-                    if (isOpenaiEnabled) {
+                    if (ttsProvider === 'realtime') {
                         twilioVoiceSection.style.opacity = '0.6';
                         twilioVoiceSection.style.pointerEvents = 'none';
                     } else {
@@ -578,8 +578,8 @@
             // Initial state
             toggleVoiceSections();
             
-            // Handle checkbox changes
-            useOpenaiTtsCheckbox.addEventListener('change', toggleVoiceSections);
+            // Handle select changes
+            ttsProviderSelect.addEventListener('change', toggleVoiceSections);
         }
     </script>
 </body>

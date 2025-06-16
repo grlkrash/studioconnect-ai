@@ -10,7 +10,6 @@ import { generateSpeechFromText, getTranscription } from './openai';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 import { getBusinessWelcomeMessage } from './businessService';
 import { getClientByPhoneNumber } from './clientService';
 import crypto from 'crypto';
@@ -18,6 +17,7 @@ import { normalizePhoneNumber } from '../utils/phoneHelpers';
 import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { OpenAIRealtimeClient } from './openaiRealtimeClient';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -51,7 +51,7 @@ interface ConnectionState {
   toNumber: string | null;
   clientId?: string;
   currentFlow: string | null;
-  ttsProvider: 'openai' | 'polly';
+  ttsProvider: 'openai' | 'polly' | 'realtime';
   openaiVoice: string;
   openaiModel: string;
   lastSpeechMs: number;
@@ -60,6 +60,7 @@ interface ConnectionState {
   vadNoiseFloor: number;
   vadThreshold: number;
   __configLoaded?: boolean;
+  openaiClient?: OpenAIRealtimeClient;
 }
 
 interface AgentSession {
@@ -250,7 +251,8 @@ class RealtimeAgentService {
       vadSamples: 0,
       vadNoiseFloor: 0,
       vadThreshold: 25,
-      __configLoaded: false
+      __configLoaded: false,
+      openaiClient: undefined
     };
 
     // Try to identify client if phone number is available
@@ -280,7 +282,17 @@ class RealtimeAgentService {
       try {
         if (!state.welcomeMessageDelivered) {
           const welcomeMessage = await this.getWelcomeMessage(state)
-          await this.streamTTS(state, welcomeMessage)
+          // Attempt to send welcome via realtime voice first; fallback to TTS
+          try {
+            if (state.openaiClient) {
+              state.openaiClient.sendUserText(welcomeMessage)
+              state.openaiClient.requestAssistantResponse()
+            } else {
+              await this.streamTTS(state, welcomeMessage)
+            }
+          } catch {
+            await this.streamTTS(state, welcomeMessage)
+          }
           state.welcomeMessageDelivered = true
         }
       } catch (error) {
@@ -304,6 +316,39 @@ class RealtimeAgentService {
           source: 'TWILIO'
         }
       })
+    }
+
+    // -----------------------------
+    // OpenAI Realtime Voice Session
+    // -----------------------------
+    if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime') {
+      try {
+        const client = new OpenAIRealtimeClient(process.env.OPENAI_API_KEY, state.openaiVoice)
+        await client.connect()
+
+        // Relay assistant audio back to Twilio in real time
+        client.onAssistantAudio((b64) => {
+          if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+            state.ws.send(JSON.stringify({
+              event: 'media',
+              streamSid: state.streamSid,
+              media: { payload: b64 }
+            }))
+          }
+        })
+
+        state.openaiClient = client
+
+        // Trigger greeting via realtime if not yet delivered
+        if (!state.welcomeMessageDelivered) {
+          const welcome = await this.getWelcomeMessage(state)
+          client.sendUserText(welcome)
+          client.requestAssistantResponse()
+          state.welcomeMessageDelivered = true
+        }
+      } catch (err) {
+        console.error('[RealtimeAgent] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
+      }
     }
   }
 
@@ -364,6 +409,10 @@ class RealtimeAgentService {
           state.ws.close();
         } catch (error) {
           console.error(`[REALTIME AGENT] Error closing WebSocket:`, error);
+        }
+        // Gracefully close realtime voice session
+        if (state.openaiClient) {
+          try { state.openaiClient.close() } catch {}
         }
         this.connections.delete(this.callSid);
         console.log(`[REALTIME AGENT] Cleaned up connection for call ${this.callSid}: ${reason}`);
@@ -452,7 +501,7 @@ class RealtimeAgentService {
         }
       }
 
-      const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, state.ttsProvider)
+      const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, (state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider) as 'openai' | 'polly')
       if (!mp3Path) return
 
       const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`)
@@ -735,9 +784,6 @@ class RealtimeAgentService {
           state.welcomeMessageDelivered = true
         }
       }
-
-      // Connect to OpenAI if needed
-      if (this.connectToOpenAI) this.connectToOpenAI();
     } catch (error) {
       console.error('[RealtimeAgent] Error handling start event:', error);
       this.cleanup('Error handling start event');
@@ -786,11 +832,19 @@ class RealtimeAgentService {
         break
       }
       case 'media': {
-        // Ignore media frames until we have resolved the business context.
-        if (!state.businessId) return
-
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
+
+        // If realtime client is active, stream directly
+        if (state.openaiClient) {
+          state.openaiClient.sendAudio(mediaPayload)
+          return
+        }
+
+        // Fallback: existing Whisper pipeline
+
+        // Ignore media frames until we have resolved business context.
+        if (!state.businessId) return
 
         const buf = Buffer.from(mediaPayload, 'base64')
         let energy = 0

@@ -37,6 +37,7 @@ router.put('/', authMiddleware, async (req, res) => {
       'voiceEmergencyMessage',
       'voiceEndCallMessage',
       'widgetTheme',
+      'ttsProvider',
     ] as const
 
     const data: Record<string, unknown> = {}
