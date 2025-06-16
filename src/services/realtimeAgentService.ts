@@ -487,7 +487,7 @@ class RealtimeAgentService {
         wavPath
       ])
 
-      const transcript = await getTranscription(wavPath)
+      const transcriptRaw = await getTranscription(wavPath)
 
       await cleanupTempFile(rawPath)
       await cleanupTempFile(wavPath)
@@ -495,10 +495,14 @@ class RealtimeAgentService {
       // Reset queue regardless of transcription success
       state.audioQueue = []
 
-      if (!transcript || transcript.trim().split(/\s+/).length < 2) {
-        // likely noise, ignore
-        return
-      }
+      if (!transcriptRaw) return
+
+      const transcript = transcriptRaw
+
+      const txt = transcript.trim().toLowerCase()
+      const allowedShort = ['yes','no','ok','okay','sure','thanks','thank you','bye','hello','hi']
+      const isValid = txt.split(/\s+/).length > 1 || allowedShort.includes(txt)
+      if (!isValid) return
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
@@ -754,8 +758,8 @@ class RealtimeAgentService {
         // Accumulate raw audio frames for transcription
         state.audioQueue.push(mediaPayload)
 
-        // Flush after ~3 seconds of audio (150 frames)
-        if (state.audioQueue.length >= 150) {
+        // Flush after ~1.2 seconds of audio (60 frames) for snappier convo
+        if (state.audioQueue.length >= 60) {
           this.flushAudioQueue(state)
         }
         break
