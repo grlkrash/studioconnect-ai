@@ -38,7 +38,7 @@ export default function AgentSettings() {
     agentName: "AI Assistant",
     personaPrompt: "You are a helpful assistant.",
     welcomeMessage: "Hello! How can I help you today?",
-    openaiVoice: "NOVA",
+    openaiVoice: "nova",
     openaiModel: "tts-1",
     ttsProvider: 'openai',
     useOpenaiTts: true,
@@ -64,7 +64,14 @@ export default function AgentSettings() {
         const res = await fetch(`/api/agent-config${process.env.NEXT_PUBLIC_BUSINESS_ID ? `?businessId=${process.env.NEXT_PUBLIC_BUSINESS_ID}` : ''}`, { credentials: "include" })
         if (res.ok) {
           const data = await res.json()
-          if (data.config) setSettings({ ...defaultSettings, ...data.config })
+          if (data.config) {
+            const cfg = {
+              ...data.config,
+              openaiVoice: (data.config.openaiVoice || '').toLowerCase(),
+              openaiModel: (data.config.openaiModel || '').toLowerCase(),
+            }
+            setSettings({ ...defaultSettings, ...cfg })
+          }
         }
       } catch (err) {
         console.error("Failed to load agent config", err)
@@ -80,6 +87,7 @@ export default function AgentSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...settings,
+          openaiVoice: settings.openaiVoice.toUpperCase(),
           ttsProvider: settings.ttsProvider,
         }),
       })
@@ -203,12 +211,12 @@ export default function AgentSettings() {
                         <SelectValue placeholder="Select voice" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ALLOY">ALLOY (Professional Male)</SelectItem>
-                        <SelectItem value="ECHO">ECHO (Dramatic Male)</SelectItem>
-                        <SelectItem value="FABLE">FABLE (Story-teller Male)</SelectItem>
-                        <SelectItem value="ONYX">ONYX (Deep Professional Male)</SelectItem>
-                        <SelectItem value="NOVA">NOVA (Conversational Female)</SelectItem>
-                        <SelectItem value="SHIMMER">SHIMMER (Expressive Female)</SelectItem>
+                        <SelectItem value="alloy">Alloy (Professional Male)</SelectItem>
+                        <SelectItem value="echo">Echo (Dramatic Male)</SelectItem>
+                        <SelectItem value="fable">Fable (Story-teller Male)</SelectItem>
+                        <SelectItem value="onyx">Onyx (Deep Professional Male)</SelectItem>
+                        <SelectItem value="nova">Nova (Conversational Female)</SelectItem>
+                        <SelectItem value="shimmer">Shimmer (Expressive Female)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
