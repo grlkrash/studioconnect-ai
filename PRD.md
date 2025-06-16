@@ -147,12 +147,35 @@ The StudioConnect AI platform is built on a modern, scalable architecture using 
 ### 8.3 Integration Architecture
 
 #### Project Management Tools
-- **Supported Platforms**: Asana, Jira, Trello
-- **Integration Flow**:
-  1. OAuth2 authentication
-  2. One-way sync of project data
-  3. Webhook-based real-time updates
-  4. Data normalization layer
+- **Supported Platforms**: Asana, Jira, Monday.com (Trello support to be evaluated post-v1)
+- **Core Design**: The integration is built on a provider-based architecture. A common `ProjectManagementProvider` interface defines a contract for all supported platforms, ensuring consistent integration with the core application. This allows for modular, scalable, and maintainable connections to third-party services.
+
+#### Integration Flow
+The integration process follows a standardized flow for each provider, consisting of authentication, data synchronization, and real-time updates via webhooks.
+
+1.  **Authentication**: Per section 6, v1 will use a single, admin-provided API token for each integration. The system will securely store these tokens, associating them with the business account.
+2.  **Provider Abstraction Layer**:
+    - A new directory `src/services/pm-providers` will house the integration logic.
+    - An interface `pm.provider.interface.ts` will define the standard methods: `connect(credentials)`, `syncProjects()`, `getProjectDetails(id)`, `setupWebhooks()`, and `handleWebhook(payload)`.
+    - Concrete implementations (`asana.provider.ts`, `jira.provider.ts`, `monday.provider.ts`) will implement this interface.
+3.  **One-way Initial Data Sync**:
+    - Upon successful connection, the system triggers a one-way sync (`syncProjects`) to fetch all relevant projects, tasks, and client data from the provider's API.
+    - This data is transformed by a normalization layer into our internal data models (`Project`, `Client`, etc.) and stored in the application's PostgreSQL database.
+    - This local copy enables fast, read-only access for the AI agent, decoupling it from the performance of third-party APIs.
+4.  **Webhook-based Real-time Updates**:
+    - After the initial sync, the system programmatically registers a webhook with the third-party platform (`setupWebhooks`).
+    - A single, dedicated API endpoint, `/api/webhooks/pm/:provider`, will receive all incoming webhook events (e.g., `task_updated`, `issue_changed`).
+    - The webhook handler validates the request's authenticity (using secrets or signatures) and delegates the payload to the appropriate provider's `handleWebhook` method.
+    - The provider then parses the event and updates the relevant records in our local database in real-time, ensuring the AI always has the most current information.
+5.  **Data Normalization Layer**:
+    - A critical component that translates diverse data structures from Asana, Jira, and Monday.com into our unified `Project` schema.
+    - **Example Mappings**:
+        - Asana `task.gid` -> `Project.pmToolId`
+        - Jira `issue.key` -> `Project.pmToolId`
+        - Monday.com `item.id` -> `Project.pmToolId`
+        - Asana `task.name` -> `Project.name`
+        - Jira `issue.fields.summary` -> `Project.name`
+        - Monday.com `item.name` -> `Project.name`
 
 #### Voice Infrastructure
 - **Twilio Integration**:

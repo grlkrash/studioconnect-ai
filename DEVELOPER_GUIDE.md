@@ -21,13 +21,14 @@
 10. [Data Flows & User Journeys](#10-data-flows--user-journeys)
 11. [Project Structure](#11-project-structure)
 12. [Core Components](#12-core-components)
-13. [Database Schema](#13-database-schema)
-14. [API Documentation](#14-api-documentation)
-15. [Development Setup](#15-development-setup)
-16. [Deployment Guide](#16-deployment-guide)
-17. [Security Considerations](#17-security-considerations)
-18. [Testing Strategy](#18-testing-strategy)
-19. [Troubleshooting](#19-troubleshooting)
+13. [Core Services](#13-core-services)
+14. [Database Schema](#14-database-schema)
+15. [API Documentation](#15-api-documentation)
+16. [Development Setup](#16-development-setup)
+17. [Deployment Guide](#17-deployment-guide)
+18. [Security Considerations](#18-security-considerations)
+19. [Testing Strategy](#19-testing-strategy)
+20. [Troubleshooting](#20-troubleshooting)
 
 ---
 
@@ -1358,9 +1359,9 @@ Customer Dials Business Number ──────┐
 
 ---
 
-## 10. Project Structure
+## 11. Project Structure
 
-### 10.1. Enhanced Directory Structure (V4.2)
+### 11.1. Enhanced Directory Structure (V4.2)
 
 ```
 leads-support-agent-smb/
@@ -1427,9 +1428,9 @@ leads-support-agent-smb/
 
 ---
 
-## 11. Core Components
+## 12. Core Components
 
-### 11.1. Realtime Agent Service (Core Implementation)
+### 12.1. Realtime Agent Service (Core Implementation)
 
 ```typescript
 // Core Realtime Agent Service
@@ -1665,7 +1666,7 @@ export class RealtimeAgentService {
 }
 ```
 
-### 11.2. Project Sync Service (Pluggable Architecture)
+### 12.2. Project Sync Service (Pluggable Architecture)
 
 The Project Sync layer decouples external project-management (PM) tools from the StudioConnect data model via a small, composable provider interface.
 
@@ -1700,107 +1701,114 @@ This architecture keeps the core clean, encourages testability, and makes adding
 
 ---
 
-## 12. Database Schema
-
-### 12.1. Enhanced Schema for Realtime Voice Features
-
-```sql
--- Enhanced Business model with Realtime voice features
-CREATE TABLE businesses (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  business_type business_type DEFAULT 'OTHER',
-  plan_tier plan_tier DEFAULT 'FREE',
-  twilio_phone_number TEXT UNIQUE,           -- For Realtime voice calls
-  notification_email TEXT,
-  notification_phone_number TEXT,
-  realtime_api_enabled BOOLEAN DEFAULT false, -- New: Realtime API access
-  websocket_enabled BOOLEAN DEFAULT false,    -- New: WebSocket support
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Enhanced AgentConfig with Realtime settings
-CREATE TABLE agent_configs (
-  id TEXT PRIMARY KEY,
-  business_id TEXT UNIQUE REFERENCES businesses(id) ON DELETE CASCADE,
-  agent_name TEXT DEFAULT 'AI Assistant',
-  persona_prompt TEXT DEFAULT 'You are a helpful and friendly assistant.',
-  welcome_message TEXT DEFAULT 'Hello! How can I help you today?',
-  color_theme JSONB DEFAULT '{"primary": "#0ea5e9", "secondary": "#64748b"}',
-  -- Enhanced voice configuration for Realtime API
-  voice_greeting_message TEXT,
-  voice_completion_message TEXT,
-  voice_emergency_message TEXT,
-  voice_end_call_message TEXT,
-  realtime_voice_model TEXT DEFAULT 'alloy',          -- New: OpenAI voice model
-  realtime_instructions TEXT,                         -- New: Custom AI instructions
-  vad_threshold DECIMAL DEFAULT 0.5,                  -- New: VAD configuration
-  silence_duration_ms INTEGER DEFAULT 500,            -- New: Silence detection
-  prefix_padding_ms INTEGER DEFAULT 300,              -- New: Audio padding
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Enhanced Voice Sessions for Realtime tracking
-CREATE TABLE voice_sessions (
-  id TEXT PRIMARY KEY,
-  business_id TEXT REFERENCES businesses(id) ON DELETE CASCADE,
-  call_sid TEXT UNIQUE NOT NULL,
-  websocket_connection_id TEXT,                       -- New: WebSocket tracking
-  from_number TEXT,
-  to_number TEXT,
-  session_data JSONB DEFAULT '{}',                    -- Enhanced session data
-  realtime_metrics JSONB DEFAULT '{}',               -- New: Realtime API metrics
-  audio_duration_seconds INTEGER DEFAULT 0,          -- New: Audio duration tracking
-  interruption_count INTEGER DEFAULT 0,              -- New: Interruption tracking
-  vad_events JSONB DEFAULT '[]',                     -- New: VAD event log
-  started_at TIMESTAMP DEFAULT NOW(),
-  ended_at TIMESTAMP,
-  status voice_session_status DEFAULT 'ACTIVE'
-);
-
--- New enums for Realtime features
-CREATE TYPE voice_session_status AS ENUM ('ACTIVE', 'COMPLETED', 'FAILED', 'INTERRUPTED');
-CREATE TYPE realtime_event_type AS ENUM ('SPEECH_STARTED', 'SPEECH_STOPPED', 'AUDIO_DELTA', 'SESSION_UPDATE');
-```
-
----
-
 ## 13. API Documentation
 
-### 13.1. Enhanced Voice Routes for Realtime API
+The REST API is the primary interface for interacting with the StudioConnect AI backend. All endpoints are protected by JWT-based authentication.
 
-```typescript
-// Voice Routes for Twilio Integration
-POST /api/voice/incoming
-  - Handles incoming Twilio calls
-  - Initiates WebSocket connection for Media Streams
-  - Returns TwiML with Media Stream configuration
+### 13.1 Authentication (`/api/auth`)
 
-// WebSocket Endpoint
-WS /
-  - Twilio Media Stream WebSocket connection
-  - Bidirectional audio streaming
-  - Real-time session management
+-   **`POST /api/login`**: Authenticates a user and returns a JWT token.
+-   Handled by `src/api/authMiddleware.ts` and `src/server.ts`.
 
-// Health and Monitoring
-GET /api/voice/health
-  - Voice system health with WebSocket metrics
-  - Realtime API connection status
-  - Active session monitoring
+### 13.2 Admin (`/api/admin`)
 
-GET /api/voice/sessions
-  - Active voice session monitoring
-  - WebSocket connection status
-  - Realtime API metrics
-```
+-   **`GET /api/admin/dashboard`**: Retrieves data for the admin dashboard.
+-   Routes defined in `src/api/admin.ts`.
 
----
+### 13.3 Agent Configuration (`/api/agent-config`)
 
-## 14. Development Setup
+-   **`GET /`**: Retrieves the agent configuration for the business.
+-   **`POST /`**: Creates or updates the agent configuration.
+-   Routes defined in `src/api/agentConfigRoutes.ts`.
 
-### 14.1. Enhanced Environment for Realtime API
+### 13.4 Business (`/api/business`)
+
+-   **`GET /`**: Retrieves the business details.
+-   **`PUT /`**: Updates the business details.
+-   Routes defined in `src/api/businessRoutes.ts`.
+
+### 13.5 Chat (`/api/chat`)
+
+-   **`POST /`**: Initiates a new chat session.
+-   **`POST /:sessionId/message`**: Sends a message in a chat session.
+-   Routes defined in `src/api/chatRoutes.ts`.
+
+### 13.6 Client (`/api/client`)
+
+-   **`GET /`**: Retrieves a list of clients for the business.
+-   **`POST /`**: Creates a new client.
+-   Routes defined in `src/api/clientRoutes.ts`.
+
+### 13.7 Knowledge Base (`/api/kb`)
+
+-   **`POST /sync-gdrive`**: Syncs the knowledge base with Google Drive.
+-   **`GET /`**: Retrieves all knowledge base items.
+-   **`POST /`**: Creates a new knowledge base item.
+-   **`DELETE /:id`**: Deletes a knowledge base item.
+-   Routes defined in `src/api/knowledgeBaseRoutes.ts`.
+
+### 13.8 Lead Capture Questions (`/api/lead-questions`)
+
+-   **`GET /`**: Retrieves all lead capture questions.
+-   **`POST /`**: Creates a new lead capture question.
+-   **`PUT /:id`**: Updates a lead capture question.
+-   **`DELETE /:id`**: Deletes a lead capture question.
+-   Routes defined in `src/api/leadQuestionRoutes.ts`.
+
+### 13.9 Project (`/api/project`)
+
+-   **`GET /`**: Retrieves a list of projects for the business.
+-   **`POST /sync`**: Syncs projects from an external source.
+-   Routes defined in `src/api/projectRoutes.ts`.
+
+### 13.10 Views (`/api/views`)
+
+-   Handles rendering of server-side views (EJS templates).
+-   Routes defined in `src/api/viewRoutes.ts`.
+
+### 13.11 Voice (`/api/voice`)
+
+-   **`POST /inbound`**: Handles inbound Twilio calls.
+-   **`POST /status`**: Receives status updates from Twilio.
+-   Routes defined in `src/api/voiceRoutes.ts`.
+
+### 13.12 Widget Configuration (`/api/widget-config`)
+
+-   **`GET /`**: Retrieves the widget configuration.
+-   **`POST /`**: Creates or updates the widget configuration.
+-   Routes defined in `src/api/widgetConfigRoutes.ts`.
+
+## 14. Core Services
+
+This section describes the key services that implement the core business logic of the platform.
+
+### 14.1 Real-time Agent Service (`realtimeAgentService.ts`)
+
+This is the heart of the voice integration. It manages the real-time, bidirectional communication between Twilio and the OpenAI Real-time API. It handles setting up the WebSocket connections, managing the session, and streaming audio data.
+
+### 14.2 Voice Session Service (`voiceSessionService.ts`)
+
+This service manages the lifecycle of a voice call session. It tracks the state of the call, stores the transcript, and logs events related to the call.
+
+### 14.3 Notification Service (`notificationService.ts`)
+
+Handles all outbound notifications, including emails for lead summaries and alerts. It uses Nodemailer and can be configured with different transport options like SendGrid.
+
+### 14.4 OpenAI Service (`openai.ts`)
+
+A wrapper around the OpenAI client library. It provides convenient methods for interacting with OpenAI's APIs, including chat completions and other AI functionalities.
+
+### 14.5 WebSocket Server (`websocketServer.ts`)
+
+This service sets up and manages the WebSocket server that listens for connections from Twilio Media Streams. It's the entry point for all real-time voice communication.
+
+### 14.6 Database Service (`db.ts`)
+
+Provides a singleton instance of the Prisma client for database interactions.
+
+## 15. Development Setup
+
+### 15.1. Enhanced Environment for Realtime API
 
 ```bash
 # Core Application
@@ -1832,7 +1840,7 @@ MAX_WEBSOCKET_CONNECTIONS=100
 JWT_SECRET="your-super-secret-jwt-key"
 ```
 
-### 14.2. Development Commands for Realtime Features
+### 15.2. Development Commands for Realtime Features
 
 ```bash
 # Start with Realtime API support
@@ -1937,4 +1945,217 @@ const emergencyFlow = {
 
 ---
 
-This comprehensive developer guide now accurately reflects the current OpenAI Realtime API implementation with WebSocket architecture, providing technical implementation details and architectural reference for the advanced voice-enabled platform. 
+# DEVELOPER_GUIDE.md: Project Management Integrations
+
+**Version:** 1.0  
+**Status:** Inception  
+**Author:** StudioConnect AI Assistant
+**Last Updated:** June 11, 2025
+
+## 1. Overview
+
+This guide details the technical implementation of the Project Management (PM) tool integration feature. The goal is to create a one-way data sync from a client's PM tool (Asana, Jira, Monday.com) into our system, providing the AI agent with real-time project and status information.
+
+The architecture is designed to be modular and extensible, allowing for the easy addition of new PM tool providers in the future.
+
+## 2. Core Architecture
+
+The integration is built on a provider-based pattern. All provider-specific logic is abstracted away from the core application, which interacts with a standardized interface.
+
+### 2.1. Directory Structure
+
+All integration code will reside in `src/services/pm-providers/`.
+
+```
+src/
+└── services/
+    └── pm-providers/
+        ├── pm.provider.interface.ts  // Defines the common interface
+        ├── asana.provider.ts         // Asana-specific implementation
+        ├── jira.provider.ts          // Jira-specific implementation
+        └── monday.provider.ts        // Monday.com-specific implementation
+```
+
+### 2.2. The `ProjectManagementProvider` Interface
+
+The `pm.provider.interface.ts` file defines the contract that every provider must adhere to.
+
+```typescript
+// src/services/pm-providers/pm.provider.interface.ts
+
+/**
+ * Defines the contract for all Project Management tool providers.
+ */
+export interface ProjectManagementProvider {
+  /**
+   * Validates credentials and establishes a connection.
+   * @param credentials - API token or other auth materials.
+   * @returns A boolean indicating if the connection was successful.
+   */
+  connect(credentials: { apiKey: string; [key: string]: any }): Promise<boolean>;
+
+  /**
+   * Performs the initial one-way sync of all relevant project data.
+   * @param businessId - The ID of the business to sync data for.
+   * @returns A summary of synced data (e.g., project and task counts).
+   */
+  syncProjects(businessId: string): Promise<{ projectCount: number; taskCount: number }>;
+
+  /**
+   * Programmatically creates a webhook in the third-party service.
+   * @param businessId - The ID of the business for which to set up the webhook.
+   * @returns The details of the created webhook.
+   */
+  setupWebhooks(businessId: string): Promise<{ webhookId: string }>;
+
+  /**
+   * Processes an incoming webhook event payload from the provider.
+   * @param payload - The raw, validated payload from the webhook request.
+   */
+  handleWebhook(payload: any): Promise<void>;
+
+  /**
+   * Normalizes provider-specific data into our internal Project model.
+   * @param providerData - The raw data object from the provider's API.
+   * @returns A normalized Project object compatible with our Prisma schema.
+   */
+  normalizeData(providerData: any): Partial<Project>;
+}
+```
+
+### 2.3. Data Normalization & Storage
+
+Each provider is responsible for transforming its unique data structures into our application's `Project` model (defined in `prisma/schema.prisma`). The local PostgreSQL database serves as the single source of truth for the AI agent.
+
+- **Key Mappings**: The provider must map the external tool's project/task ID to our `pmToolId` field and the project/task status to our `status` field.
+- **Client Linking**: The provider should attempt to link projects to existing clients in our database based on information available from the PM tool (e.g., a custom field for "Client Email").
+
+### 2.4. Webhook Handling
+
+A single API route will handle all incoming webhooks from all providers.
+
+- **Endpoint**: `POST /api/webhooks/pm/:provider` (e.g., `/api/webhooks/pm/asana`)
+- **Logic**:
+    1. The controller identifies the provider from the URL parameter.
+    2. It retrieves the appropriate provider implementation (e.g., `AsanaProvider`).
+    3. It validates the incoming request using the provider's specific method (e.g., checking the `X-Asana-Request-Signature` or Monday.com `challenge` token).
+    4. Upon successful validation, it passes the request body to the provider's `handleWebhook` method for processing.
+
+---
+
+## 3. Asana Provider Implementation
+
+File: `src/services/pm-providers/asana.provider.ts`
+
+### 3.1. Authentication
+
+- **Method**: Personal Access Token (PAT).
+- **Details**: The user generates a PAT from their Asana Developer Console. This token will be used in the `Authorization: Bearer <TOKEN>` header for all API requests.
+
+### 3.2. Initial Data Sync
+
+- **Endpoint**: Use the `searchTasksInWorkspace` endpoint (`GET /api/1.0/workspaces/{workspace_gid}/tasks/search`). This is more efficient than iterating through projects and then tasks.
+- **Strategy**:
+    1. Fetch all tasks in the user's workspace. Use `opt_fields` to request necessary fields like `name`, `completed`, `assignee`, `projects`, `custom_fields`, `notes` to minimize response size.
+    2. Paginate through the results using the `offset` token provided in each response.
+    3. For each task, call the `normalizeData` function to map it to our internal `Project` model.
+    4. Use `prisma.project.upsert` to create or update the project in our database.
+
+### 3.3. Webhook Setup
+
+- **Endpoint**: `POST /api/1.0/webhooks`
+- **Strategy**:
+    1. During the initial setup, create a webhook subscribed to the workspace or specific projects.
+    2. **Resource**: The `resource` ID will be the `workspace_gid` or a `project_gid`.
+    3. **Target URL**: The URL will be `https://<our-app-domain>/api/webhooks/pm/asana`.
+    4. **Handshake**: Asana will send a `POST` request to the target URL with an `X-Hook-Secret` header. The endpoint must respond immediately with a `200 OK` and include the `X-Hook-Secret` in its response headers to confirm the webhook.
+
+### 3.4. Webhook Handling
+
+- **Validation**: The webhook endpoint must validate the `X-Hook-Signature` header. This is a HMAC-SHA256 hash of the request body, using the `X-Hook-Secret` as the key.
+- **Logic**:
+    1. The request body contains an array of `events`.
+    2. Iterate through the events. The `action` (e.g., `changed`, `added`, `deleted`) and `resource.resource_type` (e.g., `task`) determine what happened.
+    3. For a `task` event with an action of `changed`, fetch the updated task data using `GET /api/1.0/tasks/{task_gid}`.
+    4. Normalize the new data and update the corresponding `Project` record in our database.
+
+---
+
+## 4. Jira Provider Implementation
+
+File: `src/services/pm-providers/jira.provider.ts`
+
+### 4.1. Authentication
+
+- **Method**: API Token.
+- **Details**: The user generates an API token from their Atlassian account settings. API requests will use Basic Authentication with the user's email as the username and the API token as the password. The header will be `Authorization: Basic <base64_encoded_email:token>`.
+
+### 4.2. Initial Data Sync
+
+- **Endpoint**: `GET /rest/api/3/search` (Jira Cloud REST API).
+- **Strategy**:
+    1. Use Jira Query Language (JQL) to fetch all relevant issues. A simple query like `project = "PROJECT_KEY"` can be used, or it can be left empty to search all accessible issues.
+    2. Use the `fields` parameter to specify which fields to return (e.g., `summary`, `status`, `description`, `assignee`, `project`).
+    3. Paginate through results using the `startAt` and `maxResults` parameters.
+    4. For each issue, call `normalizeData` to map it to our `Project` model.
+    5. Use `prisma.project.upsert` to save the data.
+
+### 4.3. Webhook Setup
+
+- **Endpoint**: `POST /rest/api/3/webhook`
+- **Strategy**:
+    1. Register a new webhook for the client's Jira instance.
+    2. **URL**: The URL will be `https://<our-app-domain>/api/webhooks/pm/jira`.
+    3. **Events**: Subscribe to relevant events, such as `jira:issue_created`, `jira:issue_updated`, and `jira:issue_deleted`.
+    4. **JQL Filter**: Optionally, use the `jqlFilter` to restrict notifications to specific projects or issue types (e.g., `"project = ABC"`).
+    5. **Secret**: Jira doesn't use a handshake secret by default for server-to-server webhooks. We can secure the endpoint by adding a unique, randomly generated token to the webhook URL itself (e.g., `.../jira?token=SECRET_TOKEN`).
+
+### 4.4. Webhook Handling
+
+- **Validation**: If a secret token is included in the URL, validate it against the one stored for the business.
+- **Logic**:
+    1. The webhook payload contains information about the event in the `webhookEvent` field (e.g., `jira:issue_updated`).
+    2. The payload also contains an `issue` object with the latest data.
+    3. There is no need for a follow-up API call. The data in the payload is sufficient.
+    4. Pass the `issue` object to the `normalizeData` function and update our database.
+
+---
+
+## 5. Monday.com Provider Implementation
+
+File: `src/services/pm-providers/monday.provider.ts`
+
+### 5.1. Authentication
+
+- **Method**: Personal API Token.
+- **Details**: The user gets this from the "Developers" section of their Monday.com avatar menu. The token is sent in the `Authorization` header. Note: Monday.com's API v2 is GraphQL-based.
+
+### 5.2. Initial Data Sync
+
+- **Endpoint**: The single GraphQL endpoint (`https://api.monday.com/v2`).
+- **Strategy**:
+    1. Construct a GraphQL query to fetch `boards` (equivalent to projects).
+    2. For each board, use a nested `items_page` query to fetch all `items` (equivalent to tasks). Use cursor-based pagination on the `items_page` query.
+    3. Include `column_values` in the query to get status, dates, and other relevant fields.
+    4. For each item, call `normalizeData` to map it to our `Project` model.
+    5. Use `prisma.project.upsert` to save the data.
+
+### 5.3. Webhook Setup
+
+- **Endpoint**: Use the `create_webhook` GraphQL mutation.
+- **Strategy**:
+    1. Execute the `create_webhook` mutation.
+    2. **`board_id`**: The ID of the board to subscribe to.
+    3. **`url`**: `https://<our-app-domain>/api/webhooks/pm/monday`.
+    4. **`event`**: The type of event to subscribe to (e.g., `create_item`, `update_column_value`). We will need to create webhooks for multiple events.
+    5. **Handshake**: The `create_webhook` mutation will return a `challenge` code in its response. The webhook endpoint must be prepared to receive a POST request with this challenge in the JSON body and respond with `{ "challenge": "THE_CHALLENGE_CODE" }`.
+
+### 5.4. Webhook Handling
+
+- **Validation**: The initial request is the challenge/response handshake. Subsequent requests are the actual event notifications. The payload is not signed, so security relies on the obscurity of the webhook URL.
+- **Logic**:
+    1. The webhook payload will contain an `event` object.
+    2. The `event.type` indicates what happened. For an `update_column_value` event, the `event.columnId` will tell you which field changed (e.g., "status") and `event.value` will contain the new value.
+    3. You will need to use the `event.pulseId` (item ID) to look up the project in our database and update the appropriate field.
+
+</rewritten_file>
