@@ -426,15 +426,30 @@ class RealtimeAgentService {
     }
 
     try {
-      // Load agent config once per call
+      /**
+       * Load the Agent-level voice configuration. In production we occasionally hit
+       * a "P2022 column does not exist" error when the database schema is out of
+       * sync with the generated Prisma client. Because this *only* affects the
+       * optional widget configuration, we treat the lookup as a best-effort
+       * operation and gracefully fall back to sensible defaults whenever it
+       * fails instead of aborting the entire TTS pipeline (which results in the
+       * caller hearing *nothing*).
+       */
       if (state.businessId && !state.__configLoaded) {
-        const cfg = await prisma.agentConfig.findUnique({ where: { businessId: state.businessId } })
-        if (cfg) {
-          state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly')
-          state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
-          state.openaiModel = cfg.openaiModel || 'tts-1'
+        try {
+          const cfg = await prisma.agentConfig.findUnique({ where: { businessId: state.businessId } })
+          if (cfg) {
+            state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly')
+            state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
+            state.openaiModel = cfg.openaiModel || 'tts-1'
+          }
+        } catch (err) {
+          console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message)
+          // swallow – we already have safe defaults on the state object
+        } finally {
+          // Ensure we never attempt the lookup again for this call, even if it failed
+          state.__configLoaded = true
         }
-        state.__configLoaded = true
       }
 
       const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, state.ttsProvider)
@@ -483,6 +498,16 @@ class RealtimeAgentService {
     try {
       const rawBuffers = state.audioQueue.map((b64) => Buffer.from(b64, 'base64'))
       const rawData = Buffer.concat(rawBuffers)
+
+      // Skip processing if the utterance is too short (<200 ms) to avoid Whisper 400 errors
+      const MIN_DURATION_MS = 200
+      const bytesPerMs = 8 // 8000 samples/sec * 1 byte/sample / 1000ms
+      if (rawData.length < bytesPerMs * MIN_DURATION_MS) {
+        // Discard the captured silence/noise and reset queue early
+        state.audioQueue = []
+        return
+      }
+
       const baseName = `${state.callSid || 'unknown'}_${Date.now()}`
       const rawPath = path.join(os.tmpdir(), `${baseName}.ulaw`)
       const wavPath = path.join(os.tmpdir(), `${baseName}.wav`)
