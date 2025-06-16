@@ -3,12 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateRecoveryResponse = void 0;
+exports.generateRecoveryResponse = exports.createVoiceSystemPrompt = void 0;
 exports.handleIncomingMessage = handleIncomingMessage;
 exports.processMessage = processMessage;
 const db_1 = require("../services/db");
 const openai_1 = require("../services/openai");
-const ragService_1 = require("./ragService");
+const voiceSessionService_1 = __importDefault(require("../services/voiceSessionService"));
 const twilio_1 = __importDefault(require("twilio"));
 const DEFAULT_EMERGENCY_QUESTIONS = [
     {
@@ -44,14 +44,16 @@ const DEFAULT_EMERGENCY_QUESTIONS = [
         isEssentialForEmergency: true
     }
 ];
-const createVoiceSystemPrompt = (businessName, knowledgeContext, leadCaptureQuestions) => {
+const createVoiceSystemPrompt = (businessName, context, leadCaptureQuestions) => {
     return `You are a professional AI Account Manager for ${businessName || 'this creative agency'}. Your ONLY goal is to serve clients and qualify leads on behalf of this specific agency. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller speaking directly into their phone.
+
+Your first task is to greet the caller warmly and ask how you can help them.
 
 **CRITICAL BUSINESS RULES - NO EXCEPTIONS:**
 
 🏢 **AGENCY IDENTITY**: You work EXCLUSIVELY for ${businessName || 'this creative agency'}. NEVER offer to "find another agency" or suggest competitors. Your job is to help clients work with THIS agency only.
 
-📚 **KNOWLEDGE BOUNDARIES**: You may ONLY use information from the "Knowledge Base Context" and "Project/Client Data" provided below. You must NEVER invent, assume, or use external knowledge about:
+📚 **KNOWLEDGE BOUNDARIES**: You may ONLY use information from the "CONTEXT" section provided below. You must NEVER invent, assume, or use external knowledge about:
 - Specific project details not provided in the sync data
 - Client-specific billing information not explicitly provided
 - Services not mentioned in your knowledge base
@@ -119,11 +121,9 @@ If information is not in your knowledge, you MUST say "I don't have that specifi
 
 **CRITICAL REMINDER:** You ARE the voice speaking live to a person on the phone. Every single word you generate will be spoken aloud immediately. There is no script, no narrator, no instructions - just natural human conversation through a phone call.
 
-${knowledgeContext ? `
-
-**KNOWLEDGE BASE CONTEXT:**
-${knowledgeContext}
-
+${context ? `
+**CONTEXT FOR THIS CALL:**
+${context}
 ` : ''}${leadCaptureQuestions && leadCaptureQuestions.length > 0 ? `
 
 **LEAD QUALIFICATION QUESTIONS (ask in this exact order):**
@@ -131,6 +131,7 @@ ${leadCaptureQuestions.map((q, index) => `${index + 1}. ${q.questionText}`).join
 
 ` : ''}`;
 };
+exports.createVoiceSystemPrompt = createVoiceSystemPrompt;
 const cleanVoiceResponse = (response) => {
     if (!response)
         return response;
@@ -256,7 +257,7 @@ Respond with only YES if clear and complete, or NO if unclear/incomplete.`;
 };
 const generateClarifyingQuestion = async (unclearResponse, originalQuestion, context, businessName) => {
     try {
-        const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined);
+        const voiceSystemPrompt = (0, exports.createVoiceSystemPrompt)(businessName, undefined, undefined);
         const clarifyingUserPrompt = `The user gave an unclear response. Generate a brief, polite clarifying question to get the information needed.
 
 Original Question/Context: ${originalQuestion}
@@ -355,7 +356,7 @@ This appears to be a serious emergency. Generate a brief, empathetic response th
 Keep it conversational and under 30 seconds when spoken. Use natural speech patterns.
 
 Business name: ${businessName || 'our team'}`;
-        const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined);
+        const voiceSystemPrompt = (0, exports.createVoiceSystemPrompt)(businessName, undefined, undefined);
         const aiResponse = await (0, openai_1.getChatCompletion)(escalationPrompt, voiceSystemPrompt);
         return cleanVoiceResponse(aiResponse ||
             `I understand this is an emergency situation. I can either connect you directly to our emergency response team right now (within 30 seconds), or quickly gather just 2-3 essential details so we can dispatch help immediately. Which would you prefer?`);
@@ -375,7 +376,7 @@ const confirmEmergencyDetails = async (userResponse, questionType, businessName)
 User's ${questionType}: "${userResponse}"
 
 Generate only the confirmation response:`;
-    const voiceSystemPrompt = createVoiceSystemPrompt(businessName, undefined, undefined);
+    const voiceSystemPrompt = (0, exports.createVoiceSystemPrompt)(businessName, undefined, undefined);
     const confirmationResponse = await (0, openai_1.getChatCompletion)(confirmationPrompt, voiceSystemPrompt);
     return cleanVoiceResponse(confirmationResponse || `I heard your ${questionType} as "${userResponse}". Is that correct?`);
 };
@@ -398,227 +399,107 @@ const determineNextVoiceAction = (intent, currentFlow) => {
     return 'CONTINUE';
 };
 const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
+    var _a, _b;
+    const voiceSessionService = voiceSessionService_1.default.getInstance();
+    const session = callSid ? await voiceSessionService.getVoiceSession(callSid) : null;
     try {
-        console.log(`AI Handler processing message for business ${businessId}: "${message}"`);
-        console.log('Received currentActiveFlow:', currentActiveFlow);
-        console.log('Received conversationHistory on backend:', JSON.stringify(conversationHistory, null, 2));
         const business = await db_1.prisma.business.findUnique({
-            where: { id: businessId }
+            where: { id: businessId },
+            include: {
+                agentConfig: {
+                    include: {
+                        questions: { orderBy: { order: 'asc' } },
+                    },
+                },
+            },
         });
         if (!business) {
-            console.error(`Business not found for ID: ${businessId}. Cannot determine branding or agent config.`);
+            console.warn(`[AI Handler] Business with ID ${businessId} not found.`);
             return {
-                reply: "Sorry, I'm having trouble finding configuration for this business.",
-                showBranding: true,
-                nextAction: 'HANGUP'
+                reply: "I'm sorry, I can't seem to access my configuration right now. Please try your call again in a few moments.",
+                currentFlow: 'ERROR',
+                nextAction: 'HANGUP',
             };
         }
-        const showBranding = business.planTier === 'PRO';
-        console.log(`Business planTier: ${business.planTier}, Show Branding: ${showBranding}`);
-        let isExistingClient = false;
-        let client = null;
-        let fromNumber = null;
-        if (callSid) {
-            fromNumber = await getCallerId(callSid);
-            if (fromNumber) {
-                client = await db_1.prisma.client.findFirst({
+        let context = '';
+        let clientContext = '';
+        let projectContext = '';
+        let knowledgeContext = '';
+        const knowledgeBaseEntries = await db_1.prisma.knowledgeBase.findMany({
+            where: { businessId: business.id },
+            select: { content: true },
+        });
+        if (knowledgeBaseEntries.length > 0) {
+            knowledgeContext = '--- KNOWLEDGE BASE ---\n' + knowledgeBaseEntries.map((e) => `- ${e.content}`).join('\n');
+        }
+        if (callSid && channel === 'VOICE') {
+            const callLog = await db_1.prisma.callLog.findUnique({
+                where: { callSid },
+                select: { from: true },
+            });
+            if (callLog && callLog.from) {
+                const client = await db_1.prisma.client.findFirst({
                     where: {
-                        businessId,
-                        phone: fromNumber
-                    }
+                        businessId: business.id,
+                        phone: callLog.from,
+                    },
+                    include: {
+                        projects: {
+                            where: { status: { not: 'COMPLETED' } },
+                            select: { name: true, status: true, details: true },
+                        },
+                    },
                 });
                 if (client) {
-                    isExistingClient = true;
-                    console.log(`[AI Handler] Identified existing client: ${client.name} (ID: ${client.id})`);
+                    clientContext = `--- CALLER INFORMATION ---\nThis call is from an existing client: ${client.name}.`;
+                    if (client.projects.length > 0) {
+                        projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + client.projects.map((p) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n');
+                    }
+                    else {
+                        projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\nThis client currently has no active projects.`;
+                    }
                 }
             }
         }
-        let intent;
-        let isEmergency = false;
-        if ((currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('LEAD_CAPTURE')) || (currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('NEW_LEAD_QUALIFICATION'))) {
-            intent = 'NEW_LEAD_QUALIFICATION';
-            console.log('Continuing NEW_LEAD_QUALIFICATION flow based on state.');
+        const contextParts = [clientContext, projectContext, knowledgeContext].filter(Boolean);
+        if (contextParts.length > 0) {
+            context = contextParts.join('\n\n');
         }
-        else if ((currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('FAQ_CLARIFYING')) || (currentActiveFlow === null || currentActiveFlow === void 0 ? void 0 : currentActiveFlow.startsWith('CLIENT_FAQ_CLARIFYING'))) {
-            intent = 'CLIENT_FAQ';
-            console.log('Continuing CLIENT_FAQ flow after clarification.');
+        const leadCaptureQuestions = ((_a = business.agentConfig) === null || _a === void 0 ? void 0 : _a.questions) || [];
+        const systemMessage = (0, exports.createVoiceSystemPrompt)(business.name, context, leadCaptureQuestions);
+        const personaPrompt = (_b = business.agentConfig) === null || _b === void 0 ? void 0 : _b.personaPrompt;
+        if (personaPrompt) {
         }
-        else if (currentActiveFlow === 'PROJECT_STATUS_CLARIFYING') {
-            intent = 'PROJECT_STATUS_INQUIRY';
-            console.log('Continuing PROJECT_STATUS_INQUIRY flow after clarification.');
+        const finalHistory = conversationHistory.map((h) => ({
+            role: h.role,
+            content: h.content,
+        }));
+        console.log('[AI Handler] Generating chat completion with system message:', systemMessage.substring(0, 500) + '...');
+        const aiResponse = await (0, openai_1.getChatCompletion)([
+            { role: 'system', content: systemMessage },
+            ...finalHistory,
+            { role: 'user', content: message }
+        ]);
+        const reply = cleanVoiceResponse(aiResponse || '');
+        const nextAction = 'CONTINUE';
+        if (session && callSid) {
+            const updatedHistory = [...conversationHistory, { role: 'user', content: message }, { role: 'assistant', content: reply }];
+            await voiceSessionService.updateVoiceSession(callSid, updatedHistory, currentActiveFlow || null);
         }
-        else if (currentActiveFlow === 'EMERGENCY_ESCALATION_OFFER') {
-            const choiceResponse = await (0, openai_1.getChatCompletion)(`The user was offered emergency escalation. User's response: "${message}"
-        Does the user want IMMEDIATE ESCALATION or QUICK QUESTIONS?
-        Respond with only: IMMEDIATE or QUESTIONS`, "You are an escalation preference detection expert.");
-            const userChoice = cleanVoiceResponse(choiceResponse || 'QUESTIONS').trim().toUpperCase();
-            intent = userChoice === 'IMMEDIATE' ? 'EMERGENCY' : 'NEW_LEAD_QUALIFICATION';
-        }
-        else {
-            const intentPrompt = `Analyze the user's message and classify their intent for a creative agency.
-
-      ${isExistingClient ? `**THIS CALL IS FROM AN EXISTING CLIENT (${(client === null || client === void 0 ? void 0 : client.name) || 'Unknown Client'}).**` : `**THIS CALL IS FROM A POTENTIAL NEW CLIENT.**`}
-
-      Possible Intents:
-      - **NEW_LEAD_QUALIFICATION**: User is asking for new services, pricing, consultations, or expressing a new project need.
-      - **PROJECT_STATUS_INQUIRY**: User is an existing client asking for an update on an ongoing project (e.g., "What's the status of my website?", "How's the branding project going?"). (Only for existing clients)
-      - **CLIENT_FAQ**: User is an existing client asking general questions about the agency (e.g., "How do I submit feedback?", "What's your billing cycle?", "Where can I find my invoices?"). (Only for existing clients)
-      - **AGENCY_GENERAL_FAQ**: User (new or existing) asking general questions about the agency that are not project-specific (e.g., "What services do you offer?", "What are your office hours?").
-      - **END_CALL**: User indicates they want to end the call.
-      - **OTHER**: Greetings, thank you messages, unclear, or off-topic messages.
-
-      User message: '${message}'
-      Recent history: ${JSON.stringify(conversationHistory.slice(-3))}
-
-      Classify as: NEW_LEAD_QUALIFICATION, PROJECT_STATUS_INQUIRY, CLIENT_FAQ, AGENCY_GENERAL_FAQ, END_CALL, or OTHER`;
-            const intentResponse = await (0, openai_1.getChatCompletion)(intentPrompt, "You are an intent classification expert for a creative agency. Respond with only: NEW_LEAD_QUALIFICATION, PROJECT_STATUS_INQUIRY, CLIENT_FAQ, AGENCY_GENERAL_FAQ, END_CALL, or OTHER.");
-            intent = cleanVoiceResponse(intentResponse || 'OTHER').trim().toUpperCase();
-        }
-        isEmergency = intent === 'EMERGENCY';
-        console.log(`Effective intent: ${intent}  (isEmergency: ${isEmergency})`);
-        if (intent === 'PROJECT_STATUS_INQUIRY') {
-            console.log('Entering PROJECT_STATUS_INQUIRY flow...');
-            if (!isExistingClient) {
-                return {
-                    reply: "I can help with project status updates for existing clients. Are you an existing client, or are you looking to start a new project?",
-                    currentFlow: null,
-                    showBranding,
-                    nextAction: determineNextVoiceAction('OTHER', null)
-                };
-            }
-            if (business.planTier !== 'ENTERPRISE') {
-                return {
-                    reply: `Project status inquiries are available on our ENTERPRISE plan. Would you like me to take your details to have someone from our team provide an update?`,
-                    currentFlow: 'NEW_LEAD_QUALIFICATION',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
-                };
-            }
-            const projectQueryPrompt = `The client (${client === null || client === void 0 ? void 0 : client.name}) is asking about a project. What specific project are they asking about? If unclear, ask a clarifying question.
-      Client message: "${message}"
-      Respond with only the project name (e.g., "Website Redesign") or "UNCLEAR" if you cannot determine the project.`;
-            const projectName = cleanVoiceResponse(await (0, openai_1.getChatCompletion)(projectQueryPrompt, "You are a project name extraction expert.") || '');
-            if (projectName === 'UNCLEAR' || !projectName) {
-                return {
-                    reply: "I'm not sure how to help with that. Would you like me to connect you with our team?",
-                    currentFlow: 'NEW_LEAD_QUALIFICATION',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
-                };
-            }
-            const projects = await db_1.prisma.project.findMany({
-                where: {
-                    clientId: client === null || client === void 0 ? void 0 : client.id,
-                    name: { contains: projectName, mode: 'insensitive' }
-                },
-                orderBy: { lastSyncedAt: 'desc' }
-            });
-            if (projects.length > 0) {
-                const project = projects[0];
-                return {
-                    reply: `Okay, for your project "${project.name}", the current status is: "${project.status}". The last update was on ${new Date(project.lastSyncedAt).toLocaleDateString()}. Is there anything else I can help with regarding this project?`,
-                    currentFlow: null,
-                    showBranding,
-                    nextAction: determineNextVoiceAction('PROJECT_STATUS_INQUIRY', null)
-                };
-            }
-            else {
-                return {
-                    reply: `I couldn't find a project named "${projectName}". Could you please confirm the project name, or describe it briefly?`,
-                    currentFlow: 'PROJECT_STATUS_CLARIFYING',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('PROJECT_STATUS_INQUIRY', 'PROJECT_STATUS_CLARIFYING')
-                };
-            }
-        }
-        else if (intent === 'CLIENT_FAQ') {
-            console.log('Entering CLIENT_FAQ flow...');
-            if (!isExistingClient) {
-                return {
-                    reply: "I can answer general questions about our agency. What would you like to know?",
-                    currentFlow: null,
-                    showBranding,
-                    nextAction: determineNextVoiceAction('AGENCY_GENERAL_FAQ', null)
-                };
-            }
-            if (business.planTier !== 'ENTERPRISE') {
-                return {
-                    reply: `Client-specific FAQs are available on our ENTERPRISE plan. I can answer general questions about our agency's services. What would you like to know?`,
-                    currentFlow: 'AGENCY_GENERAL_FAQ',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('AGENCY_GENERAL_FAQ', null)
-                };
-            }
-            const relevantKnowledge = await (0, ragService_1.findRelevantKnowledge)(message, businessId, 3);
-            if (relevantKnowledge.length > 0) {
-                const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n');
-                const voiceSystemPrompt = createVoiceSystemPrompt(business.name, contextSnippets, undefined);
-                const faqUserPrompt = `Based on the following context, answer the client's question naturally and conversationally. Focus on providing helpful information relevant to an agency client.
-        Context: ${contextSnippets}
-        Client's Question: ${message}`;
-                const rawResponse = await (0, openai_1.getChatCompletion)(faqUserPrompt, voiceSystemPrompt);
-                const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null;
-                return {
-                    reply: cleanedResponse || "I'm having trouble finding that specific information. Could you rephrase your question?",
-                    currentFlow: null,
-                    showBranding,
-                    nextAction: determineNextVoiceAction('CLIENT_FAQ', null)
-                };
-            }
-            else {
-                return {
-                    reply: "I couldn't find a specific answer to that in our client knowledge base. Can I get a message to our team to follow up with you on this?",
-                    currentFlow: 'NEW_LEAD_QUALIFICATION',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
-                };
-            }
-        }
-        else if (intent === 'NEW_LEAD_QUALIFICATION') {
-        }
-        else if (intent === 'AGENCY_GENERAL_FAQ') {
-            console.log('Entering AGENCY_GENERAL_FAQ flow...');
-            const relevantKnowledge = await (0, ragService_1.findRelevantKnowledge)(message, businessId, 3);
-            if (relevantKnowledge.length > 0) {
-                const contextSnippets = relevantKnowledge.map(s => s.content).join('\n---\n');
-                const voiceSystemPrompt = createVoiceSystemPrompt(business.name, contextSnippets, undefined);
-                const faqUserPrompt = `Based on the following context, answer the user's question naturally and conversationally. Focus on providing helpful information about our agency.
-        Context: ${contextSnippets}
-        User's Question: ${message}`;
-                const rawResponse = await (0, openai_1.getChatCompletion)(faqUserPrompt, voiceSystemPrompt);
-                const cleanedResponse = rawResponse ? cleanVoiceResponse(rawResponse) : null;
-                return {
-                    reply: cleanedResponse || "I'm having trouble finding that specific information. Could you rephrase your question?",
-                    currentFlow: null,
-                    showBranding,
-                    nextAction: determineNextVoiceAction('AGENCY_GENERAL_FAQ', null)
-                };
-            }
-            else {
-                return {
-                    reply: "I couldn't find a specific answer to that in our agency knowledge base. Can I get a message to our team to follow up with you on this?",
-                    currentFlow: 'NEW_LEAD_QUALIFICATION',
-                    showBranding,
-                    nextAction: determineNextVoiceAction('NEW_LEAD_QUALIFICATION', 'NEW_LEAD_QUALIFICATION')
-                };
-            }
-        }
-    }
-    catch (error) {
-        console.error('Error in processMessage:', error);
         return {
-            reply: "I apologize, but I'm having trouble processing your request right now. Please try again later or contact our team directly.",
-            currentFlow: null,
-            showBranding: true,
-            nextAction: 'HANGUP'
+            reply,
+            currentFlow: currentActiveFlow,
+            nextAction,
         };
     }
-    return {
-        reply: "I'm not sure how to help with that. Would you like me to connect you with our team?",
-        currentFlow: 'NEW_LEAD_QUALIFICATION',
-        showBranding: true,
-        nextAction: 'CONTINUE'
-    };
+    catch (error) {
+        console.error('[AI Handler] Error processing message:', error);
+        return {
+            reply: 'I seem to be having some technical difficulties. Please try your call again shortly.',
+            currentFlow: 'ERROR',
+            nextAction: 'HANGUP',
+        };
+    }
 };
 const generateRecoveryResponse = () => {
     const recoveryMessages = [

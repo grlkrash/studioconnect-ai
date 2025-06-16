@@ -203,6 +203,10 @@ model Project {
   name                 String
   status               String
   details              String?
+  pmToolId             String?        @map("pm_tool_id")
+  pmTool               String?        @map("pm_tool")
+  assignee             String?        @map("assignee")
+  dueDate              DateTime?      @map("due_date")
   lastSyncedAt         DateTime?
   externalId           String?         @unique
   createdAt            DateTime        @default(now())
@@ -211,6 +215,8 @@ model Project {
   business             Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  @@unique([pmToolId, businessId], name: "pmToolId_businessId")
+  @@unique([businessId, pmToolId], name: "businessId_pmToolId")
   @@map("projects")
 }
 
@@ -220,12 +226,16 @@ model Integration {
   provider      String   @map("type")
   apiKey        String?
   webhookSecret String?
+  webhookId     String?
+  credentials   Json?
+  syncStatus    SyncStatus?  @default(CONNECTED)
   settings      Json?
   isEnabled     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
+  @@unique([businessId, provider], name: "businessId_provider")
   @@map("integrations")
 }
 
@@ -305,4 +315,10 @@ enum CallStatus {
   BUSY
   NO_ANSWER
   CANCELED
+}
+
+enum SyncStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
 }

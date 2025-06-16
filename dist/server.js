@@ -27,6 +27,8 @@ const knowledgeBaseRoutes_1 = __importDefault(require("./api/knowledgeBaseRoutes
 const businessRoutes_1 = __importDefault(require("./api/businessRoutes"));
 const agentConfigRoutes_1 = __importDefault(require("./api/agentConfigRoutes"));
 const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes"));
+const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
+const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -88,6 +90,8 @@ const corsOptions = {
     optionsSuccessStatus: 204
 };
 app.use((0, cors_1.default)(corsOptions));
+app.use('/api/webhooks', express_1.default.raw({ type: '*/*', limit: '10mb' }));
+app.use('/api/webhooks', webhookRoutes_1.default);
 app.use(express_1.default.json({
     limit: '10mb',
     verify: (req, res, buf) => {
@@ -215,6 +219,7 @@ nextApp.prepare()
     app.use('/api/business', businessRoutes_1.default);
     app.use('/api/agent-config', agentConfigRoutes_1.default);
     app.use('/api/lead-questions', leadQuestionRoutes_1.default);
+    app.use('/api/integrations', integrationRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
     const widgetHandler = (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');

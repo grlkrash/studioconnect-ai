@@ -2,7 +2,7 @@ import { Project } from "@prisma/client"
 import axios, { AxiosInstance } from "axios"
 import crypto from "crypto"
 
-import prisma from "@/services/db"
+import { prisma } from "../db"
 import { ProjectManagementProvider } from "./pm.provider.interface"
 
 // Constants
@@ -109,14 +109,14 @@ class AsanaProvider implements ProjectManagementProvider {
         if (!task.gid) continue
         const normalizedData = this.normalizeData(task)
         await prisma.project.upsert({
-          where: { pmToolId: task.gid },
+          where: { businessId_pmToolId: { businessId, pmToolId: task.gid } },
           update: normalizedData,
           create: {
             ...normalizedData,
-            businessId: businessId,
+            businessId,
             pmToolId: task.gid,
             pmTool: "ASANA",
-          },
+          } as any,
         })
 
         if (task.projects) {
@@ -246,7 +246,7 @@ class AsanaProvider implements ProjectManagementProvider {
     return {
       name: task.name,
       status: status,
-      description: task.notes || null,
+      details: task.notes || null,
       assignee: task.assignee?.name || null,
       dueDate: task.due_on ? new Date(task.due_on) : null,
       createdAt: task.created_at ? new Date(task.created_at) : new Date(),
@@ -273,22 +273,29 @@ class AsanaProvider implements ProjectManagementProvider {
    * Fetches and validates the stored Asana credentials for a business.
    */
   private async getBusinessCredentials(businessId: string) {
-    const business = await prisma.business.findUnique({
-      where: { id: businessId },
+    const integration = await prisma.integration.findFirst({
+      where: {
+        businessId,
+        provider: 'ASANA',
+      },
       select: {
-        asanaApiKey: true,
-        asanaWorkspaceGid: true,
-        asanaWebhookSecret: true,
+        apiKey: true,
+        credentials: true,
+        webhookSecret: true,
       },
     })
 
-    if (!business?.asanaApiKey || !business?.asanaWorkspaceGid) {
+    const apiKey = integration?.apiKey || (integration?.credentials as any)?.apiKey
+    const workspaceGid = (integration?.credentials as any)?.workspaceGid
+
+    if (!apiKey || !workspaceGid) {
       throw new Error(`Asana credentials not configured for business ${businessId}`)
     }
+
     return {
-      asanaApiKey: business.asanaApiKey,
-      asanaWorkspaceGid: business.asanaWorkspaceGid,
-      asanaWebhookSecret: business.asanaWebhookSecret, // Can be null initially
+      asanaApiKey: apiKey,
+      asanaWorkspaceGid: workspaceGid,
+      asanaWebhookSecret: integration?.webhookSecret ?? null,
     }
   }
 
@@ -323,7 +330,7 @@ class AsanaProvider implements ProjectManagementProvider {
       `[AsanaProvider] Processing event action '${event.action}' for task ${taskGid}`
     )
     if (event.action === "deleted") {
-      await prisma.project.delete({ where: { pmToolId: taskGid } }).catch(e => {
+      await prisma.project.delete({ where: { businessId_pmToolId: { businessId, pmToolId: taskGid } } }).catch((e: any) => {
         console.warn(`[AsanaProvider] Failed to delete task ${taskGid}, it may have already been removed.`)
       })
     } else {
@@ -332,14 +339,14 @@ class AsanaProvider implements ProjectManagementProvider {
         const taskData = response.data.data
         const normalizedData = this.normalizeData(taskData)
         await prisma.project.upsert({
-          where: { pmToolId: taskGid },
+          where: { businessId_pmToolId: { businessId, pmToolId: taskGid } },
           update: normalizedData,
           create: {
             ...normalizedData,
             pmToolId: taskGid,
             businessId,
             pmTool: "ASANA",
-          },
+          } as any,
         })
       } catch (error) {
         if ((error as any).response?.status === 404) {

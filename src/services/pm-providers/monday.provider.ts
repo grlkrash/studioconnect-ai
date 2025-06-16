@@ -133,7 +133,7 @@ export class MondayProvider implements ProjectManagementProvider {
           if (!normalizedData.pmToolId) continue
           
           await prisma.project.upsert({
-            where: { pmToolId_businessId: { pmToolId: normalizedData.pmToolId, businessId } },
+            where: { businessId_pmToolId: { businessId, pmToolId: normalizedData.pmToolId! } },
             update: normalizedData,
             create: {
               ...normalizedData,
@@ -234,7 +234,7 @@ export class MondayProvider implements ProjectManagementProvider {
     if (item) {
       const normalizedData = this.normalizeData(item, businessId)
       await prisma.project.upsert({
-        where: { pmToolId_businessId: { pmToolId: item.id, businessId } },
+        where: { businessId_pmToolId: { businessId, pmToolId: item.id } },
         update: normalizedData,
         create: {
           ...normalizedData,

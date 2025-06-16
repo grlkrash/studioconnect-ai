@@ -1,7 +1,7 @@
 import { Project } from '@prisma/client'
 import axios, { AxiosInstance } from 'axios'
 import crypto from 'crypto'
-import { prisma } from '../../db'
+import { prisma } from '../db'
 import { ProjectManagementProvider } from './pm.provider.interface'
 
 // Helper to store axios instances per business
@@ -166,9 +166,9 @@ export class JiraProvider implements ProjectManagementProvider {
       businessId,
       pmToolId: issue.key,
       name: issue.fields.summary,
-      status: issue.fields.status.name.toUpperCase(),
+      status: issue.fields.status.name?.toUpperCase() ?? 'UNKNOWN',
       details: issue.fields.description,
-      lastSync: new Date(),
+      lastSyncedAt: new Date(),
     }
   }
 } 
