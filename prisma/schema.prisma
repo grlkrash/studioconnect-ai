@@ -18,18 +18,17 @@ model Business {
   businessType            BusinessType    @default(OTHER)
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
-  /**
-   * One or more email addresses that will receive notifications (comma-separated
-   * string array in Postgres). Replaces the old single `notificationEmail`
-   * field but we keep the original for backward-compat until data is migrated.
-   */
-  notificationEmails      String[]        @default([])
   notificationEmail       String?
   notificationPhoneNumber String?
   planTier                PlanTier        @default(PRO)
   twilioPhoneNumber       String?         @unique
   businessHours           Json?
   timezone                String?
+  /// *
+  ///    * One or more email addresses that will receive notifications (comma-separated
+  ///    * string array in Postgres). Replaces the old single `notificationEmail`
+  ///    * field but we keep the original for backward-compat until data is migrated.
+  notificationEmails      String[]        @default([])
   agentConfig             AgentConfig?
   callLogs                CallLog[]
   clients                 Client[]
@@ -66,7 +65,6 @@ model AgentConfig {
   colorTheme                   Json                  @default("{\"primary\": \"#0ea5e9\", \"secondary\": \"#64748b\"}")
   createdAt                    DateTime              @default(now())
   updatedAt                    DateTime              @updatedAt
-  widgetTheme                  Json?                 @default("{}")
   leadCaptureCompletionMessage String?
   voiceCompletionMessage       String?
   voiceEmergencyMessage        String?
@@ -76,6 +74,7 @@ model AgentConfig {
   useOpenaiTts                 Boolean               @default(true)
   openaiVoice                  OpenAiVoice           @default(NOVA)
   ttsProvider                  String                @default("openai")
+  widgetTheme                  Json?                 @default("{}")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 
@@ -102,18 +101,18 @@ model LeadCaptureQuestion {
 model KnowledgeBase {
   id         String                 @id @default(cuid())
   businessId String
-  projectId  String?
   content    String
   sourceURL  String?
   embedding  Unsupported("vector")?
   metadata   Json?                  @default("{}")
   createdAt  DateTime               @default(now())
   updatedAt  DateTime               @updatedAt
+  projectId  String?
   business   Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
   project    Project?               @relation(fields: [projectId], references: [id])
 
-  @@map("knowledge_base")
   @@index([businessId, projectId])
+  @@map("knowledge_base")
 }
 
 model Lead {
@@ -198,19 +197,19 @@ model Client {
 }
 
 model Project {
-  id           String    @id @default(cuid())
-  businessId   String
-  clientId     String
-  name         String
-  status       String
-  details      String?
-  lastSyncedAt DateTime?
-  externalId   String?   @unique
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id                   String          @id @default(cuid())
+  businessId           String
+  clientId             String
+  name                 String
+  status               String
+  details              String?
+  lastSyncedAt         DateTime?
+  externalId           String?         @unique
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
   knowledgeBaseEntries KnowledgeBase[]
+  business             Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@map("projects")
 }
