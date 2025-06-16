@@ -54,6 +54,11 @@ interface ConnectionState {
   ttsProvider: 'openai' | 'polly';
   openaiVoice: string;
   openaiModel: string;
+  lastSpeechMs: number;
+  vadCalibrated: boolean;
+  vadSamples: number;
+  vadNoiseFloor: number;
+  vadThreshold: number;
   __configLoaded?: boolean;
 }
 
@@ -107,6 +112,8 @@ const MAX_CONVERSATION_HISTORY = 50;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
+const VAD_THRESHOLD = 20; // µ-law sample energy threshold
+const VAD_SILENCE_MS = 600; // flush after 600 ms silence
 
 // State management
 const activeAgents = new Map<string, ConnectionState>();
@@ -238,6 +245,11 @@ class RealtimeAgentService {
       ttsProvider: 'openai',
       openaiVoice: 'nova',
       openaiModel: 'tts-1',
+      lastSpeechMs: Date.now(),
+      vadCalibrated: false,
+      vadSamples: 0,
+      vadNoiseFloor: 0,
+      vadThreshold: 25,
       __configLoaded: false
     };
 
@@ -755,11 +767,33 @@ class RealtimeAgentService {
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        // Accumulate raw audio frames for transcription
-        state.audioQueue.push(mediaPayload)
+        const buf = Buffer.from(mediaPayload, 'base64')
+        let energy = 0
+        for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128)
+        energy = energy / buf.length
 
-        // Flush after ~1.2 seconds of audio (60 frames) for snappier convo
-        if (state.audioQueue.length >= 60) {
+        // Dynamic noise-floor calibration (first 50 frames)
+        if (!state.vadCalibrated) {
+          state.vadNoiseFloor += energy
+          state.vadSamples += 1
+          if (state.vadSamples >= 50) {
+            state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
+            state.vadThreshold = state.vadNoiseFloor + 8 // margin
+            state.vadCalibrated = true
+          }
+        }
+
+        const now = Date.now()
+        const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
+
+        if (energy > threshold) {
+          state.lastSpeechMs = now
+          state.audioQueue.push(mediaPayload)
+        } else {
+          state.audioQueue.push(mediaPayload)
+        }
+
+        if (now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
           this.flushAudioQueue(state)
         }
         break
