@@ -54,6 +54,7 @@ interface ConnectionState {
   ttsProvider: 'openai' | 'polly' | 'realtime';
   openaiVoice: string;
   openaiModel: string;
+  personaPrompt?: string;
   lastSpeechMs: number;
   vadCalibrated: boolean;
   vadSamples: number;
@@ -248,6 +249,7 @@ class RealtimeAgentService {
       ttsProvider: 'openai',
       openaiVoice: 'nova',
       openaiModel: 'tts-1',
+      personaPrompt: undefined,
       lastSpeechMs: Date.now(),
       vadCalibrated: false,
       vadSamples: 0,
@@ -317,7 +319,11 @@ class RealtimeAgentService {
     // -----------------------------
     if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime') {
       try {
-        const client = new OpenAIRealtimeClient(process.env.OPENAI_API_KEY, state.openaiVoice)
+        const client = new OpenAIRealtimeClient(
+          process.env.OPENAI_API_KEY,
+          state.openaiVoice,
+          state.personaPrompt || undefined, // Pass prompt; fallback to default
+        )
         await client.connect()
 
         // Relay assistant audio back to Twilio in real time
@@ -489,6 +495,7 @@ class RealtimeAgentService {
               useOpenaiTts: true,
               openaiVoice: true,
               openaiModel: true,
+              personaPrompt: true,
             },
           })
 
@@ -496,6 +503,7 @@ class RealtimeAgentService {
             state.ttsProvider = (cfg.ttsProvider as any) || (cfg.useOpenaiTts ? 'openai' : 'polly')
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1'
+            state.personaPrompt = cfg.personaPrompt
           }
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message)
@@ -508,7 +516,11 @@ class RealtimeAgentService {
       // established a realtime session, do that now.
       if (state.ttsProvider === 'realtime' && !state.openaiClient && process.env.OPENAI_API_KEY) {
         try {
-          const client = new OpenAIRealtimeClient(process.env.OPENAI_API_KEY, state.openaiVoice)
+          const client = new OpenAIRealtimeClient(
+            process.env.OPENAI_API_KEY,
+            state.openaiVoice,
+            state.personaPrompt || undefined, // Pass prompt; fallback to default
+          )
           await client.connect()
           client.onAssistantAudio((b64) => {
             if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
