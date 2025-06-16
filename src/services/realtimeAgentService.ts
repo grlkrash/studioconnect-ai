@@ -18,6 +18,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { OpenAIRealtimeClient } from './openaiRealtimeClient';
+import { createVoiceSystemPrompt } from '../core/aiHandler';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -737,103 +738,50 @@ class RealtimeAgentService {
 
       console.log('[DEBUG] 3b. Call details fetched:', { toNumber, fromNumber });
 
-      // Find business by phone number using multiple matching strategies to account for formatting differences
-      const digitsOnly = toNumber.replace(/[^0-9]/g, '')
+      const digitsOnly = toNumber.replace(/[^0-9]/g, '');
+      let business: { id: string; twilioPhoneNumber: string | null } | null = null;
 
-      // Attempt exact E.164 match first
-      let business = await prisma.business.findFirst({
-        where: { twilioPhoneNumber: toNumber },
-        select: {
-          id: true,
-          twilioPhoneNumber: true,
-        },
-      })
-
-      // Fallback: try digits-only match (common if number stored without '+')
-      if (!business) {
+      if (digitsOnly) {
+        console.log(`[RealtimeAgent] Looking up business for phone number: ${toNumber} (digits: ${digitsOnly})`);
+        // Attempt exact E.164 match first
         business = await prisma.business.findFirst({
-          where: { twilioPhoneNumber: digitsOnly },
-          select: {
-            id: true,
-            twilioPhoneNumber: true,
-          },
-        })
-      }
+          where: { twilioPhoneNumber: toNumber },
+          select: { id: true, twilioPhoneNumber: true },
+        });
 
-      // Fallback: try matching numbers that *end* with the 10-digit national significant number
-      if (!business && digitsOnly.length >= 10) {
-        const lastTen = digitsOnly.slice(-10)
-        business = await prisma.business.findFirst({
-          where: {
-            twilioPhoneNumber: {
-              endsWith: lastTen,
-            },
-          },
-          select: {
-            id: true,
-            twilioPhoneNumber: true,
-          },
-        })
-      }
-
-      if (!business) {
-        console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
-
-        // Try a more lenient in-memory match by normalizing digits of stored phone numbers
-        const allBusinesses = await prisma.business.findMany({
-          where: {
-            twilioPhoneNumber: {
-              not: null
+        // Fallback: try matching numbers that *end* with the 10-digit national significant number
+        if (!business && digitsOnly.length >= 10) {
+          const lastTen = digitsOnly.slice(-10);
+          console.log(`[RealtimeAgent] Fallback lookup using last 10 digits: ${lastTen}`);
+          const businesses = await prisma.business.findMany({
+            where: { twilioPhoneNumber: { endsWith: lastTen } },
+            select: { id: true, twilioPhoneNumber: true },
+          });
+          if (businesses.length > 0) {
+            business = businesses[0]; // take the first match
+            if (business && businesses.length > 1) {
+              console.warn(`[RealtimeAgent] Found multiple businesses matching last 10 digits. Using first match: ${business.id}`);
             }
-          },
-          select: {
-            id: true,
-            twilioPhoneNumber: true
           }
-        })
-
-        // Ensure we have the 10-digit national significant number for comparison
-        const lastTen = digitsOnly.slice(-10)
-
-        const matchBySanitized = allBusinesses.find((b: { id: string; twilioPhoneNumber: string | null }) => {
-          const storedDigits = (b.twilioPhoneNumber || '').replace(/[^0-9]/g, '')
-          return storedDigits.endsWith(lastTen)
-        })
-
-        if (matchBySanitized) {
-          business =
-            (await prisma.business.findUnique({
-              where: { id: matchBySanitized.id },
-              select: {
-                id: true,
-                twilioPhoneNumber: true,
-              },
-            })) ?? null
         }
       }
 
-      if (!business) {
-        // Even without a business context, populate minimal state so the call can continue.
-        state.businessId = null
-        state.fromNumber = fromNumber
-        state.toNumber = toNumber
+      if (business) {
+        console.log(`[RealtimeAgent] Found business: ${business.id}`);
+        // Update state with recognized business details
+        state.businessId = business.id;
+        state.fromNumber = fromNumber;
+        state.toNumber = toNumber;
 
-        // Provide a generic greeting so callers are not met with silence
-        if (!state.welcomeMessageDelivered) {
-          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
-          state.welcomeMessageDelivered = true
-        }
-      } else {
-        // Create conversation for a recognized business
+        // Create conversation and log the call
         const conversation = await prisma.conversation.create({
           data: {
             businessId: business.id,
             sessionId: crypto.randomUUID(),
-            messages: []
-          }
-        })
+            messages: [],
+          },
+        });
 
-        // Log the call – use upsert to avoid duplicate key errors when Twilio reconnects
         await prisma.callLog.upsert({
           where: { callSid },
           create: {
@@ -846,34 +794,191 @@ class RealtimeAgentService {
             status: 'INITIATED',
             source: 'VOICE_CALL',
             conversationId: conversation.id,
-            metadata: {
-              streamSid: state.streamSid
-            }
+            metadata: { streamSid: state.streamSid },
           },
           update: {
-            // Update metadata if we reconnect and have a new streamSid
-            metadata: {
-              streamSid: state.streamSid
-            },
-            updatedAt: new Date()
-          }
-        })
+            metadata: { streamSid: state.streamSid },
+            updatedAt: new Date(),
+          },
+        });
 
-        // Update state when business is recognized
-        state.businessId = business.id
-        state.fromNumber = fromNumber
-        state.toNumber = toNumber
+        // Load agent config and initialize realtime client
+        await this.loadAgentConfig(state);
+        
+        const systemPrompt = await this.buildSystemPrompt(state);
 
-        // Send the business-specific welcome message now that we have context
+        if (state.ttsProvider === 'realtime' && !state.openaiClient) {
+          await this.initializeOpenAIRealtimeClient(state, systemPrompt);
+        }
+
+        // Always update instructions with the latest context
+        if (state.openaiClient) {
+          console.log('[RealtimeAgent] Updating OpenAI Realtime client with full context prompt.');
+          state.openaiClient.updateInstructions(systemPrompt);
+        }
+
+        // The AI is now responsible for the greeting, so we mark it as delivered.
         if (!state.welcomeMessageDelivered) {
-          const welcomeMessage = await this.getWelcomeMessage(state)
-          await this.streamTTS(state, welcomeMessage)
-          state.welcomeMessageDelivered = true
+          state.welcomeMessageDelivered = true;
+        }
+
+      } else {
+        console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
+        // Populate minimal state for call to continue
+        state.businessId = null;
+        state.fromNumber = fromNumber;
+        state.toNumber = toNumber;
+
+        // Provide a generic greeting
+        if (!state.welcomeMessageDelivered) {
+          if (state.openaiClient) {
+            state.openaiClient.sendUserText('Welcome to StudioConnect AI. How can I help you today?');
+            state.openaiClient.requestAssistantResponse();
+          } else {
+            await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?');
+          }
+          state.welcomeMessageDelivered = true;
         }
       }
     } catch (error) {
       console.error('[RealtimeAgent] Error handling start event:', error);
       this.cleanup('Error handling start event');
+    }
+  }
+
+  private async buildSystemPrompt(state: ConnectionState): Promise<string> {
+    if (!state.businessId) return createVoiceSystemPrompt('this creative agency');
+
+    const business = await prisma.business.findUnique({
+      where: { id: state.businessId },
+      select: { name: true }
+    });
+    
+    let context = '';
+    let clientContext = '';
+    let projectContext = '';
+    let knowledgeContext = '';
+
+    // 1. Fetch Knowledge Base
+    const knowledgeBaseEntries = await prisma.knowledgeBase.findMany({
+      where: { businessId: state.businessId },
+      select: { content: true },
+    });
+    if (knowledgeBaseEntries.length > 0) {
+      knowledgeContext = '--- KNOWLEDGE BASE ---\n' + knowledgeBaseEntries.map((e: { content: string }) => `- ${e.content}`).join('\n');
+    }
+
+    // 2. Fetch Client and Project info
+    if (state.fromNumber) {
+      const client = await getClientByPhoneNumber(state.fromNumber);
+      if (client && client.businessId === state.businessId) {
+        clientContext = `--- CALLER INFORMATION ---\nThis call is from an existing client: ${client.name}.`;
+        const projects = await prisma.project.findMany({
+          where: { clientId: client.id, status: { not: 'COMPLETED' } },
+          select: { name: true, status: true, details: true },
+        });
+        if (projects.length > 0) {
+          projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + projects.map((p: { name: string; status: string; details: string | null }) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n');
+        } else {
+          projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\nThis client currently has no active projects.`;
+        }
+      }
+    }
+
+    // 3. Assemble final context
+    const contextParts = [clientContext, projectContext, knowledgeContext].filter(Boolean);
+    if (contextParts.length > 0) {
+      context = contextParts.join('\n\n');
+    }
+
+    // 4. Fetch Lead Capture Questions
+    const agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        include: { leadCaptureQuestions: { orderBy: { order: 'asc' } } }
+    });
+    const leadCaptureQuestions = agentConfig?.leadCaptureQuestions || [];
+
+    return createVoiceSystemPrompt(business?.name || 'this creative agency', context, leadCaptureQuestions);
+  }
+
+  private async loadAgentConfig(state: ConnectionState): Promise<void> {
+    if (!state.businessId || state.__configLoaded) return;
+
+    try {
+      const cfg = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        select: {
+          useOpenaiTts: true,
+          openaiVoice: true,
+          openaiModel: true,
+          personaPrompt: true,
+          ttsProvider: true,
+        },
+      });
+
+      if (cfg) {
+        state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly');
+        state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase();
+        state.openaiModel = cfg.openaiModel || 'tts-1';
+        state.personaPrompt = cfg.personaPrompt;
+        console.log(`[RealtimeAgent] Loaded agent config for business ${state.businessId}:`, {
+          ttsProvider: state.ttsProvider,
+          openaiVoice: state.openaiVoice,
+        });
+      }
+    } catch (err) {
+      console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message);
+    } finally {
+      state.__configLoaded = true;
+    }
+  }
+
+  private async initializeOpenAIRealtimeClient(state: ConnectionState, initialPrompt: string): Promise<void> {
+    if (state.openaiClient || !process.env.OPENAI_API_KEY) return;
+
+    console.log('[REALTIME AGENT] Initializing OpenAI Realtime Client...');
+    try {
+      const client = new OpenAIRealtimeClient(
+        process.env.OPENAI_API_KEY,
+        state.openaiVoice,
+        initialPrompt,
+      );
+      await client.connect();
+
+      // Relay assistant audio back to Twilio in real time
+      client.on('assistantAudio', (b64) => {
+        if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          state.ws.send(JSON.stringify({
+            event: 'media',
+            streamSid: state.streamSid,
+            media: { payload: b64 },
+          }));
+        }
+      });
+
+      // Handle text responses to maintain conversation history
+      client.on('assistantMessage', (text) => {
+        this.addToConversationHistory(state, 'assistant', text);
+        console.log(`[REALTIME AGENT] Assistant: ${text}`);
+      });
+
+      // Handle errors
+      client.on('error', (error) => {
+        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
+      });
+
+      client.on('close', () => {
+        console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.');
+        // Invalidate the client so it can be re-established if needed
+        state.openaiClient = undefined;
+      });
+
+      state.openaiClient = client;
+      console.log('[REALTIME AGENT] OpenAI Realtime Client connected successfully.');
+    } catch (err) {
+      console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – will use local pipeline', err);
+      // Fallback so we don't keep trying
+      state.ttsProvider = 'openai';
     }
   }
 
@@ -888,51 +993,47 @@ class RealtimeAgentService {
    */
   public handleTwilioStreamEvent(ws: WebSocket, payload: Record<string, unknown>): void {
     // Locate the connection state for this WebSocket instance.
-    const state = [...this.connections.values()].find((s) => s.ws === ws)
+    const state = [...this.connections.values()].find((s) => s.ws === ws);
 
     if (!state) {
-      console.warn('[REALTIME AGENT] Received stream event for unknown WebSocket')
-      return
+      console.warn('[REALTIME AGENT] Received stream event for unknown WebSocket');
+      return;
     }
 
-    const eventType = payload.event as string | undefined
+    const eventType = payload.event as string | undefined;
 
     switch (eventType) {
       case 'start': {
         // The START event provides the definitive CallSid – remap the state so future look-ups are cheap
         try {
-          this.handleStartEvent(state, payload)
+          // Initialize OpenAI client as early as possible if not already done.
+          // The businessId might not be known yet, so we use defaults for now,
+          // and the config will be re-evaluated in handleStartEvent.
+          if (state.ttsProvider === 'realtime' && !state.openaiClient) {
+            this.initializeOpenAIRealtimeClient(state, 'You are a helpful assistant. Please wait for more specific instructions.');
+          }
+          this.handleStartEvent(state, payload);
 
-          const startCallSid = (payload as any).start?.callSid as string | undefined
+          const startCallSid = (payload as any).start?.callSid as string | undefined;
           if (startCallSid) {
             // If the state is stored under a temporary key, move it under the real CallSid
-            const existingKey = [...this.connections.entries()].find(([_, val]) => val === state)?.[0]
+            const existingKey = [...this.connections.entries()].find(([_, val]) => val === state)?.[0];
             if (existingKey && existingKey !== startCallSid) {
-              this.connections.delete(existingKey)
-              this.connections.set(startCallSid, state)
+              this.connections.delete(existingKey);
+              this.connections.set(startCallSid, state);
             }
-            state.callSid = startCallSid
+            state.callSid = startCallSid;
           }
         } catch (error) {
-          console.error('[REALTIME AGENT] Error processing START event:', error)
+          console.error('[REALTIME AGENT] Error processing START event:', error);
         }
-        break
+        break;
       }
       case 'media': {
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        // If realtime client is active, stream directly
-        if (state.openaiClient) {
-          state.openaiClient.sendAudio(mediaPayload)
-          return
-        }
-
-        // Fallback: existing Whisper pipeline
-
-        // Ignore media frames until we have resolved business context.
-        if (!state.businessId) return
-
+        // Always run VAD to manage conversation turn-taking.
         const buf = Buffer.from(mediaPayload, 'base64')
         let energy = 0
         for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128)
@@ -946,17 +1047,44 @@ class RealtimeAgentService {
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
             state.vadThreshold = state.vadNoiseFloor + 8 // margin
             state.vadCalibrated = true
+            console.log(`[REALTIME AGENT] VAD calibrated with noise floor ${state.vadNoiseFloor} and threshold ${state.vadThreshold}`)
           }
         }
 
         const now = Date.now()
         const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
 
+        // If realtime client is active, stream audio directly and use VAD for turn-taking.
+        if (state.openaiClient) {
+          state.openaiClient.sendAudio(mediaPayload)
+
+          if (energy > threshold) {
+            if (!state.isRecording) {
+              console.log('[REALTIME AGENT] VAD speech detected.')
+              state.isRecording = true
+            }
+            state.lastSpeechMs = now
+          }
+
+          // If user was speaking but is now silent, it's the assistant's turn.
+          if (state.isRecording && now - state.lastSpeechMs > VAD_SILENCE_MS) {
+            console.log('[REALTIME AGENT] VAD detected end of speech, requesting assistant response.')
+            state.openaiClient.requestAssistantResponse()
+            state.isRecording = false // Reset for next utterance
+          }
+          return // VAD logic for realtime is complete
+        }
+
+        // --- Fallback to local Whisper pipeline if realtime client is not available ---
+
+        // Ignore media frames until we have resolved business context.
+        if (!state.businessId) return
+
         if (energy > threshold) {
           // Speech detected – begin or continue recording
           if (!state.isRecording) {
             state.isRecording = true
-            // Reset the queue at the start of a new utterance so we don\'t prepend previous noise
+            // Reset the queue at the start of a new utterance so we don't prepend previous noise
             state.audioQueue = []
           }
           state.lastSpeechMs = now
@@ -966,7 +1094,7 @@ class RealtimeAgentService {
           state.audioQueue.push(mediaPayload)
         }
 
-        // Flush when we\'ve been in silence for a while **and** we were previously recording
+        // Flush when we've been in silence for a while **and** we were previously recording
         if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
           state.isProcessing = true
           this.flushAudioQueue(state)
@@ -976,12 +1104,12 @@ class RealtimeAgentService {
       case 'stop':
       case 'end': {
         // Clean-up when Twilio signals the end of the stream.
-        this.cleanup('Twilio STOP event')
-        if (!state.callSid) ws.close()
-        break
+        this.cleanup('Twilio STOP event');
+        if (!state.callSid) ws.close();
+        break;
       }
       default:
-        console.warn('[REALTIME AGENT] Unhandled Twilio stream event type:', eventType)
+        console.warn('[REALTIME AGENT] Unhandled Twilio stream event type:', eventType);
     }
   }
 }

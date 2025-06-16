@@ -12,8 +12,8 @@ export class OpenAIRealtimeClient extends EventEmitter {
 
   constructor(
     private readonly apiKey: string,
-    private readonly voice: string = 'alloy',
-    private readonly instructions: string = 'You are a helpful assistant.',
+    private voice: string = 'alloy',
+    private instructions: string = 'You are a helpful assistant.',
   ) {
     super()
   }
@@ -76,6 +76,23 @@ export class OpenAIRealtimeClient extends EventEmitter {
   requestAssistantResponse(): void {
     if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
     this.ws.send(JSON.stringify({ type: 'response.create' }))
+  }
+
+  /** Updates the session instructions in real-time. */
+  updateInstructions(newInstructions: string): void {
+    if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[OpenAIRealtimeClient] Cannot update instructions, client not ready.')
+      return
+    }
+    this.instructions = newInstructions
+    console.log('[OpenAIRealtimeClient] Updating session instructions...')
+    const cfg = {
+      type: 'session.update',
+      session: {
+        instructions: this.instructions,
+      },
+    }
+    this.ws.send(JSON.stringify(cfg))
   }
 
   /** Close connection. */
