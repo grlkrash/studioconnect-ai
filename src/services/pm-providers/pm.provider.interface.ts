@@ -5,36 +5,36 @@ import { Project } from "@prisma/client"
  */
 export interface ProjectManagementProvider {
   /**
-   * Validates credentials and establishes a connection.
-   * @param credentials - API token or other auth materials.
-   * @returns A boolean indicating if the connection was successful.
+   * Establishes and tests the connection to the provider.
+   * @param credentials - The API credentials required for authentication.
+   *                      For Jira: { email: string, token: string, instanceUrl: string }
    */
-  connect(credentials: { apiKey: string; [key: string]: any }): Promise<boolean>;
+  connect(credentials: { [key: string]: any }): Promise<boolean>;
 
   /**
-   * Performs the initial one-way sync of all relevant project data.
-   * @param businessId - The ID of the business to sync data for.
-   * @returns A summary of synced data (e.g., project and task counts).
+   * Performs a one-way sync of all projects from the provider to the local database.
+   * @param businessId - The ID of the business to sync projects for.
    */
   syncProjects(businessId: string): Promise<{ projectCount: number; taskCount: number }>;
 
   /**
-   * Programmatically creates a webhook in the third-party service.
-   * @param businessId - The ID of the business for which to set up the webhook.
-   * @returns The details of the created webhook.
+   * Sets up webhooks for real-time updates from the provider.
+   * @param businessId - The ID of the business to set up webhooks for.
    */
   setupWebhooks(businessId: string): Promise<{ webhookId: string }>;
 
   /**
-   * Processes an incoming webhook event payload from the provider.
-   * @param payload - The raw, validated payload from the webhook request.
+   * Handles incoming webhook payloads after they have been authenticated.
+   * @param payload - The webhook payload from the provider.
+   * @param businessId - The businessId associated with this webhook event.
    */
-  handleWebhook(payload: any): Promise<void>;
+  handleWebhook(payload: any, businessId: string): Promise<void>;
 
   /**
-   * Normalizes provider-specific data into our internal Project model.
-   * @param providerData - The raw data object from the provider's API.
-   * @returns A normalized Project object compatible with our Prisma schema.
+   * Normalizes data from the provider's format to the application's internal Project model.
+   * @param providerData - The raw data object from the provider (e.g., a Jira issue).
+   * @param businessId - The ID of the business this data belongs to.
+   * @returns A partial Project object with normalized data.
    */
-  normalizeData(providerData: any): Partial<Project>;
+  normalizeData(providerData: any, businessId: string): Partial<Project>;
 } 
