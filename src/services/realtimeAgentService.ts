@@ -286,17 +286,7 @@ class RealtimeAgentService {
       try {
         if (!state.welcomeMessageDelivered) {
           const welcomeMessage = await this.getWelcomeMessage(state)
-          // Attempt to send welcome via realtime voice first; fallback to TTS
-          try {
-            if (state.openaiClient) {
-              state.openaiClient.sendUserText(welcomeMessage)
-              state.openaiClient.requestAssistantResponse()
-            } else {
-              await this.streamTTS(state, welcomeMessage)
-            }
-          } catch {
-            await this.streamTTS(state, welcomeMessage)
-          }
+          await this.streamTTS(state, welcomeMessage)
           state.welcomeMessageDelivered = true
         }
       } catch (error) {
@@ -539,11 +529,13 @@ class RealtimeAgentService {
         }
       }
 
-      // NOTE: We currently keep the local MP3 → ulaw pipeline even when the
-      // realtime client is active.  This guarantees we have deterministic
-      // output while we continue to evaluate the quality of the LLM-generated
-      // conversational audio.  When the realtime pipeline is production-ready
-      // we can short-circuit here instead of falling back to local TTS.
+      // If the realtime client is active, it is the single source of truth for audio.
+      // Send the text to it and let it handle the TTS, then exit.
+      if (state.openaiClient) {
+        state.openaiClient.sendUserText(text)
+        state.openaiClient.requestAssistantResponse()
+        return
+      }
 
       const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, (state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider) as 'openai' | 'polly')
       if (!mp3Path) return
