@@ -61,6 +61,7 @@
     "@aws-sdk/client-polly": "^3.828.0",
     "@openai/agents": "0.0.5",
     "@types/twilio": "^3.19.2",
+    "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
