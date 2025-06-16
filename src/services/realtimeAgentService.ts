@@ -266,11 +266,17 @@ class RealtimeAgentService {
     // first START event provides the details.
     if (callSid && businessId) {
       try {
-        const welcomeMessage = await this.getWelcomeMessage(state)
-        await this.streamTTS(state, welcomeMessage)
+        if (!state.welcomeMessageDelivered) {
+          const welcomeMessage = await this.getWelcomeMessage(state)
+          await this.streamTTS(state, welcomeMessage)
+          state.welcomeMessageDelivered = true
+        }
       } catch (error) {
         console.error('[REALTIME AGENT] Error sending welcome message:', error)
-        await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
+        if (!state.welcomeMessageDelivered) {
+          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
+          state.welcomeMessageDelivered = true
+        }
       }
 
       await prisma.callLog.create({
@@ -435,7 +441,7 @@ class RealtimeAgentService {
       ])
 
       const ulawBuffer = await fs.promises.readFile(ulawPath)
-      const CHUNK_SIZE = 800 // 100ms of audio at 8kHz * 1 byte per sample
+      const CHUNK_SIZE = 320 // 40ms of audio at 8kHz µ-law
 
       for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
         const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE)
@@ -446,7 +452,7 @@ class RealtimeAgentService {
           media: { payload }
         }))
         // Pace the chunks so audio plays in real-time
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, 40))
       }
 
       // Signal end of message
@@ -489,7 +495,10 @@ class RealtimeAgentService {
       // Reset queue regardless of transcription success
       state.audioQueue = []
 
-      if (!transcript || transcript.trim().length === 0) return
+      if (!transcript || transcript.trim().split(/\s+/).length < 2) {
+        // likely noise, ignore
+        return
+      }
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
@@ -633,10 +642,9 @@ class RealtimeAgentService {
         state.toNumber = toNumber
 
         // Provide a generic greeting so callers are not met with silence
-        try {
+        if (!state.welcomeMessageDelivered) {
           await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
-        } catch (err) {
-          console.error('[REALTIME AGENT] Failed to send generic welcome message:', err)
+          state.welcomeMessageDelivered = true
         }
       } else {
         // Create conversation for a recognized business
@@ -680,12 +688,10 @@ class RealtimeAgentService {
         state.toNumber = toNumber
 
         // Send the business-specific welcome message now that we have context
-        try {
+        if (!state.welcomeMessageDelivered) {
           const welcomeMessage = await this.getWelcomeMessage(state)
           await this.streamTTS(state, welcomeMessage)
-        } catch (error) {
-          console.error('[REALTIME AGENT] Error sending welcome message after START:', error)
-          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
+          state.welcomeMessageDelivered = true
         }
       }
 
@@ -748,8 +754,8 @@ class RealtimeAgentService {
         // Accumulate raw audio frames for transcription
         state.audioQueue.push(mediaPayload)
 
-        // Flush and transcribe roughly every ~1 second of audio (50×20 ms frames)
-        if (state.audioQueue.length >= 50) {
+        // Flush after ~3 seconds of audio (150 frames)
+        if (state.audioQueue.length >= 150) {
           this.flushAudioQueue(state)
         }
         break
