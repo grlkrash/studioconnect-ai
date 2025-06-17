@@ -11,7 +11,14 @@
 
 */
 -- CreateEnum
-CREATE TYPE IF NOT EXISTS "SyncStatus" AS ENUM ('CONNECTED', 'DISCONNECTED', 'ERROR');
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'SyncStatus'
+    ) THEN
+        CREATE TYPE "SyncStatus" AS ENUM ('CONNECTED', 'DISCONNECTED', 'ERROR');
+    END IF;
+END$$;
 
 -- AlterTable
 ALTER TABLE "agent_configs" DROP COLUMN IF EXISTS "prefix_padding_ms",
