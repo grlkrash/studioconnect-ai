@@ -11,7 +11,7 @@
     "build:api": "tsc",
     "build": "npx prisma generate && npm --prefix dashboard run build && npm run build:api",
     "postbuild": "mkdir -p dist/views && cp -R src/views/* dist/views/ && cp src/public/widget.js public/widget.js",
-    "prestart": "npx prisma migrate deploy",
+    "prestart": "(npx prisma migrate resolve --rolled-back 20250616234716_add_integration_fields || true) && (npx prisma migrate resolve --rolled-back 20250616233704_openai_voice_enum_extension || true) && npx prisma migrate deploy",
     "prestart:prod": "npx prisma migrate deploy",
     "start": "node dist/server.js",
     "start:prod": "NODE_ENV=production node dist/server.js",
