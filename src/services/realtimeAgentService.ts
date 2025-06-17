@@ -66,6 +66,8 @@ interface ConnectionState {
   isProcessing: boolean;
   __configLoaded?: boolean;
   openaiClient?: OpenAIRealtimeClient;
+  isSpeaking: boolean;
+  pendingAudioGeneration: boolean;
 }
 
 interface AgentSession {
@@ -261,7 +263,9 @@ class RealtimeAgentService {
       isRecording: false,
       isProcessing: false,
       __configLoaded: false,
-      openaiClient: undefined
+      openaiClient: undefined,
+      isSpeaking: false,
+      pendingAudioGeneration: false
     };
 
     // Try to identify client if phone number is available
@@ -519,20 +523,19 @@ class RealtimeAgentService {
       return
     }
 
+    if (state.isSpeaking || state.pendingAudioGeneration) {
+      console.warn('[REALTIME AGENT] Already generating/playing audio, skipping TTS request')
+      return
+    }
+
+    state.pendingAudioGeneration = true
+
     try {
       /**
-       * Load the Agent-level voice configuration. In production we occasionally hit
-       * a "P2022 column does not exist" error when the database schema is out of
-       * sync with the generated Prisma client. Because this *only* affects the
-       * optional widget configuration, we treat the lookup as a best-effort
-       * operation and gracefully fall back to sensible defaults whenever it
-       * fails instead of aborting the entire TTS pipeline (which results in the
-       * caller hearing *nothing*).
+       * Load the Agent-level voice configuration with bulletproof error handling
        */
       if (state.businessId && !state.__configLoaded) {
         try {
-          // Fetch ONLY the columns we actually need to avoid runtime errors when the
-          // database schema is missing newer, optional columns (e.g. widgetTheme).
           const cfg = await prisma.agentConfig.findUnique({
             where: { businessId: state.businessId },
             select: {
@@ -540,146 +543,150 @@ class RealtimeAgentService {
               openaiVoice: true,
               openaiModel: true,
               personaPrompt: true,
+              ttsProvider: true,
             },
           })
 
           if (cfg) {
-            // Respect explicit provider; otherwise fall back to defaults
             const provider = (cfg as any).ttsProvider
-            if (provider) {
+            if (provider && ['openai', 'polly', 'realtime'].includes(provider)) {
               state.ttsProvider = provider
             } else if (cfg.useOpenaiTts !== undefined) {
               state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
             }
-            // If still not set, default to realtime for more natural voice
-            if (!state.ttsProvider) state.ttsProvider = 'realtime'
+            
+            // Default to OpenAI for better quality if realtime fails
+            if (!state.ttsProvider) state.ttsProvider = 'openai'
+            
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
-            state.openaiModel = cfg.openaiModel || 'tts-1'
+            state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
             state.personaPrompt = cfg.personaPrompt
+            
+            console.log(`[REALTIME AGENT] Voice config loaded: ${state.ttsProvider} with voice ${state.openaiVoice}`)
           }
         } catch (err) {
-          console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message)
+          console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message)
+          state.ttsProvider = 'openai'
+          state.openaiVoice = 'nova'
+          state.openaiModel = 'tts-1-hd'
         } finally {
           state.__configLoaded = true
         }
       }
 
-      // If the business is configured for realtime voice and we haven't yet
-      // established a realtime session, do that now.
-      if (state.ttsProvider === 'realtime' && !state.openaiClient && process.env.OPENAI_API_KEY) {
+      // If realtime client is active and working, use it exclusively
+      if (state.openaiClient && state.ttsProvider === 'realtime') {
         try {
-          const client = new OpenAIRealtimeClient(
-            process.env.OPENAI_API_KEY,
-            state.openaiVoice,
-            state.personaPrompt || undefined, // Pass prompt; fallback to default
-          )
-          await client.connect()
-          client.on('assistantAudio', (b64) => {
-            if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
-            if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-              state.ws.send(
-                JSON.stringify({
-                  event: 'media',
-                  streamSid: state.streamSid,
-                  media: { payload: b64 },
-                }),
-              )
-            }
-          })
-          
-          // Handle text responses to maintain conversation history
-          client.on('assistantMessage', (text) => {
-            this.addToConversationHistory(state, 'assistant', text);
-            console.log(`[REALTIME AGENT] Assistant: ${text}`);
-          });
-
-          // Handle errors
-          client.on('error', async (error) => {
-            console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
-            state.openaiClient = undefined
-            state.ttsProvider = 'openai'
-
-            if (!state.welcomeMessageDelivered) {
-              try {
-                const fallbackGreeting = await this.getWelcomeMessage(state)
-                await this.streamTTS(state, fallbackGreeting)
-                state.welcomeMessageDelivered = true
-              } catch (fallbackErr) {
-                console.error('[REALTIME AGENT] Failed to stream fallback greeting (streamTTS):', fallbackErr)
-              }
-            }
-          });
-
-          client.on('close', async () => {
-            console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
-            state.openaiClient = undefined
-            state.ttsProvider = 'openai'
-
-            if (!state.welcomeMessageDelivered) {
-              try {
-                const fallbackGreeting = await this.getWelcomeMessage(state)
-                await this.streamTTS(state, fallbackGreeting)
-                state.welcomeMessageDelivered = true
-              } catch (fallbackErr) {
-                console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (streamTTS):', fallbackErr)
-              }
-            }
-          });
-
-          state.openaiClient = client
-        } catch (err) {
-          console.error('[REALTIME AGENT] Failed to bootstrap OpenAI realtime client – will fall back to local TTS:', err)
-          // Ensure we don't attempt again in this call
+          console.log(`[REALTIME AGENT] Using realtime client for: ${text.substring(0, 50)}...`)
+          this.addToConversationHistory(state, 'user', text)
+          state.openaiClient.sendUserText(text)
+          state.openaiClient.requestAssistantResponse()
+          return
+        } catch (error) {
+          console.error('[REALTIME AGENT] Realtime client failed, falling back to TTS:', error)
+          // Fall through to TTS generation
           state.ttsProvider = 'openai'
+          state.openaiClient = undefined
         }
       }
 
-      // If the realtime client is active, it is the single source of truth for audio.
-      // Send the text to it and let it handle the TTS, then exit.
-      if (state.openaiClient) {
-        this.addToConversationHistory(state, 'user', text)
-        state.openaiClient.sendUserText(text)
-        state.openaiClient.requestAssistantResponse()
+      // Generate high-quality TTS audio
+      console.log(`[REALTIME AGENT] Generating TTS with ${state.ttsProvider} for: ${text.substring(0, 50)}...`)
+      
+      const mp3Path = await generateSpeechFromText(
+        text, 
+        state.openaiVoice, 
+        state.openaiModel as any, 
+        state.ttsProvider as 'openai' | 'polly'
+      )
+      
+      if (!mp3Path) {
+        console.error('[REALTIME AGENT] Failed to generate TTS audio')
         return
       }
 
-      const mp3Path = await generateSpeechFromText(text, state.openaiVoice, state.openaiModel as any, (state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider) as 'openai' | 'polly')
-      if (!mp3Path) return
+      // Mark as speaking before streaming
+      state.isSpeaking = true
 
       const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`)
 
-      // Convert MP3 to 8kHz mono µ-law raw audio compatible with Twilio
+      // Convert MP3 to 8kHz mono µ-law with optimized settings
       await execFileAsync(ffmpegPath as string, [
         '-y',
         '-i', mp3Path,
         '-ar', '8000',
         '-ac', '1',
         '-f', 'mulaw',
+        '-af', 'volume=0.8', // Slightly reduce volume for clarity
         ulawPath
       ])
 
       const ulawBuffer = await fs.promises.readFile(ulawPath)
       const CHUNK_SIZE = 320 // 40ms of audio at 8kHz µ-law
 
+      // Stream audio in real-time with proper pacing
       for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
         const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE)
         const payload = chunk.toString('base64')
-        state.ws.send(JSON.stringify({
-          event: 'media',
-          streamSid: state.streamSid,
-          media: { payload }
-        }))
-        // Pace the chunks so audio plays in real-time
+        
+        if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          state.ws.send(JSON.stringify({
+            event: 'media',
+            streamSid: state.streamSid,
+            media: { payload }
+          }))
+        } else {
+          console.warn('[REALTIME AGENT] WebSocket not ready, stopping audio stream')
+          break
+        }
+        
+        // Precise timing for natural speech
         await new Promise((resolve) => setTimeout(resolve, 40))
       }
 
       // Signal end of message
-      state.ws.send(JSON.stringify({ event: 'mark', streamSid: state.streamSid, mark: { name: 'eom' } }))
+      if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+        state.ws.send(JSON.stringify({ 
+          event: 'mark', 
+          streamSid: state.streamSid, 
+          mark: { name: 'speech_complete' } 
+        }))
+      }
 
+      console.log('[REALTIME AGENT] TTS streaming completed successfully')
+
+      // Clean up temp files
       await cleanupTempFile(mp3Path)
       await cleanupTempFile(ulawPath)
+
     } catch (error) {
-      console.error('[REALTIME AGENT] Error streaming TTS to Twilio:', error)
+      console.error('[REALTIME AGENT] Critical error in TTS streaming:', error)
+      
+      // Attempt emergency fallback with simple message
+      try {
+        const fallbackText = "I apologize, I'm having some technical difficulties. Let me try again."
+        const emergencyMp3 = await generateSpeechFromText(fallbackText, 'nova', 'tts-1', 'openai')
+        if (emergencyMp3) {
+          // Simple emergency playback without conversion
+          const buffer = await fs.promises.readFile(emergencyMp3)
+          // Send as base64 - Twilio can handle MP3
+          const payload = buffer.toString('base64')
+          if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+            state.ws.send(JSON.stringify({
+              event: 'media',
+              streamSid: state.streamSid,
+              media: { payload }
+            }))
+          }
+          await cleanupTempFile(emergencyMp3)
+        }
+      } catch (emergencyError) {
+        console.error('[REALTIME AGENT] Emergency fallback also failed:', emergencyError)
+      }
+    } finally {
+      // Always reset state flags
+      state.isSpeaking = false
+      state.pendingAudioGeneration = false
     }
   }
 
@@ -693,56 +700,78 @@ class RealtimeAgentService {
     state.audioQueue = []
     state.isRecording = false
 
+    let rawPath: string | null = null
+    let wavPath: string | null = null
+
     try {
+      console.log(`[REALTIME AGENT] Processing ${audioToProcess.length} audio chunks for transcription`)
+
       const rawBuffers = audioToProcess.map((b64) => Buffer.from(b64, 'base64'))
       const rawData = Buffer.concat(rawBuffers)
 
-      // Skip processing if the utterance is too short (<200 ms) to avoid Whisper 400 errors
-      const MIN_DURATION_MS = 200
+      // Enhanced duration check for professional quality
+      const MIN_DURATION_MS = 300 // Increased minimum for better accuracy
       const bytesPerMs = 8 // 8000 samples/sec * 1 byte/sample / 1000ms
-      if (rawData.length < bytesPerMs * MIN_DURATION_MS) {
-        // Discard the captured silence/noise and reset queue early
-        state.audioQueue = []
+      const durationMs = rawData.length / bytesPerMs
+
+      if (durationMs < MIN_DURATION_MS) {
+        console.log(`[REALTIME AGENT] Audio too short (${durationMs.toFixed(0)}ms), skipping transcription`)
         return
       }
 
+      console.log(`[REALTIME AGENT] Processing ${durationMs.toFixed(0)}ms of audio`)
+
       const baseName = `${state.callSid || 'unknown'}_${Date.now()}`
-      const rawPath = path.join(os.tmpdir(), `${baseName}.ulaw`)
-      const wavPath = path.join(os.tmpdir(), `${baseName}.wav`)
+      rawPath = path.join(os.tmpdir(), `${baseName}.ulaw`)
+      wavPath = path.join(os.tmpdir(), `${baseName}.wav`)
 
       await fs.promises.writeFile(rawPath, rawData)
 
-      // Convert raw µ-law to WAV 8kHz mono for Whisper
+      // Enhanced audio conversion with noise reduction
       await execFileAsync(ffmpegPath as string, [
         '-y',
         '-f', 'mulaw',
         '-ar', '8000',
         '-ac', '1',
         '-i', rawPath,
+        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.2', // Professional audio filtering
+        '-ar', '16000', // Upsample for better Whisper accuracy
         wavPath
       ])
 
+      console.log('[REALTIME AGENT] Starting professional transcription...')
       const transcriptRaw = await getTranscription(wavPath)
 
-      await cleanupTempFile(rawPath)
-      await cleanupTempFile(wavPath)
+      if (!transcriptRaw || transcriptRaw.trim().length === 0) {
+        console.log('[REALTIME AGENT] No transcription received')
+        return
+      }
 
-      // Reset queue regardless of transcription success - This is now done at the top
-      // state.audioQueue = []
-      // Mark that we have stopped recording this utterance
-      // state.isRecording = false
+      const transcript = transcriptRaw.trim()
+      console.log(`[REALTIME AGENT] Transcription: "${transcript}"`)
 
-      if (!transcriptRaw) return
+      // Enhanced validation for professional conversations
+      const txt = transcript.toLowerCase()
+      const words = txt.split(/\s+/).filter(w => w.length > 0)
+      
+      // Allow professional single words and short phrases
+      const allowedShort = [
+        'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'thank you', 'bye', 'goodbye',
+        'hello', 'hi', 'hey', 'great', 'perfect', 'exactly', 'correct', 'right',
+        'please', 'help', 'stop', 'wait', 'continue', 'proceed', 'go ahead'
+      ]
+      
+      const isValid = words.length > 1 || allowedShort.includes(txt) || 
+                     (words.length === 1 && words[0].length > 2) // Single meaningful words
 
-      const transcript = transcriptRaw
-
-      const txt = transcript.trim().toLowerCase()
-      const allowedShort = ['yes','no','ok','okay','sure','thanks','thank you','bye','hello','hi']
-      const isValid = txt.split(/\s+/).length > 1 || allowedShort.includes(txt)
-      if (!isValid) return
+      if (!isValid) {
+        console.log(`[REALTIME AGENT] Transcription not valid for processing: "${transcript}"`)
+        return
+      }
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
+      console.log('[REALTIME AGENT] Processing message with AI handler...')
       const response = await processMessage({
         message: transcript,
         conversationHistory: state.conversationHistory,
@@ -752,20 +781,47 @@ class RealtimeAgentService {
         channel: 'VOICE'
       })
 
+      // Update conversation history
       this.addToConversationHistory(state, 'user', transcript)
       this.addToConversationHistory(state, 'assistant', response.reply)
       state.currentFlow = response.currentFlow || null
+      
+      // Manage conversation history size
       if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
         state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
       }
 
+      console.log(`[REALTIME AGENT] AI Response: "${response.reply.substring(0, 100)}..."`)
+
+      // Stream the response
       await this.streamTTS(state, response.reply)
+
     } catch (error) {
-      console.error('[REALTIME AGENT] Error flushing audio queue:', error)
-      await this.streamTTS(state, 'I encountered an error while processing your request.')
-      state.audioQueue = []
+      console.error('[REALTIME AGENT] Critical error in audio processing pipeline:', error)
+      
+      // Professional error recovery
+      const errorMessages = [
+        "I apologize, but I didn't catch that. Could you please repeat your question?",
+        "I'm sorry, I'm having trouble understanding. Could you rephrase that for me?",
+        "I apologize for the technical difficulty. Please try speaking again."
+      ]
+      
+      const randomMessage = errorMessages[Math.floor(Math.random() * errorMessages.length)]
+      
+      try {
+        await this.streamTTS(state, randomMessage)
+      } catch (fallbackError) {
+        console.error('[REALTIME AGENT] Even error recovery failed:', fallbackError)
+      }
+      
     } finally {
+      // Always clean up temp files
+      if (rawPath) await cleanupTempFile(rawPath)
+      if (wavPath) await cleanupTempFile(wavPath)
+      
+      // Reset processing state
       state.isProcessing = false
+      state.audioQueue = [] // Ensure queue is clear
     }
   }
 
@@ -778,18 +834,22 @@ class RealtimeAgentService {
   }
 
   private async handleStartEvent(state: ConnectionState, data: any): Promise<void> {
-    console.log('[DEBUG] 3a. Processing start event...');
+    console.log('[REALTIME AGENT] Processing call start event with professional voice configuration...');
     const callSid = data.start?.callSid;
     state.streamSid = data.start?.streamSid;
     state.isTwilioReady = true;
     state.callSid = callSid;
     this.callSid = callSid ?? this.callSid;
 
+    // Initialize state flags
+    state.isSpeaking = false;
+    state.pendingAudioGeneration = false;
+
     if (this.onCallSidReceived && callSid) this.onCallSidReceived(callSid);
 
     if (!callSid) {
-      console.error('[RealtimeAgent] CallSid not found in start message');
-      this.cleanup('Twilio');
+      console.error('[REALTIME AGENT] CallSid not found in start message');
+      this.cleanup('Missing CallSid');
       return;
     }
 
@@ -801,44 +861,40 @@ class RealtimeAgentService {
       const toNumber = normalizePhoneNumber(toNumberRaw);
       const fromNumber = normalizePhoneNumber(fromNumberRaw);
 
-      console.log('[DEBUG] 3b. Call details fetched:', { toNumber, fromNumber });
+      console.log('[REALTIME AGENT] Call details:', { toNumber, fromNumber });
 
       const digitsOnly = toNumber.replace(/[^0-9]/g, '');
       let business: { id: string; twilioPhoneNumber: string | null } | null = null;
 
       if (digitsOnly) {
-        console.log(`[RealtimeAgent] Looking up business for phone number: ${toNumber} (digits: ${digitsOnly})`);
-        // Attempt exact E.164 match first
+        console.log(`[REALTIME AGENT] Looking up business for phone number: ${toNumber}`);
+        // Exact match first
         business = await prisma.business.findFirst({
           where: { twilioPhoneNumber: toNumber },
           select: { id: true, twilioPhoneNumber: true },
         });
 
-        // Fallback: try matching numbers that *end* with the 10-digit national significant number
+        // Fallback: try matching last 10 digits
         if (!business && digitsOnly.length >= 10) {
           const lastTen = digitsOnly.slice(-10);
-          console.log(`[RealtimeAgent] Fallback lookup using last 10 digits: ${lastTen}`);
           const businesses = await prisma.business.findMany({
             where: { twilioPhoneNumber: { endsWith: lastTen } },
             select: { id: true, twilioPhoneNumber: true },
           });
           if (businesses.length > 0) {
-            business = businesses[0]; // take the first match
-            if (business && businesses.length > 1) {
-              console.warn(`[RealtimeAgent] Found multiple businesses matching last 10 digits. Using first match: ${business.id}`);
-            }
+            business = businesses[0];
           }
         }
       }
 
       if (business) {
-        console.log(`[RealtimeAgent] Found business: ${business.id}`);
-        // Update state with recognized business details
+        console.log(`[REALTIME AGENT] Found business: ${business.id} - Initializing professional voice service`);
+        
         state.businessId = business.id;
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
 
-        // Create conversation and log the call
+        // Create conversation record
         const conversation = await prisma.conversation.create({
           data: {
             businessId: business.id,
@@ -847,6 +903,7 @@ class RealtimeAgentService {
           },
         });
 
+        // Log call with proper status
         await prisma.callLog.upsert({
           where: { callSid },
           create: {
@@ -856,74 +913,78 @@ class RealtimeAgentService {
             to: toNumber,
             direction: 'INBOUND',
             type: 'VOICE',
-            status: 'INITIATED',
+            status: 'IN_PROGRESS',
             source: 'VOICE_CALL',
             conversationId: conversation.id,
             metadata: { streamSid: state.streamSid },
           },
           update: {
+            status: 'IN_PROGRESS',
             metadata: { streamSid: state.streamSid },
             updatedAt: new Date(),
           },
         });
 
-        // Load agent config and initialize realtime client
+        // Load configuration and initialize voice systems
         await this.loadAgentConfig(state);
-        
         const systemPrompt = await this.buildSystemPrompt(state);
 
+        // Initialize realtime client if configured
         if (state.ttsProvider === 'realtime' && !state.openaiClient) {
           await this.initializeOpenAIRealtimeClient(state, systemPrompt);
         }
 
-        // Always update instructions with the latest context
+        // Update instructions for existing realtime client
         if (state.openaiClient) {
-          console.log('[RealtimeAgent] Updating OpenAI Realtime client with full context prompt.');
+          console.log('[REALTIME AGENT] Updating realtime client with business context');
           state.openaiClient.updateInstructions(systemPrompt);
         }
 
-        // Deliver the initial greeting now that we have full business context.
+        // Deliver professional greeting
         if (!state.welcomeMessageDelivered) {
           try {
-            if (state.openaiClient) {
-              // Realtime voice: ask the assistant to produce the first response based on the system prompt.
+            if (state.openaiClient && state.ttsProvider === 'realtime') {
+              console.log('[REALTIME AGENT] Requesting professional greeting via realtime client')
               state.openaiClient.requestAssistantResponse()
             } else {
-              // Fallback TTS pipeline (OpenAI or Polly)
+              console.log('[REALTIME AGENT] Delivering professional greeting via TTS')
               const welcome = await this.getWelcomeMessage(state)
               await this.streamTTS(state, welcome)
-            }
-          } catch (err) {
-            console.error('[RealtimeAgent] Failed to send greeting:', err)
-          } finally {
-            // For realtime client, we mark delivery once the first audio chunk arrives.
-            if (!state.openaiClient) {
               state.welcomeMessageDelivered = true
             }
+          } catch (err) {
+            console.error('[REALTIME AGENT] Failed to deliver greeting:', err)
+            // Emergency fallback
+            await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
+            state.welcomeMessageDelivered = true
           }
         }
 
       } else {
-        console.warn('[RealtimeAgent] Business not found for phone number:', toNumber, '. Proceeding with default flow.');
-        // Populate minimal state for call to continue
+        console.warn('[REALTIME AGENT] Business not found for phone number:', toNumber);
+        
         state.businessId = null;
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
 
-        // Provide a generic greeting
+        // Generic professional greeting
         if (!state.welcomeMessageDelivered) {
-          if (state.openaiClient) {
-            state.openaiClient.sendUserText('Welcome to StudioConnect AI. How can I help you today?');
-            state.openaiClient.requestAssistantResponse();
-          } else {
-            await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?');
-            state.welcomeMessageDelivered = true;
-          }
+          await this.streamTTS(state, 'Hello! Thank you for calling StudioConnect AI. How may I assist you today?');
+          state.welcomeMessageDelivered = true;
         }
       }
     } catch (error) {
-      console.error('[RealtimeAgent] Error handling start event:', error);
-      this.cleanup('Error handling start event');
+      console.error('[REALTIME AGENT] Error handling start event:', error);
+      
+      // Emergency recovery - still try to provide service
+      if (!state.welcomeMessageDelivered) {
+        try {
+          await this.streamTTS(state, 'Hello! Thank you for calling. I apologize, but I\'m experiencing some technical difficulties. How may I help you?');
+          state.welcomeMessageDelivered = true;
+        } catch (emergencyError) {
+          console.error('[REALTIME AGENT] Emergency greeting also failed:', emergencyError);
+        }
+      }
     }
   }
 
@@ -1014,28 +1075,40 @@ class RealtimeAgentService {
         });
       }
     } catch (err) {
-      console.error('[REALTIME AGENT] Failed to load agentConfig – falling back to defaults:', (err as Error).message);
+      console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message);
     } finally {
       state.__configLoaded = true;
     }
   }
 
   private async initializeOpenAIRealtimeClient(state: ConnectionState, initialPrompt: string): Promise<void> {
-    if (state.openaiClient || !process.env.OPENAI_API_KEY) return;
+    if (state.openaiClient || !process.env.OPENAI_API_KEY) return
 
-    console.log('[REALTIME AGENT] Initializing OpenAI Realtime Client...');
+    console.log('[REALTIME AGENT] Initializing OpenAI Realtime Client with professional settings...')
     try {
       const client = new OpenAIRealtimeClient(
         process.env.OPENAI_API_KEY,
-        state.openaiVoice,
+        state.openaiVoice || 'nova',
         initialPrompt,
       );
-      await client.connect();
+      
+      // Set longer timeout for initial connection
+      const connectionPromise = client.connect();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Realtime client connection timeout')), 15000)
+      });
 
-      // Relay assistant audio back to Twilio in real time
+      await Promise.race([connectionPromise, timeoutPromise]);
+
+      // Enhanced event handlers with professional voice quality
       client.on('assistantAudio', (b64) => {
-        if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
+        if (!state.welcomeMessageDelivered) {
+          state.welcomeMessageDelivered = true
+          console.log('[REALTIME AGENT] First audio received, welcome message delivered via realtime')
+        }
+        
         if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          state.isSpeaking = true // Mark as speaking
           state.ws.send(
             JSON.stringify({
               event: 'media',
@@ -1049,48 +1122,70 @@ class RealtimeAgentService {
       // Handle text responses to maintain conversation history
       client.on('assistantMessage', (text) => {
         this.addToConversationHistory(state, 'assistant', text);
-        console.log(`[REALTIME AGENT] Assistant: ${text}`);
+        console.log(`[REALTIME AGENT] Assistant response: ${text.substring(0, 100)}...`);
       });
 
-      // Handle errors
+      // Enhanced error handling - be more forgiving of transient errors
       client.on('error', async (error) => {
-        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
-        state.openaiClient = undefined
-        state.ttsProvider = 'openai'
+        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
+        
+        // Only fall back for critical errors
+        if (error.message.includes('Authentication') || error.message.includes('Max reconnection')) {
+          console.log('[REALTIME AGENT] Critical realtime error, switching to high-quality TTS fallback')
+          state.openaiClient = undefined
+          state.ttsProvider = 'openai'
 
-        if (!state.welcomeMessageDelivered) {
-          try {
-            const fallbackGreeting = await this.getWelcomeMessage(state)
-            await this.streamTTS(state, fallbackGreeting)
-            state.welcomeMessageDelivered = true
-          } catch (fallbackErr) {
-            console.error('[REALTIME AGENT] Failed to stream fallback greeting (initialize):', fallbackErr)
+          if (!state.welcomeMessageDelivered) {
+            try {
+              const fallbackGreeting = await this.getWelcomeMessage(state)
+              await this.streamTTS(state, fallbackGreeting)
+              state.welcomeMessageDelivered = true
+            } catch (fallbackErr) {
+              console.error('[REALTIME AGENT] Fallback greeting failed:', fallbackErr)
+            }
           }
+        } else {
+          console.log('[REALTIME AGENT] Non-critical realtime error, continuing with current session')
         }
       });
 
       client.on('close', async () => {
-        console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
-        state.openaiClient = undefined
-        state.ttsProvider = 'openai'
-
-        if (!state.welcomeMessageDelivered) {
-          try {
-            const fallbackGreeting = await this.getWelcomeMessage(state)
-            await this.streamTTS(state, fallbackGreeting)
-            state.welcomeMessageDelivered = true
-          } catch (fallbackErr) {
-            console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (initialize):', fallbackErr)
-          }
+        console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed gracefully')
+        
+        // Don't immediately switch to fallback - connection might recover
+        if (state.openaiClient === client) {
+          console.log('[REALTIME AGENT] Realtime client closed, will use TTS fallback for new requests')
+          state.ttsProvider = 'openai'
+          state.openaiClient = undefined
         }
       });
 
+      // Handle speech events for better turn-taking
+      client.on('speechStarted', () => {
+        console.log('[REALTIME AGENT] User speech started (realtime VAD)')
+        state.isRecording = true
+      });
+
+      client.on('speechStopped', () => {
+        console.log('[REALTIME AGENT] User speech stopped (realtime VAD)')
+        state.isRecording = false
+        state.isSpeaking = false // User stopped, we can speak
+      });
+
+      client.on('responseComplete', () => {
+        console.log('[REALTIME AGENT] Response complete')
+        state.isSpeaking = false // Response finished
+      });
+
       state.openaiClient = client
-      console.log('[REALTIME AGENT] OpenAI Realtime Client connected successfully.');
+      console.log('[REALTIME AGENT] OpenAI Realtime Client connected successfully with professional voice settings')
+      
     } catch (err) {
-      console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – will use local pipeline', err);
-      // Fallback so we don't keep trying
-      state.ttsProvider = 'openai';
+      console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session:', err.message)
+      console.log('[REALTIME AGENT] Falling back to high-quality TTS pipeline')
+      state.ttsProvider = 'openai' // Use OpenAI TTS as fallback for quality
+      state.openaiVoice = 'nova' // Ensure we use a high-quality voice
+      state.openaiModel = 'tts-1-hd' // Use HD model for better quality
     }
   }
 
@@ -1145,69 +1240,83 @@ class RealtimeAgentService {
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        // Always run VAD to manage conversation turn-taking.
+        // Skip processing if we're currently speaking to prevent interruption
+        if (state.isSpeaking || state.pendingAudioGeneration) {
+          return
+        }
+
+        // Enhanced VAD with better noise handling
         const buf = Buffer.from(mediaPayload, 'base64')
         let energy = 0
         for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128)
         energy = energy / buf.length
 
-        // Dynamic noise-floor calibration (first 50 frames)
+        // Improved noise-floor calibration with more samples
         if (!state.vadCalibrated) {
           state.vadNoiseFloor += energy
           state.vadSamples += 1
-          if (state.vadSamples >= 50) {
+          if (state.vadSamples >= 100) { // More samples for better calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            state.vadThreshold = state.vadNoiseFloor + 8 // margin
+            state.vadThreshold = state.vadNoiseFloor + 12 // Increased margin for better accuracy
             state.vadCalibrated = true
-            console.log(`[REALTIME AGENT] VAD calibrated with noise floor ${state.vadNoiseFloor} and threshold ${state.vadThreshold}`)
+            console.log(`[REALTIME AGENT] VAD calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
         }
 
         const now = Date.now()
         const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
 
-        // If realtime client is active, stream audio directly and use VAD for turn-taking.
-        if (state.openaiClient) {
-          state.openaiClient.sendAudio(mediaPayload)
+        // If realtime client is active, stream audio and handle turn-taking
+        if (state.openaiClient && state.ttsProvider === 'realtime') {
+          try {
+            state.openaiClient.sendAudio(mediaPayload)
 
-          if (energy > threshold) {
-            if (!state.isRecording) {
-              console.log('[REALTIME AGENT] VAD speech detected.')
-              state.isRecording = true
+            // Professional turn-taking logic
+            if (energy > threshold) {
+              if (!state.isRecording) {
+                console.log('[REALTIME AGENT] Professional VAD: User speech detected')
+                state.isRecording = true
+              }
+              state.lastSpeechMs = now
             }
-            state.lastSpeechMs = now
-          }
 
-          // If user was speaking but is now silent, it's the assistant's turn.
-          if (state.isRecording && now - state.lastSpeechMs > VAD_SILENCE_MS) {
-            console.log('[REALTIME AGENT] VAD detected end of speech, requesting assistant response.')
-            state.openaiClient.requestAssistantResponse()
-            state.isRecording = false // Reset for next utterance
+            // Give user time to finish speaking before responding
+            if (state.isRecording && now - state.lastSpeechMs > 800) { // Increased silence duration for professional conversations
+              console.log('[REALTIME AGENT] Professional VAD: User finished speaking, assistant will respond')
+              state.openaiClient.requestAssistantResponse()
+              state.isRecording = false
+            }
+          } catch (error) {
+            console.error('[REALTIME AGENT] Error with realtime client audio processing:', error)
+            // Fall back to TTS pipeline
+            state.ttsProvider = 'openai'
+            state.openaiClient = undefined
           }
-          return // VAD logic for realtime is complete
+          return
         }
 
-        // --- Fallback to local Whisper pipeline if realtime client is not available ---
+        // --- High-quality fallback pipeline with professional Whisper transcription ---
 
-        // Ignore media frames until we have resolved business context.
+        // Wait for business context before processing
         if (!state.businessId) return
 
+        // Professional speech detection with reduced false positives
         if (energy > threshold) {
-          // Speech detected – begin or continue recording
           if (!state.isRecording) {
+            console.log('[REALTIME AGENT] Professional speech detection: Recording started')
             state.isRecording = true
-            // Reset the queue at the start of a new utterance so we don't prepend previous noise
-            state.audioQueue = []
+            state.audioQueue = [] // Clear any previous audio
           }
           state.lastSpeechMs = now
           state.audioQueue.push(mediaPayload)
         } else if (state.isRecording) {
-          // Continue capturing trailing silence while recording
+          // Continue capturing trailing audio for complete sentences
           state.audioQueue.push(mediaPayload)
         }
 
-        // Flush when we've been in silence for a while **and** we were previously recording
-        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
+        // Process complete utterances with professional timing
+        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > 1000 && state.audioQueue.length > 0) {
+          console.log('[REALTIME AGENT] Processing complete utterance via professional Whisper pipeline')
           state.isProcessing = true
           this.flushAudioQueue(state)
         }
