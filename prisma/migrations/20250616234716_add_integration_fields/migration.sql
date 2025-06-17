@@ -11,7 +11,7 @@
 
 */
 -- CreateEnum
-CREATE TYPE "SyncStatus" AS ENUM ('CONNECTED', 'DISCONNECTED', 'ERROR');
+CREATE TYPE IF NOT EXISTS "SyncStatus" AS ENUM ('CONNECTED', 'DISCONNECTED', 'ERROR');
 
 -- AlterTable
 ALTER TABLE "agent_configs" DROP COLUMN IF EXISTS "prefix_padding_ms",
@@ -27,18 +27,18 @@ ALTER TABLE "businesses" ALTER COLUMN "businessHours" DROP DEFAULT,
 ALTER COLUMN "timezone" DROP DEFAULT;
 
 -- AlterTable
-ALTER TABLE "integrations" ADD COLUMN     "credentials" JSONB,
-ADD COLUMN     "syncStatus" "SyncStatus" DEFAULT 'CONNECTED',
-ADD COLUMN     "webhookId" TEXT;
+ALTER TABLE "integrations" ADD COLUMN IF NOT EXISTS     "credentials" JSONB,
+ADD COLUMN IF NOT EXISTS     "syncStatus" "SyncStatus" DEFAULT 'CONNECTED',
+ADD COLUMN IF NOT EXISTS     "webhookId" TEXT;
 
 -- AlterTable
-ALTER TABLE "knowledge_base" ADD COLUMN     "projectId" TEXT;
+ALTER TABLE "knowledge_base" ADD COLUMN IF NOT EXISTS     "projectId" TEXT;
 
 -- AlterTable
-ALTER TABLE "projects" ADD COLUMN     "assignee" TEXT,
-ADD COLUMN     "due_date" TIMESTAMP(3),
-ADD COLUMN     "pm_tool" TEXT,
-ADD COLUMN     "pm_tool_id" TEXT;
+ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS     "assignee" TEXT,
+ADD COLUMN IF NOT EXISTS     "due_date" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS     "pm_tool" TEXT,
+ADD COLUMN IF NOT EXISTS     "pm_tool_id" TEXT;
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "integrations_businessId_type_key" ON "integrations"("businessId", "type");
@@ -53,4 +53,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS "projects_pm_tool_id_businessId_key" ON "proje
 CREATE UNIQUE INDEX IF NOT EXISTS "projects_businessId_pm_tool_id_key" ON "projects"("businessId", "pm_tool_id");
 
 -- AddForeignKey
-ALTER TABLE "knowledge_base" ADD CONSTRAINT "knowledge_base_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM   pg_constraint c
+        JOIN   pg_class t ON c.conrelid = t.oid
+        WHERE  t.relname = 'knowledge_base'
+        AND    c.conname = 'knowledge_base_projectId_fkey'
+    ) THEN
+        ALTER TABLE "knowledge_base" ADD CONSTRAINT "knowledge_base_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END$$;
