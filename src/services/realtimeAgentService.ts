@@ -331,12 +331,15 @@ class RealtimeAgentService {
 
         // Relay assistant audio back to Twilio in real time
         client.on('assistantAudio', (b64) => {
+          if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
           if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-            state.ws.send(JSON.stringify({
-              event: 'media',
-              streamSid: state.streamSid,
-              media: { payload: b64 }
-            }))
+            state.ws.send(
+              JSON.stringify({
+                event: 'media',
+                streamSid: state.streamSid,
+                media: { payload: b64 },
+              }),
+            )
           }
         })
 
@@ -347,9 +350,36 @@ class RealtimeAgentService {
         });
 
         // Handle errors
-        client.on('error', (error) => {
-          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
-          // could add fallback logic here
+        client.on('error', async (error) => {
+          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
+          state.openaiClient = undefined
+          state.ttsProvider = 'openai'
+
+          if (!state.welcomeMessageDelivered) {
+            try {
+              const fallbackGreeting = await this.getWelcomeMessage(state)
+              await this.streamTTS(state, fallbackGreeting)
+              state.welcomeMessageDelivered = true
+            } catch (fallbackErr) {
+              console.error('[REALTIME AGENT] Failed to stream fallback greeting (streamTTS):', fallbackErr)
+            }
+          }
+        });
+
+        client.on('close', async () => {
+          console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
+          state.openaiClient = undefined
+          state.ttsProvider = 'openai'
+
+          if (!state.welcomeMessageDelivered) {
+            try {
+              const fallbackGreeting = await this.getWelcomeMessage(state)
+              await this.streamTTS(state, fallbackGreeting)
+              state.welcomeMessageDelivered = true
+            } catch (fallbackErr) {
+              console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (streamTTS):', fallbackErr)
+            }
+          }
         });
 
         state.openaiClient = client
@@ -359,7 +389,7 @@ class RealtimeAgentService {
           const welcome = await this.getWelcomeMessage(state)
           client.sendUserText(welcome)
           client.requestAssistantResponse()
-          state.welcomeMessageDelivered = true
+          // Delivery flag will be set upon first audio chunk
         }
       } catch (err) {
         console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
@@ -545,6 +575,7 @@ class RealtimeAgentService {
           )
           await client.connect()
           client.on('assistantAudio', (b64) => {
+            if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
             if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
               state.ws.send(
                 JSON.stringify({
@@ -563,8 +594,36 @@ class RealtimeAgentService {
           });
 
           // Handle errors
-          client.on('error', (error) => {
-            console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
+          client.on('error', async (error) => {
+            console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
+            state.openaiClient = undefined
+            state.ttsProvider = 'openai'
+
+            if (!state.welcomeMessageDelivered) {
+              try {
+                const fallbackGreeting = await this.getWelcomeMessage(state)
+                await this.streamTTS(state, fallbackGreeting)
+                state.welcomeMessageDelivered = true
+              } catch (fallbackErr) {
+                console.error('[REALTIME AGENT] Failed to stream fallback greeting (streamTTS):', fallbackErr)
+              }
+            }
+          });
+
+          client.on('close', async () => {
+            console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
+            state.openaiClient = undefined
+            state.ttsProvider = 'openai'
+
+            if (!state.welcomeMessageDelivered) {
+              try {
+                const fallbackGreeting = await this.getWelcomeMessage(state)
+                await this.streamTTS(state, fallbackGreeting)
+                state.welcomeMessageDelivered = true
+              } catch (fallbackErr) {
+                console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (streamTTS):', fallbackErr)
+              }
+            }
           });
 
           state.openaiClient = client
@@ -837,7 +896,10 @@ class RealtimeAgentService {
           } catch (err) {
             console.error('[RealtimeAgent] Failed to send greeting:', err)
           } finally {
-            state.welcomeMessageDelivered = true
+            // For realtime client, we mark delivery once the first audio chunk arrives.
+            if (!state.openaiClient) {
+              state.welcomeMessageDelivered = true
+            }
           }
         }
 
@@ -855,8 +917,8 @@ class RealtimeAgentService {
             state.openaiClient.requestAssistantResponse();
           } else {
             await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?');
+            state.welcomeMessageDelivered = true;
           }
-          state.welcomeMessageDelivered = true;
         }
       }
     } catch (error) {
@@ -972,14 +1034,17 @@ class RealtimeAgentService {
 
       // Relay assistant audio back to Twilio in real time
       client.on('assistantAudio', (b64) => {
+        if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
         if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-          state.ws.send(JSON.stringify({
-            event: 'media',
-            streamSid: state.streamSid,
-            media: { payload: b64 },
-          }));
+          state.ws.send(
+            JSON.stringify({
+              event: 'media',
+              streamSid: state.streamSid,
+              media: { payload: b64 },
+            }),
+          )
         }
-      });
+      })
 
       // Handle text responses to maintain conversation history
       client.on('assistantMessage', (text) => {
@@ -988,17 +1053,39 @@ class RealtimeAgentService {
       });
 
       // Handle errors
-      client.on('error', (error) => {
-        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error);
+      client.on('error', async (error) => {
+        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
+        state.openaiClient = undefined
+        state.ttsProvider = 'openai'
+
+        if (!state.welcomeMessageDelivered) {
+          try {
+            const fallbackGreeting = await this.getWelcomeMessage(state)
+            await this.streamTTS(state, fallbackGreeting)
+            state.welcomeMessageDelivered = true
+          } catch (fallbackErr) {
+            console.error('[REALTIME AGENT] Failed to stream fallback greeting (initialize):', fallbackErr)
+          }
+        }
       });
 
-      client.on('close', () => {
-        console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.');
-        // Invalidate the client so it can be re-established if needed
-        state.openaiClient = undefined;
+      client.on('close', async () => {
+        console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
+        state.openaiClient = undefined
+        state.ttsProvider = 'openai'
+
+        if (!state.welcomeMessageDelivered) {
+          try {
+            const fallbackGreeting = await this.getWelcomeMessage(state)
+            await this.streamTTS(state, fallbackGreeting)
+            state.welcomeMessageDelivered = true
+          } catch (fallbackErr) {
+            console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (initialize):', fallbackErr)
+          }
+        }
       });
 
-      state.openaiClient = client;
+      state.openaiClient = client
       console.log('[REALTIME AGENT] OpenAI Realtime Client connected successfully.');
     } catch (err) {
       console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – will use local pipeline', err);
