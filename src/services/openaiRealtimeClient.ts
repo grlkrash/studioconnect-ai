@@ -21,6 +21,11 @@ export class OpenAIRealtimeClient extends EventEmitter {
     private readonly apiKey: string,
     private voice: string = 'nova',
     private instructions: string = 'You are a helpful assistant.',
+    /**
+     * OpenAI realtime-compatible model name, e.g. "gpt-4o-audio-preview".
+     * The API will reject the connection with `missing_model` if this is omitted.
+     */
+    private model: string = (process.env.OPENAI_REALTIME_MODEL ?? 'gpt-4o-audio-preview'),
   ) {
     super()
     this.setMaxListeners(20) // Prevent memory leaks
@@ -46,7 +51,10 @@ export class OpenAIRealtimeClient extends EventEmitter {
     this.isConnecting = true
     
     try {
-      await this.establishConnection(endpoint)
+      // Ensure the required `model` query param is present.
+      const epHasQuery = endpoint.includes('?')
+      const endpointWithModel = `${endpoint}${epHasQuery ? '&' : '?'}model=${encodeURIComponent(this.model)}`
+      await this.establishConnection(endpointWithModel)
     } catch (error) {
       this.isConnecting = false
       console.error('[OpenAIRealtimeClient] Failed to establish connection:', error)
@@ -262,7 +270,8 @@ export class OpenAIRealtimeClient extends EventEmitter {
           },
           tool_choice: 'auto',
           temperature: 0.7, // Slightly reduced for more consistent responses
-          max_response_output_tokens: 2048 // Optimized for voice responses
+          max_response_output_tokens: 2048, // Optimized for voice responses
+          model: this.model,
         }
       }
 
