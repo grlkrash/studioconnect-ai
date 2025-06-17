@@ -14,10 +14,10 @@
 CREATE TYPE "SyncStatus" AS ENUM ('CONNECTED', 'DISCONNECTED', 'ERROR');
 
 -- AlterTable
-ALTER TABLE "agent_configs" DROP COLUMN "prefix_padding_ms",
-DROP COLUMN "realtimeInstructions",
-DROP COLUMN "silence_duration_ms",
-DROP COLUMN "vad_threshold",
+ALTER TABLE "agent_configs" DROP COLUMN IF EXISTS "prefix_padding_ms",
+DROP COLUMN IF EXISTS "realtimeInstructions",
+DROP COLUMN IF EXISTS "silence_duration_ms",
+DROP COLUMN IF EXISTS "vad_threshold",
 ADD COLUMN     "ttsProvider" TEXT NOT NULL DEFAULT 'openai',
 ADD COLUMN     "widgetTheme" JSONB DEFAULT '{}',
 ALTER COLUMN "openaiVoice" SET DEFAULT 'NOVA';
