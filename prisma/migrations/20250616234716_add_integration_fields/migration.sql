@@ -18,8 +18,8 @@ ALTER TABLE "agent_configs" DROP COLUMN IF EXISTS "prefix_padding_ms",
 DROP COLUMN IF EXISTS "realtimeInstructions",
 DROP COLUMN IF EXISTS "silence_duration_ms",
 DROP COLUMN IF EXISTS "vad_threshold",
-ADD COLUMN     "ttsProvider" TEXT NOT NULL DEFAULT 'openai',
-ADD COLUMN     "widgetTheme" JSONB DEFAULT '{}',
+ADD COLUMN IF NOT EXISTS     "ttsProvider" TEXT NOT NULL DEFAULT 'openai',
+ADD COLUMN IF NOT EXISTS     "widgetTheme" JSONB DEFAULT '{}',
 ALTER COLUMN "openaiVoice" SET DEFAULT 'NOVA';
 
 -- AlterTable
@@ -41,16 +41,16 @@ ADD COLUMN     "pm_tool" TEXT,
 ADD COLUMN     "pm_tool_id" TEXT;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "integrations_businessId_type_key" ON "integrations"("businessId", "type");
+CREATE UNIQUE INDEX IF NOT EXISTS "integrations_businessId_type_key" ON "integrations"("businessId", "type");
 
 -- CreateIndex
-CREATE INDEX "knowledge_base_businessId_projectId_idx" ON "knowledge_base"("businessId", "projectId");
+CREATE INDEX IF NOT EXISTS "knowledge_base_businessId_projectId_idx" ON "knowledge_base"("businessId", "projectId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "projects_pm_tool_id_businessId_key" ON "projects"("pm_tool_id", "businessId");
+CREATE UNIQUE INDEX IF NOT EXISTS "projects_pm_tool_id_businessId_key" ON "projects"("pm_tool_id", "businessId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "projects_businessId_pm_tool_id_key" ON "projects"("businessId", "pm_tool_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "projects_businessId_pm_tool_id_key" ON "projects"("businessId", "pm_tool_id");
 
 -- AddForeignKey
 ALTER TABLE "knowledge_base" ADD CONSTRAINT "knowledge_base_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
