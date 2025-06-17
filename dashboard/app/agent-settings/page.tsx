@@ -22,7 +22,7 @@ export default function AgentSettings() {
     personaPrompt: string
     openaiVoice: string
     openaiModel: string
-    ttsProvider: 'openai' | 'polly'
+    ttsProvider: 'openai' | 'polly' | 'realtime'
     useOpenaiTts: boolean
     voiceGreetingMessage: string
     widgetTheme?: {
@@ -57,6 +57,7 @@ export default function AgentSettings() {
   }
 
   const [settings, setSettings] = useState<Settings>(defaultSettings)
+  const [realtimeAvailable, setRealtimeAvailable] = useState<boolean>(false)
   const [previewLoading, setPreviewLoading] = useState(false)
 
   // Fetch existing config
@@ -74,6 +75,7 @@ export default function AgentSettings() {
               openaiModel: (data.config.openaiModel || '').toLowerCase(),
             }
             setSettings({ ...defaultSettings, ...cfg })
+            setRealtimeAvailable(Boolean(data.realtimeAvailable))
           }
         }
       } catch (err) {
@@ -199,7 +201,9 @@ export default function AgentSettings() {
                         <SelectValue placeholder="Select provider" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="openai">OpenAI (real-time)</SelectItem>
+                        <SelectItem value="openai" disabled={!realtimeAvailable}>
+                          OpenAI (real-time){!realtimeAvailable ? ' – Beta unavailable' : ''}
+                        </SelectItem>
                         <SelectItem value="polly">Amazon Polly (Twilio fallback)</SelectItem>
                       </SelectContent>
                     </Select>
@@ -431,6 +435,27 @@ export default function AgentSettings() {
                   <RotateCcw className="w-4 h-4 mr-2" />
                   Reset to Default
                 </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  disabled={!realtimeAvailable}
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/admin/enable-realtime', { method: 'POST' })
+                      if (res.ok) {
+                        const data = await res.json()
+                        toast({ title: 'Realtime enabled', description: `Updated ${data.updated} agents.` })
+                        setSettings((s) => ({ ...s, ttsProvider: 'realtime' }))
+                      } else {
+                        throw new Error('failed')
+                      }
+                    } catch (err) {
+                      toast({ title: 'Error', description: 'Failed to enable realtime', variant: 'destructive' })
+                    }
+                  }}
+                >
+                  <Play className="w-4 h-4 mr-2" /> Enable Realtime for All
+                </Button>
               </CardContent>
             </Card>
 
@@ -441,6 +466,12 @@ export default function AgentSettings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <StatusMetrics />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-600">Voice Engine</span>
+                  <Badge className={settings.ttsProvider === 'realtime' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}>
+                    {settings.ttsProvider === 'realtime' ? 'Realtime ✅' : 'Fallback'}
+                  </Badge>
+                </div>
               </CardContent>
             </Card>
 
