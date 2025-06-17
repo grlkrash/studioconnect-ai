@@ -248,7 +248,7 @@ class RealtimeAgentService {
       isCleaningUp: false,
       lastActivity: Date.now(),
       toNumber: null,
-      ttsProvider: 'openai',
+      ttsProvider: 'realtime',
       openaiVoice: 'nova',
       openaiModel: 'tts-1',
       personaPrompt: undefined,
@@ -514,9 +514,15 @@ class RealtimeAgentService {
           })
 
           if (cfg) {
-            // Check for ttsProvider on the fetched object to be safe.
+            // Respect explicit provider; otherwise fall back to defaults
             const provider = (cfg as any).ttsProvider
-            state.ttsProvider = provider || (cfg.useOpenaiTts ? 'openai' : 'polly')
+            if (provider) {
+              state.ttsProvider = provider
+            } else if (cfg.useOpenaiTts !== undefined) {
+              state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
+            }
+            // If still not set, default to realtime for more natural voice
+            if (!state.ttsProvider) state.ttsProvider = 'realtime'
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1'
             state.personaPrompt = cfg.personaPrompt
@@ -930,7 +936,13 @@ class RealtimeAgentService {
       });
 
       if (cfg) {
-        state.ttsProvider = (cfg as any).ttsProvider || (cfg.useOpenaiTts ? 'openai' : 'polly');
+        const provider = (cfg as any).ttsProvider
+        if (provider) {
+          state.ttsProvider = provider
+        } else if (cfg.useOpenaiTts !== undefined) {
+          state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
+        }
+        if (!state.ttsProvider) state.ttsProvider = 'realtime';
         state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase();
         state.openaiModel = cfg.openaiModel || 'tts-1';
         state.personaPrompt = cfg.personaPrompt;

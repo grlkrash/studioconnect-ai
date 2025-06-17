@@ -42,8 +42,8 @@ export default function AgentSettings() {
     welcomeMessage: "Hello! How can I help you today?",
     openaiVoice: "nova",
     openaiModel: "tts-1",
-    ttsProvider: 'openai',
-    useOpenaiTts: true,
+    ttsProvider: 'realtime',
+    useOpenaiTts: false,
     voiceGreetingMessage: "Hello! I'm your AI assistant. How can I help you today?",
     widgetTheme: {
       primary: "#2563eb",
@@ -201,9 +201,10 @@ export default function AgentSettings() {
                         <SelectValue placeholder="Select provider" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="openai" disabled={!realtimeAvailable}>
-                          OpenAI (real-time){!realtimeAvailable ? ' – Beta unavailable' : ''}
+                        <SelectItem value="realtime" disabled={!realtimeAvailable}>
+                          OpenAI Realtime{!realtimeAvailable ? ' – Beta unavailable' : ''}
                         </SelectItem>
+                        <SelectItem value="openai">OpenAI Standard TTS</SelectItem>
                         <SelectItem value="polly">Amazon Polly (Twilio fallback)</SelectItem>
                       </SelectContent>
                     </Select>
