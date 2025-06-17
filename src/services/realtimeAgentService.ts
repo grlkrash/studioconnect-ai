@@ -127,6 +127,21 @@ const VAD_SILENCE_MS = 600; // flush after 600 ms silence
 const activeAgents = new Map<string, ConnectionState>();
 let cleanupInterval: NodeJS.Timeout;
 
+// -----------------------------------
+//  Voice-config cache (per business)
+// -----------------------------------
+type VoiceConfigCacheEntry = {
+  ttsProvider: 'openai' | 'polly' | 'realtime'
+  openaiVoice: string
+  openaiModel: string
+  personaPrompt?: string
+  cachedAt: number
+}
+
+// In-memory cache; TTL keeps things fresh across config edits while preventing DB spam during a call
+const VOICE_CFG_TTL_MS = 10 * 60 * 1000 // 10 minutes
+const voiceConfigCache = new Map<string, VoiceConfigCacheEntry>()
+
 // Initialize cleanup interval
 function startCleanupInterval(): void {
   if (cleanupInterval) clearInterval(cleanupInterval);
@@ -1074,8 +1089,22 @@ class RealtimeAgentService {
   }
 
   private async loadAgentConfig(state: ConnectionState): Promise<void> {
-    if (!state.businessId || state.__configLoaded) return;
+    if (!state.businessId || state.__configLoaded) return
 
+    // 1. Try cache first
+    const cached = voiceConfigCache.get(state.businessId)
+    const now = Date.now()
+    if (cached && now - cached.cachedAt < VOICE_CFG_TTL_MS) {
+      state.ttsProvider = cached.ttsProvider
+      state.openaiVoice = cached.openaiVoice
+      state.openaiModel = cached.openaiModel
+      state.personaPrompt = cached.personaPrompt
+      state.__configLoaded = true
+      console.log(`[RealtimeAgent] Voice config served from cache for business ${state.businessId}`)
+      return
+    }
+
+    // 2. Fetch from DB
     try {
       const cfg = await prisma.agentConfig.findUnique({
         where: { businessId: state.businessId },
@@ -1086,7 +1115,7 @@ class RealtimeAgentService {
           personaPrompt: true,
           ttsProvider: true,
         },
-      });
+      })
 
       if (cfg) {
         const provider = (cfg as any).ttsProvider
@@ -1095,19 +1124,26 @@ class RealtimeAgentService {
         } else if (cfg.useOpenaiTts !== undefined) {
           state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
         }
-        if (!state.ttsProvider) state.ttsProvider = 'realtime';
-        state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase();
-        state.openaiModel = cfg.openaiModel || 'tts-1';
-        state.personaPrompt = cfg.personaPrompt;
-        console.log(`[RealtimeAgent] Loaded agent config for business ${state.businessId}:`, {
+        if (!state.ttsProvider) state.ttsProvider = 'realtime'
+        state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase()
+        state.openaiModel = cfg.openaiModel || 'tts-1'
+        state.personaPrompt = cfg.personaPrompt
+
+        // Cache it
+        voiceConfigCache.set(state.businessId, {
           ttsProvider: state.ttsProvider,
           openaiVoice: state.openaiVoice,
-        });
+          openaiModel: state.openaiModel,
+          personaPrompt: state.personaPrompt,
+          cachedAt: now,
+        })
+
+        console.log(`[RealtimeAgent] Voice config loaded & cached for business ${state.businessId}`)
       }
     } catch (err) {
-      console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message);
+      console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message)
     } finally {
-      state.__configLoaded = true;
+      state.__configLoaded = true
     }
   }
 

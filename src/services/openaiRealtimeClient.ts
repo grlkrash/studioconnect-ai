@@ -361,11 +361,20 @@ export class OpenAIRealtimeClient extends EventEmitter {
           const errorCode = msg.error?.code || 'unknown'
           console.error('[OpenAIRealtimeClient] API Error:', errorMsg, 'Code:', errorCode)
           
-          // Handle specific error types
-          if (errorCode === 'invalid_request_error' || errorCode === 'authentication_error') {
+          // Robust error handling with selective recovery
+          if (errorCode.startsWith('invalid_request_error')) {
+            if (errorCode === 'invalid_request_error.missing_model') {
+              // Missing model is unrecoverable – propagate to parent so it can switch pipelines
+              this.emit('error', new Error(`API Error: ${errorMsg}`))
+            } else {
+              console.warn('[OpenAIRealtimeClient] Recoverable invalid_request_error, attempting recovery')
+              this.attemptRecovery()
+            }
+          } else if (errorCode === 'authentication_error') {
+            // Auth errors are fatal – bubble up
             this.emit('error', new Error(`API Error: ${errorMsg}`))
           } else {
-            // For other errors, log but don't emit (let fallback handle it)
+            // Log non-critical errors and keep going
             console.warn('[OpenAIRealtimeClient] Non-critical API error, continuing...')
           }
           break
