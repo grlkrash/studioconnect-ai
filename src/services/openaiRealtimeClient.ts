@@ -232,7 +232,10 @@ export class OpenAIRealtimeClient extends EventEmitter {
 
   /** Checks if client is ready for operations */
   private isReady(): boolean {
-    return this.ready && this.ws && this.ws.readyState === WebSocket.OPEN && !this.isConnecting
+    if (!this.ready || !this.ws || this.isConnecting) {
+      return false
+    }
+    return this.ws.readyState === WebSocket.OPEN
   }
 
   /** Configures OpenAI session with optimized settings for professional voice calls */

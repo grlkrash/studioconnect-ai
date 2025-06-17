@@ -528,6 +528,12 @@ class RealtimeAgentService {
       return
     }
 
+    // Validate text input
+    if (!text || text.trim().length === 0) {
+      console.warn('[REALTIME AGENT] Empty text provided, skipping TTS')
+      return
+    }
+
     state.pendingAudioGeneration = true
 
     try {
@@ -750,24 +756,46 @@ class RealtimeAgentService {
       const transcript = transcriptRaw.trim()
       console.log(`[REALTIME AGENT] Transcription: "${transcript}"`)
 
-      // Enhanced validation for professional conversations
-      const txt = transcript.toLowerCase()
-      const words = txt.split(/\s+/).filter(w => w.length > 0)
-      
-      // Allow professional single words and short phrases
-      const allowedShort = [
-        'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'thank you', 'bye', 'goodbye',
-        'hello', 'hi', 'hey', 'great', 'perfect', 'exactly', 'correct', 'right',
-        'please', 'help', 'stop', 'wait', 'continue', 'proceed', 'go ahead'
-      ]
-      
-      const isValid = words.length > 1 || allowedShort.includes(txt) || 
-                     (words.length === 1 && words[0].length > 2) // Single meaningful words
+              // Enhanced validation for professional business conversations
+        const txt = transcript.toLowerCase().trim()
+        const words = txt.split(/\s+/).filter(w => w.length > 0)
+        
+        // Creative agency & professional business conversation patterns
+        const validSingleWords = [
+          // Basic responses
+          'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'hello', 'hi', 
+          'great', 'perfect', 'correct', 'right', 'help', 'urgent', 'rush',
+          // Business terms
+          'project', 'status', 'update', 'billing', 'invoice', 'payment',
+          'deadline', 'timeline', 'budget', 'quote', 'estimate', 'contract',
+          // Creative industry terms
+          'design', 'branding', 'website', 'logo', 'identity', 'marketing',
+          'creative', 'concept', 'mockup', 'prototype', 'wireframe', 'layout',
+          'animation', 'video', 'motion', 'graphics', 'illustration', 'photography',
+          // Packaging & print
+          'packaging', 'print', 'brochure', 'catalog', 'poster', 'signage',
+          'storyboard', 'boards', 'presentation', 'pitch', 'proposal',
+          // Project management terms
+          'kickoff', 'launch', 'delivery', 'revision', 'feedback', 'approval',
+          'milestone', 'phase', 'iteration', 'round', 'final', 'proofs',
+          // Client communication
+          'meeting', 'call', 'email', 'follow', 'followup', 'discuss',
+          'review', 'changes', 'edits', 'tweaks', 'adjustments'
+        ]
+        
+        const validPhrases = txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/)
+        
+        // Creative industry & business-focused validation
+        const isValid = words.length > 1 || 
+                       validSingleWords.includes(txt) || 
+                       validPhrases ||
+                       txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) ||
+                       (words.length === 1 && words[0].length > 2 && !/^(um|uh|ah|er|mmm|hmm|like|just|well|you|know)$/.test(txt))
 
-      if (!isValid) {
-        console.log(`[REALTIME AGENT] Transcription not valid for processing: "${transcript}"`)
-        return
-      }
+        if (!isValid) {
+          console.log(`[REALTIME AGENT] Transcription not suitable for creative business processing: "${transcript}"`)
+          return
+        }
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
@@ -799,11 +827,13 @@ class RealtimeAgentService {
     } catch (error) {
       console.error('[REALTIME AGENT] Critical error in audio processing pipeline:', error)
       
-      // Professional error recovery
+      // Professional creative industry error recovery
       const errorMessages = [
-        "I apologize, but I didn't catch that. Could you please repeat your question?",
-        "I'm sorry, I'm having trouble understanding. Could you rephrase that for me?",
-        "I apologize for the technical difficulty. Please try speaking again."
+        "I apologize, but I didn't catch that clearly. Could you please repeat your question about the project?",
+        "I'm sorry, I'm having trouble with the audio. Could you rephrase your question for me?",
+        "I apologize for the technical difficulty. Please try again - I'm here to help with your project needs.",
+        "Sorry about that - could you repeat what you said? I want to make sure I get you the right information.",
+        "I didn't quite catch that. Could you tell me again how I can help with your creative project?"
       ]
       
       const randomMessage = errorMessages[Math.floor(Math.random() * errorMessages.length)]
@@ -1125,29 +1155,31 @@ class RealtimeAgentService {
         console.log(`[REALTIME AGENT] Assistant response: ${text.substring(0, 100)}...`);
       });
 
-      // Enhanced error handling - be more forgiving of transient errors
-      client.on('error', async (error) => {
-        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
-        
-        // Only fall back for critical errors
-        if (error.message.includes('Authentication') || error.message.includes('Max reconnection')) {
-          console.log('[REALTIME AGENT] Critical realtime error, switching to high-quality TTS fallback')
+              // Enhanced error handling - bulletproof fallback system
+        client.on('error', async (error) => {
+          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
+          
+          // Graceful degradation to high-quality TTS fallback
+          console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
           state.openaiClient = undefined
-          state.ttsProvider = 'openai'
+          state.ttsProvider = 'openai' // Use high-quality OpenAI TTS
+          state.openaiVoice = 'nova' // Premium voice
+          state.openaiModel = 'tts-1-hd' // HD quality
 
           if (!state.welcomeMessageDelivered) {
             try {
               const fallbackGreeting = await this.getWelcomeMessage(state)
               await this.streamTTS(state, fallbackGreeting)
               state.welcomeMessageDelivered = true
+              console.log('[REALTIME AGENT] Successfully delivered greeting via TTS fallback')
             } catch (fallbackErr) {
-              console.error('[REALTIME AGENT] Fallback greeting failed:', fallbackErr)
+              console.error('[REALTIME AGENT] Critical error in fallback system:', fallbackErr)
+              // Emergency simple greeting
+              await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
+              state.welcomeMessageDelivered = true
             }
           }
-        } else {
-          console.log('[REALTIME AGENT] Non-critical realtime error, continuing with current session')
-        }
-      });
+        });
 
       client.on('close', async () => {
         console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed gracefully')
