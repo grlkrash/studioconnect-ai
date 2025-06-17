@@ -817,9 +817,22 @@ class RealtimeAgentService {
           state.openaiClient.updateInstructions(systemPrompt);
         }
 
-        // The AI is now responsible for the greeting, so we mark it as delivered.
+        // Deliver the initial greeting now that we have full business context.
         if (!state.welcomeMessageDelivered) {
-          state.welcomeMessageDelivered = true;
+          try {
+            if (state.openaiClient) {
+              // Realtime voice: ask the assistant to produce the first response based on the system prompt.
+              state.openaiClient.requestAssistantResponse()
+            } else {
+              // Fallback TTS pipeline (OpenAI or Polly)
+              const welcome = await this.getWelcomeMessage(state)
+              await this.streamTTS(state, welcome)
+            }
+          } catch (err) {
+            console.error('[RealtimeAgent] Failed to send greeting:', err)
+          } finally {
+            state.welcomeMessageDelivered = true
+          }
         }
 
       } else {
