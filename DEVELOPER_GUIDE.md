@@ -481,6 +481,18 @@ case 'input_audio_buffer.speech_started':
    - Performance metrics
    - Health monitoring
 
+### 3.0.1  2025-06 Voice Quality & Turn-Taking Updates
+
+The voice pipeline was retuned to feel more human-like and avoid premature interruptions:
+
+• **Local VAD silence window** `VAD_SILENCE_MS` raised to **2000 ms**.  
+• **Server-side VAD** – `silence_duration_ms` ➜ **1500 ms**, `prefix_padding_ms` ➜ **300 ms**.  
+• **Realtime voice selection** – default/fallback voice is now **"shimmer"** for warmer tone.  
+• **500 ms grace** after `speechStopped` before the assistant begins speaking.  
+• Idle prompts fire after **20 s** and **35 s** of total silence and are always voiced via OpenAI TTS (never echoed by the model).
+
+These values live in `realtimeAgentService.ts` and `openaiRealtimeClient.ts` and can be tuned per-business via `agentConfig` or ops-level env overrides.
+
 ---
 
 ## 4. WebSocket Infrastructure
@@ -2027,5 +2039,3 @@ Implementing a new provider involves:
 1. Creating `<tool>.provider.ts` in `pm-providers`.
 2. Implementing all methods from the interface.
 3. Registering the provider in the factory used by the webhook controller.
-
-</rewritten_file>
