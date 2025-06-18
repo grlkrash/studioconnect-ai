@@ -132,8 +132,8 @@ const MAX_CONVERSATION_HISTORY = 50;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
-const VAD_THRESHOLD = 20; // µ-law sample energy threshold
-const VAD_SILENCE_MS = 600; // flush after 600 ms silence
+const VAD_THRESHOLD = 25; // Increased µ-law sample energy threshold
+const VAD_SILENCE_MS = 1000; // flush after 1s silence for professional quality
 
 // State management
 const activeAgents = new Map<string, ConnectionState>();
@@ -371,142 +371,12 @@ class RealtimeAgentService {
     // -----------------------------
     // OpenAI Realtime Voice Session
     // -----------------------------
-    if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime' && !isRealtimeTemporarilyDisabled(state.businessId ?? '')) {
-      try {
-        const ALLOWED_REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
-        const realtimeVoice = ALLOWED_REALTIME_VOICES.includes(state.openaiVoice as any)
-          ? state.openaiVoice
-          : 'alloy' // safe default
-
-        if (realtimeVoice !== state.openaiVoice) {
-          console.warn(`[REALTIME AGENT] Voice "${state.openaiVoice}" not supported for realtime – using "${realtimeVoice}" for realtime session`)
-        }
-        
-        const client = new OpenAIRealtimeClient(
-          process.env.OPENAI_API_KEY,
-          realtimeVoice,
-          state.personaPrompt || undefined,
-          process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
-        )
-        await client.connect()
-
-        // Relay assistant audio back to Twilio in real time
-        client.on('assistantAudio', (b64) => {
-          if (!state.welcomeMessageDelivered) state.welcomeMessageDelivered = true
-          if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-            state.ws.send(
-              JSON.stringify({
-                event: 'media',
-                streamSid: state.streamSid,
-                media: { payload: b64 },
-              }),
-            )
-          }
-        })
-
-        // Handle text responses to maintain conversation history
-        client.on('assistantMessage', (text) => {
-          this.addToConversationHistory(state, 'assistant', text);
-          console.log(`[REALTIME AGENT] Assistant: ${text}`);
-        });
-
-        // Handle errors
-        client.on('error', async (error) => {
-          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
-          
-          // Detect invalid model explicitly so we can mark failure cache
-          if (error.message?.includes('invalid_model')) {
-            if (state.businessId) markRealtimeFailure(state.businessId)
-          }
-
-          // Graceful degradation to high-quality TTS fallback
-          console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
-          state.openaiClient = undefined
-          state.ttsProvider = 'openai' // Use high-quality OpenAI TTS
-          state.openaiVoice = 'nova' // Premium voice
-          state.openaiModel = 'tts-1-hd' // HD quality
-
-          if (!state.welcomeMessageDelivered) {
-            try {
-              const fallbackGreeting = await this.getWelcomeMessage(state)
-              await this.streamTTS(state, fallbackGreeting)
-              state.welcomeMessageDelivered = true
-              console.log('[REALTIME AGENT] Successfully delivered greeting via TTS fallback')
-            } catch (fallbackErr) {
-              console.error('[REALTIME AGENT] Critical error in fallback system:', fallbackErr)
-              // Emergency simple greeting
-              await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
-              state.welcomeMessageDelivered = true
-            }
-          }
-        });
-
-        // Dedicated invalidModel event emitted by client – mark cache immediately
-        client.on('invalidModel', (err: Error) => {
-          console.error('[REALTIME AGENT] Realtime client reported invalid model:', err.message)
-          if (state.businessId) markRealtimeFailure(state.businessId)
-        })
-
-        client.on('close', async () => {
-          console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed gracefully')
-          
-          // Don't immediately switch to fallback - connection might recover
-          if (state.openaiClient === client) {
-            console.log('[REALTIME AGENT] Realtime client closed, will use TTS fallback for new requests')
-            state.ttsProvider = 'openai'
-            state.openaiClient = undefined
-          }
-          if (state.businessId) markRealtimeFailure(state.businessId) // hard-failover for 60 min
-        });
-
-        state.openaiClient = client
-
-        // Trigger greeting via realtime if not yet delivered
-        if (!state.welcomeMessageDelivered) {
-          const welcome = await this.getWelcomeMessage(state)
-          client.sendUserText(welcome)
-          client.requestAssistantResponse()
-          // Delivery flag will be set upon first audio chunk
-        }
-      } catch (err) {
-        console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
-      }
-    }
+    // We will now initialize the OpenAI client only in `handleStartEvent` once we
+    // have the full business context, preventing race conditions and multiple
+    // client instances.
 
     // ---- Idle follow-up scheduler (first at 2 s, then every 8 s, max 3) ----
-    const scheduleIdlePrompt = () => {
-      if (state.idlePromptTimer) clearTimeout(state.idlePromptTimer)
-      state.idlePromptTimer = setTimeout(async () => {
-        if (state.isRecording || state.isSpeaking || !this.connections.has(state.callSid || '')) return
-
-        state.idlePromptCount = (state.idlePromptCount || 0) + 1
-
-        if (state.idlePromptCount! > 3) {
-          // Politely end the call after 3 unanswered prompts
-          await this.streamTTS(state, 'It seems we got disconnected. Please call back anytime. Goodbye!')
-          this.sendTwilioMessage(state, 'Thank you for calling. Goodbye!')
-          this.cleanup('Caller inactive')
-          return
-        }
-
-        const followUp = state.idlePromptCount === 1 ? 'Is there anything I can help you with today?' : 'Can I help you with anything else?'
-        try {
-          if (state.openaiClient && state.ttsProvider === 'realtime') {
-            state.openaiClient.sendUserText(followUp)
-            state.openaiClient.requestAssistantResponse()
-          } else {
-            await this.streamTTS(state, followUp)
-          }
-        } catch (e) {
-          console.warn('[REALTIME AGENT] Failed to send idle follow-up prompt:', e)
-        }
-
-        // Schedule next follow-up in 8 s
-        scheduleIdlePrompt()
-      }, state.idlePromptCount === 0 ? 4000 : 8000)
-    }
-
-    scheduleIdlePrompt()
+    this._scheduleIdlePrompt(state)
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
@@ -1531,11 +1401,13 @@ class RealtimeAgentService {
         console.log('[REALTIME AGENT] User speech stopped (realtime VAD)')
         state.isRecording = false
         state.isSpeaking = false // User stopped, we can speak
+        this._scheduleIdlePrompt(state)
       });
 
       client.on('responseComplete', () => {
         console.log('[REALTIME AGENT] Response complete')
         state.isSpeaking = false // Response finished
+        this._scheduleIdlePrompt(state)
       });
 
       state.openaiClient = client
@@ -1553,6 +1425,50 @@ class RealtimeAgentService {
   // Example: when adding to conversationHistory, always include timestamp
   private addToConversationHistory(state: ConnectionState, role: 'user' | 'assistant', content: string) {
     state.conversationHistory.push({ role, content, timestamp: new Date() });
+  }
+
+  /** Schedules the idle prompt timer. This should only be called when the agent is finished speaking. */
+  private _scheduleIdlePrompt(state: ConnectionState): void {
+    this._clearIdlePrompt(state); // Always clear previous before setting a new one
+
+    state.idlePromptTimer = setTimeout(async () => {
+      // Check for any activity before firing the prompt
+      if (state.isRecording || state.isSpeaking || !this.connections.has(state.callSid || '')) {
+        return; // Bail out if there's activity
+      }
+      
+      state.idlePromptCount = (state.idlePromptCount || 0) + 1;
+
+      // Reduce from 3 to 2 prompts before hanging up to be less repetitive
+      if (state.idlePromptCount > 2) { 
+        await this.streamTTS(state, 'It seems we got disconnected. Please call back anytime. Goodbye.');
+        this.cleanup(state.callSid || 'Caller inactive');
+        return;
+      }
+      
+      const followUp = 'Are you still there?';
+      console.log(`[IDLE_PROMPT] Firing idle prompt #${state.idlePromptCount}: "${followUp}"`);
+      
+      try {
+        if (state.openaiClient && state.ttsProvider === 'realtime') {
+          state.openaiClient.sendUserText(followUp);
+          state.openaiClient.requestAssistantResponse();
+        } else {
+          await this.streamTTS(state, followUp);
+        }
+      } catch (e) {
+        console.warn('[REALTIME AGENT] Failed to send idle follow-up prompt:', e);
+      }
+    }, 10000); // 10-second idle timeout
+  }
+
+  /** Clears the idle prompt timer. This should be called whenever there is any activity. */
+  private _clearIdlePrompt(state: ConnectionState): void {
+    if (state.idlePromptTimer) {
+      clearTimeout(state.idlePromptTimer);
+      state.idlePromptTimer = null;
+    }
+    state.idlePromptCount = 0;
   }
 
   /**
@@ -1574,12 +1490,8 @@ class RealtimeAgentService {
       case 'start': {
         // The START event provides the definitive CallSid – remap the state so future look-ups are cheap
         try {
-          // Initialize OpenAI client as early as possible if not already done.
-          // The businessId might not be known yet, so we use defaults for now,
-          // and the config will be re-evaluated in handleStartEvent.
-          if (state.ttsProvider === 'realtime' && !state.openaiClient) {
-            this.initializeOpenAIRealtimeClient(state, 'You are a helpful assistant. Please wait for more specific instructions.');
-          }
+          // Redundant client initialization removed. This is now handled exclusively
+          // within handleStartEvent to prevent race conditions and ensure stability.
           this.handleStartEvent(state, payload);
 
           const startCallSid = (payload as any).start?.callSid as string | undefined;
@@ -1631,14 +1543,14 @@ class RealtimeAgentService {
           state.vadSamples += 1
           if (state.vadSamples >= 100) { // More samples for better calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            state.vadThreshold = state.vadNoiseFloor + 12 // Increased margin for better accuracy
+            state.vadThreshold = state.vadNoiseFloor + 15 // Increased margin for better accuracy
             state.vadCalibrated = true
             console.log(`[REALTIME AGENT] VAD calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
         }
 
         const now = Date.now()
-        const threshold = state.vadCalibrated ? state.vadThreshold : 25 // Increased default threshold
+        const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
 
         // If realtime client is active, stream audio and handle turn-taking
         if (state.openaiClient && state.ttsProvider === 'realtime') {
@@ -1655,7 +1567,7 @@ class RealtimeAgentService {
             }
 
             // Give user time to finish speaking before responding
-            if (state.isRecording && now - state.lastSpeechMs > 800) { // Increased silence duration for professional conversations
+            if (state.isRecording && now - state.lastSpeechMs > 1200) { // Increased silence duration for professional conversations
               console.log('[REALTIME AGENT] Professional VAD: User finished speaking, assistant will respond')
               state.openaiClient.requestAssistantResponse()
               state.isRecording = false
@@ -1678,6 +1590,7 @@ class RealtimeAgentService {
         if (energy > threshold) {
           if (!state.isRecording) {
             console.log('[REALTIME AGENT] Professional speech detection: Recording started')
+            this._clearIdlePrompt(state);
             state.isRecording = true
             state.audioQueue = [] // Clear any previous audio
           }
@@ -1689,7 +1602,7 @@ class RealtimeAgentService {
         }
 
         // Process complete utterances with professional timing
-        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > 1000 && state.audioQueue.length > 0) {
+        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
           state.isLinear16Recording = isLinear16
           console.log('[REALTIME AGENT] Processing complete utterance via professional Whisper pipeline')
           state.isProcessing = true

@@ -26,10 +26,7 @@ export function startAsanaCron () {
           where: {
             provider: key,
             isEnabled: true,
-            OR: [
-              { syncStatus: 'CONNECTED' },
-              { syncStatus: 'ERROR' }
-            ],
+            syncStatus: { in: ['CONNECTED', 'ERROR'] },
           },
           select: { businessId: true },
         })
