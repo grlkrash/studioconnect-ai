@@ -16,6 +16,26 @@ export class OpenAIRealtimeClient extends EventEmitter {
   private lastPongReceived = Date.now()
   private connectionHealthCheck: NodeJS.Timeout | null = null
   private isConnecting = false
+  private lastFailureWasInvalidModel = false
+
+  /**
+   * Realtime-compatible model snapshots.
+   *
+   * As of June 2025 the official docs list the following WebSocket models:
+   *   • gpt-4o-realtime-preview          – flagship high-quality
+   *   • gpt-4o-mini-realtime-preview     – lower-cost, lower-latency
+   *
+   * The older "gpt-4o-audio-preview" name was removed in May 2025 and now
+   * returns `invalid_model`. We still keep the legacy id in the allow-list so
+   * that existing env configurations don't immediately explode, but we make
+   * sure the new snapshots are always preferred by placing them first.
+   */
+  private static readonly ALLOWED_REALTIME_MODELS = [
+    'gpt-4o-realtime-preview',
+    'gpt-4o-mini-realtime-preview',
+    // Legacy – will be rejected by the API but left here for completeness
+    'gpt-4o-audio-preview',
+  ]
 
   constructor(
     private readonly apiKey: string,
@@ -25,10 +45,16 @@ export class OpenAIRealtimeClient extends EventEmitter {
      * OpenAI realtime-compatible model name, e.g. "gpt-4o-audio-preview".
      * The API will reject the connection with `missing_model` if this is omitted.
      */
-    private model: string = (process.env.OPENAI_REALTIME_MODEL ?? 'gpt-4o-audio-preview'),
+    private model: string = (process.env.OPENAI_REALTIME_MODEL ?? 'gpt-4o-realtime-preview'),
   ) {
     super()
     this.setMaxListeners(20) // Prevent memory leaks
+
+    // Validate model early – fallback to first allowed model if invalid
+    if (!OpenAIRealtimeClient.ALLOWED_REALTIME_MODELS.includes(this.model)) {
+      console.warn(`[OpenAIRealtimeClient] Model ${this.model} not in allow-list, using fallback ${OpenAIRealtimeClient.ALLOWED_REALTIME_MODELS[0]}`)
+      this.model = OpenAIRealtimeClient.ALLOWED_REALTIME_MODELS[0]
+    }
   }
 
   /** Establishes bulletproof connection with comprehensive error handling */
@@ -360,8 +386,14 @@ export class OpenAIRealtimeClient extends EventEmitter {
           const errorMsg = msg.error?.message || 'Unknown API error'
           const errorCode = msg.error?.code || 'unknown'
           console.error('[OpenAIRealtimeClient] API Error:', errorMsg, 'Code:', errorCode)
-          
-          // Robust error handling with selective recovery
+
+          // --- New: treat invalid_model as fatal and emit dedicated event
+          if (errorCode === 'invalid_model') {
+            this.emit('invalidModel', new Error(`API Error: ${errorMsg}`))
+            // Do NOT attempt recovery – the model is not supported.
+            return
+          }
+          // Existing logic
           if (errorCode.startsWith('invalid_request_error')) {
             if (errorCode === 'invalid_request_error.missing_model') {
               // Missing model is unrecoverable – propagate to parent so it can switch pipelines
@@ -407,6 +439,10 @@ export class OpenAIRealtimeClient extends EventEmitter {
   private handleConnectionError(error: any): void {
     console.error('[OpenAIRealtimeClient] Connection error:', error)
     
+    if (error.message?.includes('invalid_model')) {
+      this.lastFailureWasInvalidModel = true
+    }
+    
     // Only emit error for critical issues
     if (error.message?.includes('401') || error.message?.includes('403')) {
       this.emit('error', error)
@@ -418,6 +454,12 @@ export class OpenAIRealtimeClient extends EventEmitter {
 
   /** Attempts connection recovery */
   private attemptRecovery(): void {
+    if (this.lastFailureWasInvalidModel) {
+      console.warn('[OpenAIRealtimeClient] Skipping recovery due to invalid_model')
+      this.emit('error', new Error('invalid_model'))
+      return
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[OpenAIRealtimeClient] Max reconnection attempts reached, switching to fallback')
       this.emit('error', new Error('Max reconnection attempts reached'))

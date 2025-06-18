@@ -142,6 +142,21 @@ type VoiceConfigCacheEntry = {
 const VOICE_CFG_TTL_MS = 10 * 60 * 1000 // 10 minutes
 const voiceConfigCache = new Map<string, VoiceConfigCacheEntry>()
 
+// --- New: cache to remember realtime failures per business ---
+const REALTIME_FAILURE_CACHE = new Map<string, number>()
+const REALTIME_FAILURE_TTL_MS = 30 * 60 * 1000 // 30 minutes
+
+// Helper to check if realtime is temporarily disabled for a business
+function isRealtimeTemporarilyDisabled(businessId: string): boolean {
+  const ts = REALTIME_FAILURE_CACHE.get(businessId)
+  if (!ts) return false
+  return (Date.now() - ts) < REALTIME_FAILURE_TTL_MS
+}
+
+function markRealtimeFailure(businessId: string): void {
+  REALTIME_FAILURE_CACHE.set(businessId, Date.now())
+}
+
 // Initialize cleanup interval
 function startCleanupInterval(): void {
   if (cleanupInterval) clearInterval(cleanupInterval);
@@ -339,12 +354,13 @@ class RealtimeAgentService {
     // -----------------------------
     // OpenAI Realtime Voice Session
     // -----------------------------
-    if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime') {
+    if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime' && !isRealtimeTemporarilyDisabled(state.businessId ?? '')) {
       try {
         const client = new OpenAIRealtimeClient(
           process.env.OPENAI_API_KEY,
           state.openaiVoice,
-          state.personaPrompt || undefined, // Pass prompt; fallback to default
+          state.personaPrompt || undefined,
+          process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
         )
         await client.connect()
 
@@ -370,34 +386,49 @@ class RealtimeAgentService {
 
         // Handle errors
         client.on('error', async (error) => {
-          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error)
+          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
+          
+          // Detect invalid model explicitly so we can mark failure cache
+          if (error.message?.includes('invalid_model')) {
+            if (state.businessId) markRealtimeFailure(state.businessId)
+          }
+
+          // Graceful degradation to high-quality TTS fallback
+          console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
           state.openaiClient = undefined
-          state.ttsProvider = 'openai'
+          state.ttsProvider = 'openai' // Use high-quality OpenAI TTS
+          state.openaiVoice = 'nova' // Premium voice
+          state.openaiModel = 'tts-1-hd' // HD quality
 
           if (!state.welcomeMessageDelivered) {
             try {
               const fallbackGreeting = await this.getWelcomeMessage(state)
               await this.streamTTS(state, fallbackGreeting)
               state.welcomeMessageDelivered = true
+              console.log('[REALTIME AGENT] Successfully delivered greeting via TTS fallback')
             } catch (fallbackErr) {
-              console.error('[REALTIME AGENT] Failed to stream fallback greeting (streamTTS):', fallbackErr)
+              console.error('[REALTIME AGENT] Critical error in fallback system:', fallbackErr)
+              // Emergency simple greeting
+              await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
+              state.welcomeMessageDelivered = true
             }
           }
         });
 
-        client.on('close', async () => {
-          console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed.')
-          state.openaiClient = undefined
-          state.ttsProvider = 'openai'
+        // Dedicated invalidModel event emitted by client – mark cache immediately
+        client.on('invalidModel', (err: Error) => {
+          console.error('[REALTIME AGENT] Realtime client reported invalid model:', err.message)
+          if (state.businessId) markRealtimeFailure(state.businessId)
+        })
 
-          if (!state.welcomeMessageDelivered) {
-            try {
-              const fallbackGreeting = await this.getWelcomeMessage(state)
-              await this.streamTTS(state, fallbackGreeting)
-              state.welcomeMessageDelivered = true
-            } catch (fallbackErr) {
-              console.error('[REALTIME AGENT] Failed to stream fallback greeting after close (streamTTS):', fallbackErr)
-            }
+        client.on('close', async () => {
+          console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed gracefully')
+          
+          // Don't immediately switch to fallback - connection might recover
+          if (state.openaiClient === client) {
+            console.log('[REALTIME AGENT] Realtime client closed, will use TTS fallback for new requests')
+            state.ttsProvider = 'openai'
+            state.openaiClient = undefined
           }
         });
 
@@ -1150,12 +1181,20 @@ class RealtimeAgentService {
   private async initializeOpenAIRealtimeClient(state: ConnectionState, initialPrompt: string): Promise<void> {
     if (state.openaiClient || !process.env.OPENAI_API_KEY) return
 
+    // Respect temporary failure cache
+    if (state.businessId && isRealtimeTemporarilyDisabled(state.businessId)) {
+      console.log(`[REALTIME AGENT] Realtime voice temporarily disabled for business ${state.businessId} – falling back to OpenAI TTS`)
+      state.ttsProvider = 'openai'
+      return
+    }
+
     console.log('[REALTIME AGENT] Initializing OpenAI Realtime Client with professional settings...')
     try {
       const client = new OpenAIRealtimeClient(
         process.env.OPENAI_API_KEY,
         state.openaiVoice || 'nova',
         initialPrompt,
+        process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
       );
       
       // Set longer timeout for initial connection
@@ -1195,6 +1234,11 @@ class RealtimeAgentService {
         client.on('error', async (error) => {
           console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
           
+          // Detect invalid model explicitly so we can mark failure cache
+          if (error.message?.includes('invalid_model')) {
+            if (state.businessId) markRealtimeFailure(state.businessId)
+          }
+
           // Graceful degradation to high-quality TTS fallback
           console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
           state.openaiClient = undefined
@@ -1216,6 +1260,12 @@ class RealtimeAgentService {
             }
           }
         });
+
+      // Dedicated invalidModel event emitted by client – mark cache immediately
+      client.on('invalidModel', (err: Error) => {
+        console.error('[REALTIME AGENT] Realtime client reported invalid model:', err.message)
+        if (state.businessId) markRealtimeFailure(state.businessId)
+      })
 
       client.on('close', async () => {
         console.log('[REALTIME AGENT] OpenAI Realtime Client connection closed gracefully')
@@ -1404,4 +1454,7 @@ class RealtimeAgentService {
 }
 
 // Export singleton instance
-export const realtimeAgentService = RealtimeAgentService.getInstance(); 
+export const realtimeAgentService = RealtimeAgentService.getInstance();
+
+// Export helpers for testing purposes (tree-shaken in production builds)
+export { isRealtimeTemporarilyDisabled, markRealtimeFailure } 
