@@ -1015,7 +1015,9 @@ class RealtimeAgentService {
 
       // Update conversation history
       this.addToConversationHistory(state, 'user', transcript)
-      this.addToConversationHistory(state, 'assistant', response.reply)
+      if (response.reply) {
+        this.addToConversationHistory(state, 'assistant', response.reply)
+      }
       state.currentFlow = response.currentFlow || null
       
       // Manage conversation history size
@@ -1023,10 +1025,25 @@ class RealtimeAgentService {
         state.conversationHistory = state.conversationHistory.slice(-MAX_CONVERSATION_HISTORY)
       }
 
-      console.log(`[REALTIME AGENT] AI Response: "${response.reply.substring(0, 100)}..."`)
+      if (response.reply) {
+        console.log(`[REALTIME AGENT] AI Response: "${response.reply.substring(0, 100)}..."`)
+        await this.streamTTS(state, response.reply)
+      }
 
-      // Stream the response
-      await this.streamTTS(state, response.reply)
+      // Handle escalation request (warm transfer)
+      if (response.nextAction === 'TRANSFER') {
+        console.log('[REALTIME AGENT] AI requested live escalation – initiating warm transfer')
+        // Use business notification phone if available
+        let targetNum: string | undefined
+        if (state.businessId) {
+          const biz = await prisma.business.findUnique({ where: { id: state.businessId }, select: { notificationPhoneNumber: true } })
+          targetNum = biz?.notificationPhoneNumber || undefined
+        }
+        this.escalateToHuman(state, targetNum)
+      } else if (response.nextAction === 'VOICEMAIL') {
+        console.log('[REALTIME AGENT] AI requested voicemail – redirecting caller')
+        this.sendToVoicemail(state)
+      }
 
     } catch (error) {
       console.error('[REALTIME AGENT] Critical error in audio processing pipeline:', error)
@@ -1680,6 +1697,69 @@ class RealtimeAgentService {
       }
       default:
         console.warn('[REALTIME AGENT] Unhandled Twilio stream event type:', eventType);
+    }
+  }
+
+  private escalateToHuman(state: ConnectionState, targetNumber?: string): void {
+    const { callSid, businessId } = state
+    if (!callSid) {
+      console.error('[REALTIME AGENT] Attempted escalation without CallSid')
+      return
+    }
+
+    // Determine fallback voicemail URL
+    const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
+    const voicemailUrl = `${host}/api/voice/voicemail` // must be implemented as POST returning TwiML <Record>
+
+    // Pick escalation number
+    const dialNumber = targetNumber || process.env.DEFAULT_ESCALATION_NUMBER || state.toNumber || null
+
+    if (!dialNumber) {
+      console.error('[REALTIME AGENT] No escalation target number configured')
+      return
+    }
+
+    try {
+      const twiml = new twilio.twiml.VoiceResponse()
+      const dial = twiml.dial({ action: voicemailUrl, timeout: 20, callerId: state.fromNumber || undefined })
+      dial.number(dialNumber)
+      twiml.say({ voice: 'Polly.Amy' }, 'Transferring you now, please hold.')
+
+      this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
+      console.log(`[REALTIME AGENT] Warm transfer initiated to ${dialNumber} for call ${callSid}`)
+
+      // Update callLog status
+      prisma.callLog.update({ where: { callSid }, data: { status: 'TRANSFERRED', metadata: { transferredTo: dialNumber } } } as any).catch(() => {})
+
+    } catch (error) {
+      console.error('[REALTIME AGENT] Failed to initiate warm transfer:', error)
+    }
+  }
+
+  /** Directs the caller to leave a voicemail, recording up to 120 seconds. */
+  private sendToVoicemail(state: ConnectionState): void {
+    if (!state.callSid) {
+      console.error('[REALTIME AGENT] Attempted voicemail without CallSid')
+      return
+    }
+
+    const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
+    const recordUrl = `${host}/api/voice/voicemail` // will store recording
+
+    try {
+      const twiml = new twilio.twiml.VoiceResponse()
+      twiml.say({ voice: 'Polly.Amy' }, 'Please leave a detailed message after the beep. When you are done, simply hang up.')
+      twiml.record({ action: recordUrl, maxLength: 120, playBeep: true, trim: 'trim-silence' })
+      twiml.say({ voice: 'Polly.Amy' }, 'Thank you. Goodbye.')
+      twiml.hangup()
+
+      this.twilioClient.calls(state.callSid).update({ twiml: twiml.toString() })
+      console.log('[REALTIME AGENT] Redirected caller to voicemail.')
+
+      prisma.callLog.update({ where: { callSid: state.callSid }, data: { status: 'VOICEMAIL' } } as any).catch(() => {})
+
+    } catch (error) {
+      console.error('[REALTIME AGENT] Failed to start voicemail recording:', error)
     }
   }
 }

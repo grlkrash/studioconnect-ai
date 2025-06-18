@@ -10,6 +10,7 @@ const db_1 = require("../services/db");
 const openai_1 = require("../services/openai");
 const voiceSessionService_1 = __importDefault(require("../services/voiceSessionService"));
 const twilio_1 = __importDefault(require("twilio"));
+const projectStatusService_1 = require("../services/projectStatusService");
 const DEFAULT_EMERGENCY_QUESTIONS = [
     {
         questionText: "Can you describe this situation in as much detail as possible?",
@@ -454,14 +455,22 @@ const _processMessage = async (message, conversationHistory, businessId, current
                     include: {
                         projects: {
                             where: { status: { not: 'COMPLETED' } },
-                            select: { name: true, status: true, details: true },
+                            select: { id: true, name: true, status: true, details: true, lastSyncedAt: true },
                         },
                     },
                 });
                 if (client) {
                     clientContext = `--- CALLER INFORMATION ---\nThis call is from an existing client: ${client.name}.`;
                     if (client.projects.length > 0) {
-                        projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + client.projects.map((p) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n');
+                        const now = Date.now();
+                        for (const proj of client.projects) {
+                            const last = proj.lastSyncedAt ? new Date(proj.lastSyncedAt).getTime() : 0;
+                            if (now - last > 2 * 60 * 1000) {
+                                await (0, projectStatusService_1.refreshProjectStatus)(proj.id);
+                            }
+                        }
+                        const updated = await db_1.prisma.project.findMany({ where: { clientId: client.id, status: { not: 'COMPLETED' } }, select: { name: true, status: true, details: true } });
+                        projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + updated.map((p) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n');
                     }
                     else {
                         projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\nThis client currently has no active projects.`;
@@ -489,7 +498,14 @@ const _processMessage = async (message, conversationHistory, businessId, current
             { role: 'user', content: message }
         ]);
         const reply = cleanVoiceResponse(aiResponse || '');
-        const nextAction = 'CONTINUE';
+        let nextAction = 'CONTINUE';
+        const lowerMsg = message.toLowerCase();
+        if (/(human|representative|talk to (someone|a person)|connect me|transfer|emergency)/.test(lowerMsg)) {
+            nextAction = 'TRANSFER';
+        }
+        else if (/(voicemail|leave (a )?message)/.test(lowerMsg)) {
+            nextAction = 'VOICEMAIL';
+        }
         if (session && callSid) {
             const updatedHistory = [...conversationHistory, { role: 'user', content: message }, { role: 'assistant', content: reply }];
             await voiceSessionService.updateVoiceSession(callSid, updatedHistory, currentActiveFlow || null);

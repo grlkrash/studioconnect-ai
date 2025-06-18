@@ -3,6 +3,7 @@ import twilio from 'twilio'
 import { realtimeAgentService } from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
 import { asyncHandler } from '../utils/asyncHandler'
+import { prisma } from '../services/db'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -151,6 +152,29 @@ router.post('/fallback-handler', customValidateTwilioRequest, asyncHandler(async
     res.type('text/xml')
     res.status(500).send(twiml.toString())
     return
+  }
+}))
+
+router.post('/voicemail', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const recordingUrl = req.body.RecordingUrl as string | undefined
+    const callSid = req.body.CallSid as string | undefined
+    const duration = req.body.RecordingDuration as string | undefined
+
+    console.log('[VOICE] Voicemail received:', { recordingUrl, callSid, duration })
+
+    if (callSid) {
+      await prisma.callLog.update({ where: { callSid }, data: { content: recordingUrl, status: 'COMPLETED' } } as any).catch(() => {})
+    }
+
+    const twiml = new VoiceResponse()
+    twiml.say({ voice: 'Polly.Amy' }, 'Thank you for your message. Goodbye.')
+    twiml.hangup()
+
+    res.type('text/xml').send(twiml.toString())
+  } catch (error) {
+    console.error('[VOICE] Voicemail route error:', error)
+    res.status(500).send('Error')
   }
 }))
 

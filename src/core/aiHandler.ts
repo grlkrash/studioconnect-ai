@@ -7,6 +7,7 @@ import twilio from 'twilio'
 import { requireAuth } from '../api/authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
 import { validateRequest } from '../middleware/validateRequest'
+import { refreshProjectStatus } from '../services/projectStatusService'
 
 // Local runtime type for LeadCaptureQuestion shape (avoid direct Prisma type import to prevent missing-field errors)
 interface LeadCaptureQuestionBase {
@@ -629,7 +630,7 @@ const _processMessage = async (
           include: {
             projects: {
               where: { status: { not: 'COMPLETED' } },
-              select: { name: true, status: true, details: true },
+              select: { id: true, name: true, status: true, details: true, lastSyncedAt: true },
             },
           },
         })
@@ -637,7 +638,18 @@ const _processMessage = async (
         if (client) {
           clientContext = `--- CALLER INFORMATION ---\nThis call is from an existing client: ${client.name}.`
           if (client.projects.length > 0) {
-            projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + client.projects.map((p: { name: string; status: string; details: string | null }) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n')
+            // Refresh status for projects if stale (> 2 min)
+            const now = Date.now()
+            for (const proj of client.projects) {
+              const last = proj.lastSyncedAt ? new Date(proj.lastSyncedAt).getTime() : 0
+              if (now - last > 2 * 60 * 1000) {
+                await refreshProjectStatus(proj.id)
+              }
+            }
+
+            // Re-query to get updated data
+            const updated = await prisma.project.findMany({ where: { clientId: client.id, status: { not: 'COMPLETED' } }, select: { name: true, status: true, details: true } })
+            projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + updated.map((p: { name: string; status: string; details: string | null }) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n')
           } else {
             projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\nThis client currently has no active projects.`
           }
@@ -684,8 +696,14 @@ const _processMessage = async (
     // TEMPORARY: Forcing a simple response for now to test the pipeline
     // const reply = "This is a test response."
 
-    // TODO: Determine nextAction based on conversation analysis
-    const nextAction: NextAction = 'CONTINUE'
+    // Basic heuristic for live escalation or voicemail requests
+    let nextAction: NextAction = 'CONTINUE'
+    const lowerMsg = message.toLowerCase()
+    if (/(human|representative|talk to (someone|a person)|connect me|transfer|emergency)/.test(lowerMsg)) {
+      nextAction = 'TRANSFER'
+    } else if (/(voicemail|leave (a )?message)/.test(lowerMsg)) {
+      nextAction = 'VOICEMAIL'
+    }
 
     // Update session state
     if (session && callSid) {
