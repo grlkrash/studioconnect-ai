@@ -23,7 +23,14 @@ export function startAsanaCron () {
 
       for (const { key, instance } of providers) {
         const integrations = await prisma.integration.findMany({
-          where: { provider: key, isEnabled: true, syncStatus: { in: ['CONNECTED', 'ERROR'] } },
+          where: {
+            provider: key,
+            isEnabled: true,
+            OR: [
+              { syncStatus: 'CONNECTED' },
+              { syncStatus: 'ERROR' }
+            ],
+          },
           select: { businessId: true },
         })
 

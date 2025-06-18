@@ -373,9 +373,18 @@ class RealtimeAgentService {
     // -----------------------------
     if (!state.openaiClient && process.env.OPENAI_API_KEY && state.ttsProvider === 'realtime' && !isRealtimeTemporarilyDisabled(state.businessId ?? '')) {
       try {
+        const ALLOWED_REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
+        const realtimeVoice = ALLOWED_REALTIME_VOICES.includes(state.openaiVoice as any)
+          ? state.openaiVoice
+          : 'alloy' // safe default
+
+        if (realtimeVoice !== state.openaiVoice) {
+          console.warn(`[REALTIME AGENT] Voice "${state.openaiVoice}" not supported for realtime – using "${realtimeVoice}" for realtime session`)
+        }
+        
         const client = new OpenAIRealtimeClient(
           process.env.OPENAI_API_KEY,
-          state.openaiVoice,
+          realtimeVoice,
           state.personaPrompt || undefined,
           process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
         )
@@ -494,7 +503,7 @@ class RealtimeAgentService {
 
         // Schedule next follow-up in 8 s
         scheduleIdlePrompt()
-      }, state.idlePromptCount === 0 ? 2000 : 8000)
+      }, state.idlePromptCount === 0 ? 4000 : 8000)
     }
 
     scheduleIdlePrompt()
@@ -1629,7 +1638,7 @@ class RealtimeAgentService {
         }
 
         const now = Date.now()
-        const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
+        const threshold = state.vadCalibrated ? state.vadThreshold : 25 // Increased default threshold
 
         // If realtime client is active, stream audio and handle turn-taking
         if (state.openaiClient && state.ttsProvider === 'realtime') {
