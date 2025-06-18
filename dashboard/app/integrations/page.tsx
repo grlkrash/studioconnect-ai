@@ -92,17 +92,8 @@ export default function IntegrationsPage() {
   const [integrations, setIntegrations] = useState<UiIntegration[]>([])
   const [loading, setLoading] = useState(true)
 
-  // --- Monday connect dialog state ---
-  const [mondayApiKey, setMondayApiKey] = useState("")
-  const [showMondayDialog, setShowMondayDialog] = useState(false)
+  // No additional state needed for OAuth flows
 
-  // --- Jira connect dialog state ---
-  const [jiraEmail, setJiraEmail] = useState("")
-  const [jiraToken, setJiraToken] = useState("")
-  const [jiraInstanceUrl, setJiraInstanceUrl] = useState("")
-  const [showJiraDialog, setShowJiraDialog] = useState(false)
-
-  // Asana OAuth – no extra state needed
   const handleConnectAsanaOAuth = () => {
     window.location.href = "/api/integrations/asana/oauth-start"
   }
@@ -161,52 +152,12 @@ export default function IntegrationsPage() {
   }, [fetchIntegrations])
 
   // Helpers
-  const handleConnectMonday = async () => {
-    if (!mondayApiKey.trim()) {
-      toast({ title: "API Key required", variant: "destructive" })
-      return
-    }
-    try {
-      const res = await fetch("/api/integrations/monday/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: mondayApiKey.trim() }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      toast({ title: "Monday connected" })
-      setShowMondayDialog(false)
-      setMondayApiKey("")
-      fetchIntegrations()
-    } catch (err: any) {
-      toast({ title: "Failed to connect Monday", description: err.message, variant: "destructive" })
-    }
+  const handleConnectMondayOAuth = () => {
+    window.location.href = '/api/integrations/monday/oauth-start'
   }
 
-  const handleConnectJira = async () => {
-    if (!jiraEmail.trim() || !jiraToken.trim() || !jiraInstanceUrl.trim()) {
-      toast({ title: "All fields are required", variant: "destructive" })
-      return
-    }
-    try {
-      const res = await fetch("/api/integrations/jira/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: jiraEmail.trim(),
-          token: jiraToken.trim(),
-          instanceUrl: jiraInstanceUrl.trim(),
-        }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      toast({ title: "Jira connected" })
-      setShowJiraDialog(false)
-      setJiraEmail("")
-      setJiraToken("")
-      setJiraInstanceUrl("")
-      fetchIntegrations()
-    } catch (err: any) {
-      toast({ title: "Failed to connect Jira", description: err.message, variant: "destructive" })
-    }
+  const handleConnectJiraOAuth = () => {
+    window.location.href = '/api/integrations/jira/oauth-start'
   }
 
   const handleDisconnect = async (prov: ProviderKey) => {
@@ -371,63 +322,13 @@ export default function IntegrationsPage() {
                   ) : integration.status === "pending" ? (
                     <>
                       {integration.provider === "MONDAY" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowMondayDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showMondayDialog} onOpenChange={setShowMondayDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Monday.com</DialogTitle>
-                                <DialogDescription>Enter your Monday API key to connect.</DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>API Key</Label>
-                                  <Input type="password" placeholder="xxxxxxxxxxxxxxxx" value={mondayApiKey} onChange={e => setMondayApiKey(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowMondayDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectMonday}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : integration.provider === "JIRA" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowJiraDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showJiraDialog} onOpenChange={setShowJiraDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Jira Cloud</DialogTitle>
-                                <DialogDescription>
-                                  Enter your Jira credentials. Generate an API token from your Atlassian account.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>Email</Label>
-                                  <Input type="email" placeholder="you@example.com" value={jiraEmail} onChange={e => setJiraEmail(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>API Token</Label>
-                                  <Input type="password" placeholder="••••••••" value={jiraToken} onChange={e => setJiraToken(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Instance URL</Label>
-                                  <Input placeholder="https://your-domain.atlassian.net" value={jiraInstanceUrl} onChange={e => setJiraInstanceUrl(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowJiraDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectJira}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : integration.provider === "ASANA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
                           Connect via OAuth
@@ -438,63 +339,13 @@ export default function IntegrationsPage() {
                     // AVAILABLE STATE
                     <>
                       {integration.provider === "MONDAY" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowMondayDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showMondayDialog} onOpenChange={setShowMondayDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Monday.com</DialogTitle>
-                                <DialogDescription>Enter your Monday API key to connect.</DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>API Key</Label>
-                                  <Input type="password" placeholder="xxxxxxxxxxxxxxxx" value={mondayApiKey} onChange={e => setMondayApiKey(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowMondayDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectMonday}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : integration.provider === "JIRA" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowJiraDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showJiraDialog} onOpenChange={setShowJiraDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Jira Cloud</DialogTitle>
-                                <DialogDescription>
-                                  Enter your Jira credentials. Generate an API token from your Atlassian account.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>Email</Label>
-                                  <Input type="email" placeholder="you@example.com" value={jiraEmail} onChange={e => setJiraEmail(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>API Token</Label>
-                                  <Input type="password" placeholder="••••••••" value={jiraToken} onChange={e => setJiraToken(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Instance URL</Label>
-                                  <Input placeholder="https://your-domain.atlassian.net" value={jiraInstanceUrl} onChange={e => setJiraInstanceUrl(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowJiraDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectJira}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : integration.provider === "ASANA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
                           Connect via OAuth
