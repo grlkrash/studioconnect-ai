@@ -1429,6 +1429,9 @@ class RealtimeAgentService {
 
   /** Schedules the idle prompt timer. This should only be called when the agent is finished speaking. */
   private _scheduleIdlePrompt(state: ConnectionState): void {
+    // Do not schedule idle prompts until the initial greeting has been delivered.
+    if (!state.welcomeMessageDelivered) return
+
     this._clearIdlePrompt(state); // Always clear previous before setting a new one
 
     state.idlePromptTimer = setTimeout(async () => {
@@ -1518,10 +1521,10 @@ class RealtimeAgentService {
           return
         }
 
-        // Enhanced VAD with better noise handling
+        // --- Audio pre-processing for VAD & fallback pipeline ---
         const buf = Buffer.from(mediaPayload, 'base64')
 
-        // Determine if payload is 16-bit Linear PCM (even length, 2-byte samples)
+        // Determine if payload is 16-bit Linear PCM (even length → 2-byte samples)
         const isLinear16 = buf.length % 2 === 0
 
         // Calculate average absolute energy (0-255 scale)
@@ -1552,29 +1555,21 @@ class RealtimeAgentService {
         const now = Date.now()
         const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
 
-        // If realtime client is active, stream audio and handle turn-taking
+        // ----------------------------------
+        // Realtime pipeline (OpenAI client)
+        // ----------------------------------
         if (state.openaiClient && state.ttsProvider === 'realtime') {
           try {
+            // Forward raw caller audio to the realtime client.
+            // We now rely entirely on OpenAI's server-side VAD, eliminating local
+            // energy-based heuristics that caused premature turn-taking.
             state.openaiClient.sendAudio(mediaPayload)
 
-            // Professional turn-taking logic
-            if (energy > threshold) {
-              if (!state.isRecording) {
-                console.log('[REALTIME AGENT] Professional VAD: User speech detected')
-                state.isRecording = true
-              }
-              state.lastSpeechMs = now
-            }
-
-            // Give user time to finish speaking before responding
-            if (state.isRecording && now - state.lastSpeechMs > 1200) { // Increased silence duration for professional conversations
-              console.log('[REALTIME AGENT] Professional VAD: User finished speaking, assistant will respond')
-              state.openaiClient.requestAssistantResponse()
-              state.isRecording = false
-            }
+            // Activity heartbeat – prevents premature idle prompts.
+            state.lastActivity = Date.now()
           } catch (error) {
             console.error('[REALTIME AGENT] Error with realtime client audio processing:', error)
-            // Fall back to TTS pipeline
+            // Graceful degradation to fallback pipeline
             state.ttsProvider = 'openai'
             state.openaiClient = undefined
           }
