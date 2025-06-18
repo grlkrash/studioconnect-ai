@@ -19,6 +19,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { OpenAIRealtimeClient } from './openaiRealtimeClient';
 import { createVoiceSystemPrompt } from '../core/aiHandler';
+import { LeadQualifier } from '../core/leadQualifier';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -74,6 +75,11 @@ interface ConnectionState {
   callStartTime?: number;
   /** true if current recording chunk is linear16 */
   isLinear16Recording?: boolean;
+  /** lead qualification */
+  leadQualifier?: LeadQualifier
+  qualAnswers?: Record<string, string>
+  currentMissingQuestionId?: string;
+  qualQuestionMap?: Record<string, { questionText: string; mapsToLeadField?: string }>
 }
 
 interface AgentSession {
@@ -858,46 +864,142 @@ class RealtimeAgentService {
       const transcript = transcriptRaw.trim()
       console.log(`[REALTIME AGENT] Transcription: "${transcript}"`)
 
-              // Enhanced validation for professional business conversations
-        const txt = transcript.toLowerCase().trim()
-        const words = txt.split(/\s+/).filter(w => w.length > 0)
-        
-        // Creative agency & professional business conversation patterns
-        const validSingleWords = [
-          // Basic responses
-          'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'hello', 'hi', 
-          'great', 'perfect', 'correct', 'right', 'help', 'urgent', 'rush',
-          // Business terms
-          'project', 'status', 'update', 'billing', 'invoice', 'payment',
-          'deadline', 'timeline', 'budget', 'quote', 'estimate', 'contract',
-          // Creative industry terms
-          'design', 'branding', 'website', 'logo', 'identity', 'marketing',
-          'creative', 'concept', 'mockup', 'prototype', 'wireframe', 'layout',
-          'animation', 'video', 'motion', 'graphics', 'illustration', 'photography',
-          // Packaging & print
-          'packaging', 'print', 'brochure', 'catalog', 'poster', 'signage',
-          'storyboard', 'boards', 'presentation', 'pitch', 'proposal',
-          // Project management terms
-          'kickoff', 'launch', 'delivery', 'revision', 'feedback', 'approval',
-          'milestone', 'phase', 'iteration', 'round', 'final', 'proofs',
-          // Client communication
-          'meeting', 'call', 'email', 'follow', 'followup', 'discuss',
-          'review', 'changes', 'edits', 'tweaks', 'adjustments'
-        ]
-        
-        const validPhrases = txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/)
-        
-        // Creative industry & business-focused validation
-        const isValid = words.length > 1 || 
-                       validSingleWords.includes(txt) || 
-                       validPhrases ||
-                       txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) ||
-                       (words.length === 1 && words[0].length > 2 && !/^(um|uh|ah|er|mmm|hmm|like|just|well|you|know)$/.test(txt))
+      // -------------------- Deterministic Lead Qualification --------------------
+      if (state.leadQualifier) {
+        try {
+          // Store answer for previous question
+          if (state.currentMissingQuestionId) {
+            state.qualAnswers = state.qualAnswers || {}
+            state.qualAnswers[state.currentMissingQuestionId] = transcript
+          }
 
-        if (!isValid) {
-          console.log(`[REALTIME AGENT] Transcription not suitable for creative business processing: "${transcript}"`)
-          return
+          const { nextPrompt, finished, missingKey } = state.leadQualifier.getNextPrompt(state.qualAnswers!)
+
+          if (!finished) {
+            // Ask next question
+            state.currentMissingQuestionId = missingKey
+            if (nextPrompt) await this.streamTTS(state, nextPrompt)
+            // Reset flags for next utterance
+            state.isProcessing = false
+            return
+          } else {
+            // Lead qualification complete -> create lead record and proceed to AI flow
+            try {
+              const capturedData: any = {}
+              let contactName: string | undefined
+              let contactEmail: string | undefined
+              let contactPhone: string | undefined
+              let address: string | undefined
+              let notes: string | undefined
+
+              Object.entries(state.qualAnswers || {}).forEach(([qid, answer]) => {
+                const meta = state.qualQuestionMap?.[qid]
+                if (!meta) return
+                capturedData[meta.questionText] = answer
+                switch ((meta.mapsToLeadField || '').toLowerCase()) {
+                  case 'contactname':
+                  case 'name':
+                    contactName = answer
+                    break
+                  case 'contactemail':
+                  case 'email':
+                    contactEmail = answer
+                    break
+                  case 'contactphone':
+                  case 'phone':
+                    contactPhone = answer
+                    break
+                  case 'address':
+                    address = answer
+                    break
+                  case 'notes':
+                  case 'description':
+                    notes = answer
+                    break
+                  default:
+                    break
+                }
+              })
+
+              const newLead = await prisma.lead.create({
+                data: {
+                  businessId: state.businessId!,
+                  capturedData,
+                  conversationTranscript: JSON.stringify(state.conversationHistory),
+                  contactEmail,
+                  contactPhone,
+                  contactName,
+                  address,
+                  notes,
+                },
+              })
+
+              // Notification email
+              const biz = await prisma.business.findUnique({
+                where: { id: state.businessId! },
+                select: { name: true, notificationEmails: true },
+              })
+
+              if (biz?.notificationEmails?.length) {
+                await sendLeadNotificationEmail(biz.notificationEmails as any, newLead, null, biz.name)
+              }
+
+              await this.streamTTS(state, 'Thanks for those details! Someone from our team will reach out shortly. How else can I assist you today?')
+            } catch (err) {
+              console.error('[REALTIME AGENT] Failed to process lead qualification completion:', err)
+            }
+
+            // Clear qualifier and continue normal flow
+            state.leadQualifier = undefined
+            state.currentMissingQuestionId = undefined
+            state.currentFlow = null
+            // Continue to AI processing if user said something else
+          }
+        } catch (err) {
+          console.error('[REALTIME AGENT] Lead qualification error:', err)
         }
+      }
+
+      // Enhanced validation for professional business conversations
+      const txt = transcript.toLowerCase().trim()
+      const words = txt.split(/\s+/).filter(w => w.length > 0)
+      
+      // Creative agency & professional business conversation patterns
+      const validSingleWords = [
+        // Basic responses
+        'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'hello', 'hi', 
+        'great', 'perfect', 'correct', 'right', 'help', 'urgent', 'rush',
+        // Business terms
+        'project', 'status', 'update', 'billing', 'invoice', 'payment',
+        'deadline', 'timeline', 'budget', 'quote', 'estimate', 'contract',
+        // Creative industry terms
+        'design', 'branding', 'website', 'logo', 'identity', 'marketing',
+        'creative', 'concept', 'mockup', 'prototype', 'wireframe', 'layout',
+        'animation', 'video', 'motion', 'graphics', 'illustration', 'photography',
+        // Packaging & print
+        'packaging', 'print', 'brochure', 'catalog', 'poster', 'signage',
+        'storyboard', 'boards', 'presentation', 'pitch', 'proposal',
+        // Project management terms
+        'kickoff', 'launch', 'delivery', 'revision', 'feedback', 'approval',
+        'milestone', 'phase', 'iteration', 'round', 'final', 'proofs',
+        // Client communication
+        'meeting', 'call', 'email', 'follow', 'followup', 'discuss',
+        'review', 'changes', 'edits', 'tweaks', 'adjustments'
+      ]
+      
+      const validPhrases = txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/)
+      
+      // Creative industry & business-focused validation
+      const isValid = words.length > 1 || 
+                     validSingleWords.includes(txt) || 
+                     validPhrases ||
+                     txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) ||
+                     (words.length === 1 && words[0].length > 2 && !/^(um|uh|ah|er|mmm|hmm|like|just|well|you|know)$/.test(txt))
+
+      if (!isValid) {
+        console.log(`[REALTIME AGENT] Transcription not suitable for creative business processing: "${transcript}"`)
+        return
+      }
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
@@ -1105,6 +1207,46 @@ class RealtimeAgentService {
           state.welcomeMessageDelivered = true;
         }
       }
+
+      // ---------------- Lead Qualification Engine ----------------
+      let lcQuestions: any[] = []
+      if (state.businessId) {
+        const _agentCfg: any = await prisma.agentConfig.findUnique({
+          where: { businessId: state.businessId },
+          include: { questions: { orderBy: { order: 'asc' } } },
+        })
+        lcQuestions = _agentCfg?.questions || []
+      }
+
+      if (!state.clientId && lcQuestions.length > 0) {
+        try {
+          state.leadQualifier = new LeadQualifier(
+            lcQuestions.map((q: any) => ({
+              id: q.id,
+              order: q.order,
+              questionText: q.questionText,
+              expectedFormat: q.expectedFormat || undefined,
+              isRequired: q.isRequired,
+              mapsToLeadField: q.mapsToLeadField || undefined,
+            }))
+          )
+          state.qualAnswers = {}
+          state.currentFlow = 'LEAD_QUAL'
+          state.qualQuestionMap = lcQuestions.reduce((acc: any, q: any) => {
+            acc[q.id] = { questionText: q.questionText, mapsToLeadField: q.mapsToLeadField || undefined }
+            return acc
+          }, {})
+
+          const { nextPrompt, missingKey } = state.leadQualifier.getNextPrompt({})
+          if (nextPrompt) {
+            await this.streamTTS(state, nextPrompt)
+            state.currentMissingQuestionId = missingKey
+          }
+        } catch (err) {
+          console.error('[REALTIME AGENT] LeadQualifier init failed:', err)
+        }
+      }
+
     } catch (error) {
       console.error('[REALTIME AGENT] Error handling start event:', error);
       
