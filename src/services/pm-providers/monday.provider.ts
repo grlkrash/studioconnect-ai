@@ -2,6 +2,7 @@ import { Project } from '@prisma/client'
 import axios from 'axios'
 import { prisma } from '../db'
 import { ProjectManagementProvider } from './pm.provider.interface'
+import { getOrCreateClient } from './client-helper'
 
 const MONDAY_API_URL = 'https://api.monday.com/v2'
 
@@ -25,10 +26,11 @@ export class MondayProvider implements ProjectManagementProvider {
       },
     })
 
-    const apiKey = (integration?.credentials as any)?.apiKey || process.env.MONDAY_API_KEY
+    const creds = integration?.credentials as any || {}
+    const token = creds.accessToken || creds.apiKey || process.env.MONDAY_API_KEY
 
-    if (!apiKey) {
-      throw new Error(`[MondayProvider] API key for business ${businessId} not found.`)
+    if (!token) {
+      throw new Error(`[MondayProvider] access token for business ${businessId} not found.`)
     }
 
     return {
@@ -36,7 +38,7 @@ export class MondayProvider implements ProjectManagementProvider {
         axios.post(MONDAY_API_URL, data, {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: apiKey,
+            Authorization: `Bearer ${token}`,
             'API-Version': '2023-10',
           },
         }),
@@ -48,9 +50,10 @@ export class MondayProvider implements ProjectManagementProvider {
    * @param credentials - An object containing the `apiKey`.
    * @returns A boolean indicating if the connection was successful.
    */
-  async connect(credentials: { apiKey: string }): Promise<boolean> {
-    if (!credentials.apiKey) {
-      console.error('[MondayProvider] API key is required for connection.')
+  async connect(credentials: Record<string, any>): Promise<boolean> {
+    const token: string | undefined = credentials.accessToken || credentials.apiKey
+    if (!token) {
+      console.error('[MondayProvider] Access token is required for connection.')
       return false
     }
 
@@ -62,17 +65,14 @@ export class MondayProvider implements ProjectManagementProvider {
         {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: credentials.apiKey,
+            Authorization: `Bearer ${token}`,
           },
         },
       )
       console.log('[MondayProvider] Connection to Monday.com successful.')
       return true
     } catch (error: any) {
-      console.error(
-        '[MondayProvider] Connection failed:',
-        error.response?.data || error.message,
-      )
+      console.error('[MondayProvider] Connection failed:', error.response?.data || error.message)
       return false
     }
   }
@@ -93,6 +93,9 @@ export class MondayProvider implements ProjectManagementProvider {
     projectCount = boards.length
 
     for (const board of boards) {
+      // Ensure a Client representing this board exists.
+      const clientId = await getOrCreateClient(businessId, board.name || 'Monday Board')
+
       let cursor: string | null = null
       let hasMore = true
 
@@ -129,7 +132,11 @@ export class MondayProvider implements ProjectManagementProvider {
         taskCount += items.length
 
         for (const item of items) {
-          const normalizedData = this.normalizeData(item, businessId)
+          const normalizedData = {
+            ...this.normalizeData(item, businessId),
+            clientId,
+            pmTool: 'MONDAY',
+          }
           if (!normalizedData.pmToolId) continue
           
           await prisma.project.upsert({

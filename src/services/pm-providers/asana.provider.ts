@@ -4,6 +4,7 @@ import crypto from "crypto"
 
 import { prisma } from "../db"
 import { ProjectManagementProvider } from "./pm.provider.interface"
+import { getOrCreateClient } from "./client-helper"
 
 // Constants
 const ASANA_API_BASE_URL = "https://app.asana.com/api/1.0"
@@ -112,7 +113,17 @@ class AsanaProvider implements ProjectManagementProvider {
 
       for (const task of tasks) {
         if (!task.gid) continue
-        const normalizedData = this.normalizeData(task)
+
+        // Use the Asana project name (first project) as the client identifier if available.
+        const clientName: string = task.projects?.[0]?.name || 'Asana Client'
+        const clientId = await getOrCreateClient(businessId, clientName)
+
+        const normalizedData = {
+          ...this.normalizeData(task),
+          clientId,
+          pmTool: 'ASANA',
+        }
+
         await prisma.project.upsert({
           where: { businessId_pmToolId: { businessId, pmToolId: task.gid } },
           update: normalizedData,
@@ -120,7 +131,6 @@ class AsanaProvider implements ProjectManagementProvider {
             ...normalizedData,
             businessId,
             pmToolId: task.gid,
-            pmTool: "ASANA",
           } as any,
         })
 

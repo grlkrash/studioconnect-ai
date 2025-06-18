@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios'
 import crypto from 'crypto'
 import { prisma } from '../db'
 import { ProjectManagementProvider } from './pm.provider.interface'
+import { getOrCreateClient } from './client-helper'
 
 // Helper to store axios instances per business
 const axiosInstances: Map<string, AxiosInstance> = new Map()
@@ -16,32 +17,26 @@ export class JiraProvider implements ProjectManagementProvider {
     return client
   }
 
-  async connect(credentials: {
-    email: string
-    token: string
-    instanceUrl: string
-    businessId: string
-  }): Promise<boolean> {
+  async connect(credentials: Record<string, any>): Promise<boolean> {
     try {
-      const { email, token, instanceUrl, businessId } = credentials
-      if (!email || !token || !instanceUrl || !businessId) {
-        throw new Error('Missing Jira credentials: email, token, instanceUrl, and businessId are required.')
+      const { accessToken, cloudId, businessId } = credentials
+      if (!accessToken || !cloudId || !businessId) {
+        throw new Error('Missing Jira OAuth credentials: accessToken, cloudId, businessId required.')
       }
 
-      const encodedToken = Buffer.from(`${email}:${token}`).toString('base64')
+      const baseURL = `https://api.atlassian.com/ex/jira/${cloudId}`
       const client = axios.create({
-        baseURL: `${instanceUrl}/rest/api/3`,
+        baseURL: `${baseURL}/rest/api/3`,
         headers: {
-          Authorization: `Basic ${encodedToken}`,
+          Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
         },
       })
 
-      // Test connection
       await client.get('/myself')
       axiosInstances.set(businessId, client)
 
-      console.log(`[JiraProvider] Successfully connected to Jira for business ${businessId}`)
+      console.log(`[JiraProvider] OAuth connection successful for business ${businessId}`)
       return true
     } catch (error) {
       console.error('[JiraProvider] Failed to connect to Jira:', error)
@@ -74,11 +69,22 @@ export class JiraProvider implements ProjectManagementProvider {
         }
 
         for (const issue of issues) {
-          const normalizedData = this.normalizeData(issue, businessId)
+          // Derive a reasonable client name from the Jira project key/name
+          const clientName: string = issue?.fields?.project?.name || 'Jira Client'
+
+          // Ensure a Client row exists for this business
+          const clientId = await getOrCreateClient(businessId, clientName)
+
+          const normalizedData = {
+            ...this.normalizeData(issue, businessId),
+            clientId,
+            pmTool: 'JIRA',
+          }
+
           await prisma.project.upsert({
             where: {
               businessId_pmToolId: {
-                businessId: businessId,
+                businessId,
                 pmToolId: normalizedData.pmToolId!,
               },
             },
