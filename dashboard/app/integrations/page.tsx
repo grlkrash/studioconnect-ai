@@ -107,6 +107,11 @@ export default function IntegrationsPage() {
   const [asanaWorkspaceGid, setAsanaWorkspaceGid] = useState("")
   const [showAsanaDialog, setShowAsanaDialog] = useState(false)
 
+  // New OAuth connect – simple redirect
+  const handleConnectAsanaOAuth = () => {
+    window.location.href = "/api/integrations/asana/oauth-start"
+  }
+
   const fetchIntegrations = useCallback(async () => {
     try {
       setLoading(true)
@@ -451,33 +456,9 @@ export default function IntegrationsPage() {
                           </Dialog>
                         </>
                       ) : integration.provider === "ASANA" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowAsanaDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showAsanaDialog} onOpenChange={setShowAsanaDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Asana</DialogTitle>
-                                <DialogDescription>Enter your Asana Personal Access Token and Workspace GID.</DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>Personal Access Token</Label>
-                                  <Input type="password" placeholder="pat_..." value={asanaApiKey} onChange={e => setAsanaApiKey(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Workspace GID</Label>
-                                  <Input placeholder="123456789" value={asanaWorkspaceGid} onChange={e => setAsanaWorkspaceGid(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowAsanaDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectAsana}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : null}
                     </>
                   ) : (
@@ -542,33 +523,9 @@ export default function IntegrationsPage() {
                           </Dialog>
                         </>
                       ) : integration.provider === "ASANA" ? (
-                        <>
-                          <Button size="sm" className="w-full" onClick={() => setShowAsanaDialog(true)}>
-                            Connect
-                          </Button>
-                          <Dialog open={showAsanaDialog} onOpenChange={setShowAsanaDialog}>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Connect Asana</DialogTitle>
-                                <DialogDescription>Enter your Asana Personal Access Token and Workspace GID.</DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <Label>Personal Access Token</Label>
-                                  <Input type="password" placeholder="pat_..." value={asanaApiKey} onChange={e => setAsanaApiKey(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Workspace GID</Label>
-                                  <Input placeholder="123456789" value={asanaWorkspaceGid} onChange={e => setAsanaWorkspaceGid(e.target.value)} />
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" onClick={() => setShowAsanaDialog(false)}>Cancel</Button>
-                                  <Button onClick={handleConnectAsana}>Connect</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </>
+                        <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
+                          Connect via OAuth
+                        </Button>
                       ) : null}
                     </>
                   )}

@@ -21,31 +21,36 @@ class AsanaProvider implements ProjectManagementProvider {
    * @param credentials - The API key and workspace GID for Asana.
    * @returns A boolean indicating if the connection was successful.
    */
-  async connect(credentials: {
-    apiKey: string
-    workspaceGid: string
-  }): Promise<boolean> {
-    if (!credentials.apiKey || !credentials.workspaceGid) {
-      console.error("[AsanaProvider] API key and workspace GID are required.")
+  async connect(credentials: Record<string, any>): Promise<boolean> {
+    const token: string | undefined = credentials.apiKey ?? credentials.accessToken
+    const workspaceGid: string | undefined = credentials.workspaceGid
+
+    if (!token) {
+      console.error("[AsanaProvider] Missing API token or access token.")
       return false
     }
 
     try {
       const testClient = axios.create({
         baseURL: ASANA_API_BASE_URL,
-        headers: { Authorization: `Bearer ${credentials.apiKey}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
-      await testClient.get(`/workspaces/${credentials.workspaceGid}`)
-      console.log(
-        `[AsanaProvider] Connection successful for workspace ${credentials.workspaceGid}`
-      )
+
+      if (workspaceGid) {
+        await testClient.get(`/workspaces/${workspaceGid}`)
+      } else {
+        // Fallback: fetch current user to verify token validity
+        await testClient.get('/users/me')
+      }
+
+      console.log('[AsanaProvider] Connection successful using provided credentials')
       return true
     } catch (error) {
       const errorMessage =
         error instanceof Error && (error as any).response?.data
           ? JSON.stringify((error as any).response.data)
-          : error.message
-      console.error("[AsanaProvider] Connection failed:", errorMessage)
+          : (error as Error).message
+      console.error('[AsanaProvider] Connection failed:', errorMessage)
       return false
     }
   }
@@ -258,11 +263,11 @@ class AsanaProvider implements ProjectManagementProvider {
    * Creates an Axios instance with the correct auth for a given business.
    */
   private async getApiClient(businessId: string): Promise<AxiosInstance> {
-    const { asanaApiKey } = await this.getBusinessCredentials(businessId)
+    const { asanaToken } = await this.getBusinessCredentials(businessId)
     return axios.create({
       baseURL: ASANA_API_BASE_URL,
       headers: {
-        Authorization: `Bearer ${asanaApiKey}`,
+        Authorization: `Bearer ${asanaToken}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
       },
@@ -285,15 +290,16 @@ class AsanaProvider implements ProjectManagementProvider {
       },
     })
 
-    const apiKey = integration?.apiKey || (integration?.credentials as any)?.apiKey
-    const workspaceGid = (integration?.credentials as any)?.workspaceGid
+    const creds = integration?.credentials as any || {}
+    const token = integration?.apiKey || creds.accessToken || creds.apiKey
+    const workspaceGid = creds.workspaceGid
 
-    if (!apiKey || !workspaceGid) {
+    if (!token || !workspaceGid) {
       throw new Error(`Asana credentials not configured for business ${businessId}`)
     }
 
     return {
-      asanaApiKey: apiKey,
+      asanaToken: token,
       asanaWorkspaceGid: workspaceGid,
       asanaWebhookSecret: integration?.webhookSecret ?? null,
     }
