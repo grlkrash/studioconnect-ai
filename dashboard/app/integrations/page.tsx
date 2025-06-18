@@ -102,12 +102,7 @@ export default function IntegrationsPage() {
   const [jiraInstanceUrl, setJiraInstanceUrl] = useState("")
   const [showJiraDialog, setShowJiraDialog] = useState(false)
 
-  // --- Asana connect dialog state ---
-  const [asanaApiKey, setAsanaApiKey] = useState("")
-  const [asanaWorkspaceGid, setAsanaWorkspaceGid] = useState("")
-  const [showAsanaDialog, setShowAsanaDialog] = useState(false)
-
-  // New OAuth connect – simple redirect
+  // Asana OAuth – no extra state needed
   const handleConnectAsanaOAuth = () => {
     window.location.href = "/api/integrations/asana/oauth-start"
   }
@@ -211,28 +206,6 @@ export default function IntegrationsPage() {
       fetchIntegrations()
     } catch (err: any) {
       toast({ title: "Failed to connect Jira", description: err.message, variant: "destructive" })
-    }
-  }
-
-  const handleConnectAsana = async () => {
-    if (!asanaApiKey.trim() || !asanaWorkspaceGid.trim()) {
-      toast({ title: "API Key and Workspace GID required", variant: "destructive" })
-      return
-    }
-    try {
-      const res = await fetch("/api/integrations/asana/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: asanaApiKey.trim(), workspaceGid: asanaWorkspaceGid.trim() }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      toast({ title: "Asana connected" })
-      setShowAsanaDialog(false)
-      setAsanaApiKey("")
-      setAsanaWorkspaceGid("")
-      fetchIntegrations()
-    } catch (err: any) {
-      toast({ title: "Failed to connect Asana", description: err.message, variant: "destructive" })
     }
   }
 
