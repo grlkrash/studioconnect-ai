@@ -291,8 +291,8 @@ export class OpenAIRealtimeClient extends EventEmitter {
           turn_detection: {
             type: 'server_vad',
             threshold: 0.3, // More sensitive for better conversation flow
-            prefix_padding_ms: 200, // Reduced for faster response
-            silence_duration_ms: 600 // Balanced for natural pauses
+            prefix_padding_ms: 300, // Extra padding to avoid clipping caller
+            silence_duration_ms: 1500 // Allow longer pauses before the agent speaks
           },
           tool_choice: 'auto',
           temperature: 0.7, // Slightly reduced for more consistent responses

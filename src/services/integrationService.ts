@@ -45,7 +45,8 @@ class IntegrationService {
     const provider = this.getProvider(providerKey)
 
     // 1. Validate credentials by attempting a lightweight API call
-    const ok = await provider.connect(credentials)
+    const mergedCredentials = { ...credentials, businessId }
+    const ok = await provider.connect(mergedCredentials)
     if (!ok) throw new Error('Failed to validate credentials with provider')
 
     // 2. Upsert Integration row

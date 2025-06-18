@@ -133,7 +133,8 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
 const VAD_THRESHOLD = 25; // Increased µ-law sample energy threshold
-const VAD_SILENCE_MS = 1000; // flush after 1s silence for professional quality
+const VAD_SILENCE_MS = 2000; // flush after 2 s of silence for natural pauses
+const IDLE_PROMPT_DELAYS_MS: [number, number] = [20000, 35000]
 
 // State management
 const activeAgents = new Map<string, ConnectionState>();
@@ -1291,10 +1292,10 @@ class RealtimeAgentService {
     }
 
     // --- New: ensure the selected voice is supported by the realtime API ---
-    const ALLOWED_REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
+    const ALLOWED_REALTIME_VOICES = ['shimmer', 'echo', 'alloy', 'ash', 'ballad', 'coral', 'sage', 'verse'] as const
     const realtimeVoice = ALLOWED_REALTIME_VOICES.includes(state.openaiVoice as any)
       ? state.openaiVoice
-      : 'alloy' // safe default
+      : 'shimmer' // prefer Shimmer for more natural tone
 
     if (realtimeVoice !== state.openaiVoice) {
       console.warn(`[REALTIME AGENT] Voice "${state.openaiVoice}" not supported for realtime – using "${realtimeVoice}" for realtime session`)
@@ -1401,6 +1402,14 @@ class RealtimeAgentService {
         console.log('[REALTIME AGENT] User speech stopped (realtime VAD)')
         state.isRecording = false
         state.isSpeaking = false // User stopped, we can speak
+        // Give the user a short grace period before assistant replies to avoid overlap
+        setTimeout(() => {
+          if (state.openaiClient && state.ttsProvider === 'realtime') {
+            try {
+              state.openaiClient.requestAssistantResponse()
+            } catch { /* ignore */ }
+          }
+        }, 500)
         this._scheduleIdlePrompt(state)
       });
 
@@ -1434,6 +1443,10 @@ class RealtimeAgentService {
 
     this._clearIdlePrompt(state); // Always clear previous before setting a new one
 
+    // Pick delay based on how many prompts we have already sent
+    const promptIdx = state.idlePromptCount ?? 0
+    const delay = IDLE_PROMPT_DELAYS_MS[Math.min(promptIdx, IDLE_PROMPT_DELAYS_MS.length - 1)]
+
     state.idlePromptTimer = setTimeout(async () => {
       // Check for any activity before firing the prompt
       if (state.isRecording || state.isSpeaking || !this.connections.has(state.callSid || '')) {
@@ -1453,16 +1466,27 @@ class RealtimeAgentService {
       console.log(`[IDLE_PROMPT] Firing idle prompt #${state.idlePromptCount}: "${followUp}"`);
       
       try {
+        // Always use TTS directly (bypassing realtime pipeline) to avoid the model replying "Yes, I'm still here".
         if (state.openaiClient && state.ttsProvider === 'realtime') {
-          state.openaiClient.sendUserText(followUp);
-          state.openaiClient.requestAssistantResponse();
+          const backupClient = state.openaiClient
+          const backupProvider = state.ttsProvider
+
+          // Temporarily switch to OpenAI TTS fallback
+          state.openaiClient = undefined
+          state.ttsProvider = 'openai'
+
+          await this.streamTTS(state, followUp)
+
+          // Restore realtime settings after the prompt
+          state.openaiClient = backupClient
+          state.ttsProvider = backupProvider
         } else {
-          await this.streamTTS(state, followUp);
+          await this.streamTTS(state, followUp)
         }
       } catch (e) {
         console.warn('[REALTIME AGENT] Failed to send idle follow-up prompt:', e);
       }
-    }, 10000); // 10-second idle timeout
+    }, delay);
   }
 
   /** Clears the idle prompt timer. This should be called whenever there is any activity. */

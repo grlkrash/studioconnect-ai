@@ -96,6 +96,17 @@ export default function IntegrationsPage() {
   const [mondayApiKey, setMondayApiKey] = useState("")
   const [showMondayDialog, setShowMondayDialog] = useState(false)
 
+  // --- Jira connect dialog state ---
+  const [jiraEmail, setJiraEmail] = useState("")
+  const [jiraToken, setJiraToken] = useState("")
+  const [jiraInstanceUrl, setJiraInstanceUrl] = useState("")
+  const [showJiraDialog, setShowJiraDialog] = useState(false)
+
+  // --- Asana connect dialog state ---
+  const [asanaApiKey, setAsanaApiKey] = useState("")
+  const [asanaWorkspaceGid, setAsanaWorkspaceGid] = useState("")
+  const [showAsanaDialog, setShowAsanaDialog] = useState(false)
+
   const fetchIntegrations = useCallback(async () => {
     try {
       setLoading(true)
@@ -171,8 +182,53 @@ export default function IntegrationsPage() {
     }
   }
 
-  const handleConnectJira = () => {
-    window.location.href = "/api/integrations/jira/oauth-start"
+  const handleConnectJira = async () => {
+    if (!jiraEmail.trim() || !jiraToken.trim() || !jiraInstanceUrl.trim()) {
+      toast({ title: "All fields are required", variant: "destructive" })
+      return
+    }
+    try {
+      const res = await fetch("/api/integrations/jira/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: jiraEmail.trim(),
+          token: jiraToken.trim(),
+          instanceUrl: jiraInstanceUrl.trim(),
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: "Jira connected" })
+      setShowJiraDialog(false)
+      setJiraEmail("")
+      setJiraToken("")
+      setJiraInstanceUrl("")
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: "Failed to connect Jira", description: err.message, variant: "destructive" })
+    }
+  }
+
+  const handleConnectAsana = async () => {
+    if (!asanaApiKey.trim() || !asanaWorkspaceGid.trim()) {
+      toast({ title: "API Key and Workspace GID required", variant: "destructive" })
+      return
+    }
+    try {
+      const res = await fetch("/api/integrations/asana/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: asanaApiKey.trim(), workspaceGid: asanaWorkspaceGid.trim() }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: "Asana connected" })
+      setShowAsanaDialog(false)
+      setAsanaApiKey("")
+      setAsanaWorkspaceGid("")
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: "Failed to connect Asana", description: err.message, variant: "destructive" })
+    }
   }
 
   const handleDisconnect = async (prov: ProviderKey) => {
@@ -361,9 +417,67 @@ export default function IntegrationsPage() {
                           </Dialog>
                         </>
                       ) : integration.provider === "JIRA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectJira}>
-                          Connect
-                        </Button>
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowJiraDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showJiraDialog} onOpenChange={setShowJiraDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Jira Cloud</DialogTitle>
+                                <DialogDescription>
+                                  Enter your Jira credentials. Generate an API token from your Atlassian account.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Email</Label>
+                                  <Input type="email" placeholder="you@example.com" value={jiraEmail} onChange={e => setJiraEmail(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>API Token</Label>
+                                  <Input type="password" placeholder="••••••••" value={jiraToken} onChange={e => setJiraToken(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Instance URL</Label>
+                                  <Input placeholder="https://your-domain.atlassian.net" value={jiraInstanceUrl} onChange={e => setJiraInstanceUrl(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowJiraDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectJira}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      ) : integration.provider === "ASANA" ? (
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowAsanaDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showAsanaDialog} onOpenChange={setShowAsanaDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Asana</DialogTitle>
+                                <DialogDescription>Enter your Asana Personal Access Token and Workspace GID.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Personal Access Token</Label>
+                                  <Input type="password" placeholder="pat_..." value={asanaApiKey} onChange={e => setAsanaApiKey(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Workspace GID</Label>
+                                  <Input placeholder="123456789" value={asanaWorkspaceGid} onChange={e => setAsanaWorkspaceGid(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowAsanaDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectAsana}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
                       ) : null}
                     </>
                   ) : (
@@ -394,9 +508,67 @@ export default function IntegrationsPage() {
                           </Dialog>
                         </>
                       ) : integration.provider === "JIRA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectJira}>
-                          Connect
-                        </Button>
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowJiraDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showJiraDialog} onOpenChange={setShowJiraDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Jira Cloud</DialogTitle>
+                                <DialogDescription>
+                                  Enter your Jira credentials. Generate an API token from your Atlassian account.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Email</Label>
+                                  <Input type="email" placeholder="you@example.com" value={jiraEmail} onChange={e => setJiraEmail(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>API Token</Label>
+                                  <Input type="password" placeholder="••••••••" value={jiraToken} onChange={e => setJiraToken(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Instance URL</Label>
+                                  <Input placeholder="https://your-domain.atlassian.net" value={jiraInstanceUrl} onChange={e => setJiraInstanceUrl(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowJiraDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectJira}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      ) : integration.provider === "ASANA" ? (
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowAsanaDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showAsanaDialog} onOpenChange={setShowAsanaDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Asana</DialogTitle>
+                                <DialogDescription>Enter your Asana Personal Access Token and Workspace GID.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Personal Access Token</Label>
+                                  <Input type="password" placeholder="pat_..." value={asanaApiKey} onChange={e => setAsanaApiKey(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Workspace GID</Label>
+                                  <Input placeholder="123456789" value={asanaWorkspaceGid} onChange={e => setAsanaWorkspaceGid(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowAsanaDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectAsana}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
                       ) : null}
                     </>
                   )}
