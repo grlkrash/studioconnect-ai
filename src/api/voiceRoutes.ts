@@ -66,6 +66,9 @@ router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: R
       stream.parameter({ name: 'businessId', value: req.body.businessId })
     }
 
+    // Use higher-quality 16 kHz Linear PCM instead of 8 kHz µ-law
+    stream.parameter({ name: 'codec', value: 'audio/l16;rate=16000' })
+
     // Keep the call alive (max 4-hour pause)
     response.pause({ length: 14400 })
 

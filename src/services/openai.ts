@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
+import crypto from 'crypto'
 
 dotenv.config(); // Ensures OPENAI_API_KEY is loaded from .env
 
@@ -145,6 +146,27 @@ export const generateSpeechFromText = async (
     console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
     return null;
   }
+
+  // ------------------------------------------------------------------
+  //  Simple disk-based cache to avoid regenerating identical speech
+  //  Hash key = sha256(text + voice + model + provider)
+  //  Cached under: os.tmpdir()/scai_tts_cache/<hash>.mp3
+  // ------------------------------------------------------------------
+
+  let cachedPath: string | null = null
+  try {
+    const cacheDir = path.join(os.tmpdir(), 'scai_tts_cache')
+    await fs.promises.mkdir(cacheDir, { recursive: true })
+    const hash = crypto.createHash('sha256').update(`${provider}|${model}|${voice}|${textToSpeak}`).digest('hex')
+    cachedPath = path.join(cacheDir, `${hash}.mp3`)
+    if (fs.existsSync(cachedPath)) {
+      console.log(`[OpenAI TTS] Returning cached speech (hash=${hash.slice(0,8)})`)
+      return cachedPath
+    }
+  } catch (cacheErr) {
+    // Non-fatal: continue without cache
+    console.warn('[OpenAI TTS] Cache access issue, continuing without cache:', cacheErr instanceof Error ? cacheErr.message : cacheErr)
+  }
   console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..." using model: ${model}`);
   
   try {
@@ -155,11 +177,10 @@ export const generateSpeechFromText = async (
         input: textToSpeak,
       })
 
-      const tempFileName = `openai_speech_${Date.now()}.mp3`
-      const tempFilePath = path.join(os.tmpdir(), tempFileName)
       const buffer = Buffer.from(await mp3.arrayBuffer())
-      await fs.promises.writeFile(tempFilePath, buffer)
-      return tempFilePath
+      const targetPath = cachedPath || path.join(os.tmpdir(), `openai_speech_${Date.now()}.mp3`)
+      await fs.promises.writeFile(targetPath, buffer)
+      return targetPath
     }
 
     // Polly fallback
@@ -172,10 +193,9 @@ export const generateSpeechFromText = async (
     const res = await polly.send(synth)
     const uint8 = await res.AudioStream?.transformToByteArray()
     if (!uint8) throw new Error('Polly audio empty')
-    const tempFileName = `polly_speech_${Date.now()}.mp3`
-    const tempFilePath = path.join(os.tmpdir(), tempFileName)
-    await fs.promises.writeFile(tempFilePath, Buffer.from(uint8))
-    return tempFilePath
+    const targetPath = cachedPath || path.join(os.tmpdir(), `polly_speech_${Date.now()}.mp3`)
+    await fs.promises.writeFile(targetPath, Buffer.from(uint8))
+    return targetPath
   } catch (error) {
     console.error('[TTS] Error generating speech:', error)
     return null

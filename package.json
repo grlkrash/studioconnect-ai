@@ -4,7 +4,8 @@
   "description": "AI-powered client communication and lead qualification platform for creative agencies",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"No tests specified for StudioConnect AI yet\" && exit 0",
+    "test": "jest --coverage",
+    "test:unit": "jest --coverage",
     "dev": "npm-run-all --parallel dev:api dev:dashboard tailwind:watch",
     "dev:api": "nodemon src/server.ts",
     "dev:dashboard": "npm --prefix dashboard run dev -- -p 3100",
@@ -49,6 +50,7 @@
     "@types/node": "^22.15.29",
     "@types/nodemailer": "^6.4.17",
     "@types/ws": "^8.18.1",
+    "@types/jest": "^29.5.11",
     "autoprefixer": "^10.4.21",
     "nodemon": "^3.1.10",
     "npm-run-all": "^4.1.5",
@@ -56,7 +58,9 @@
     "prisma": "^6.9.0",
     "tailwindcss": "^3.4.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1"
   },
   "dependencies": {
     "@aws-sdk/client-polly": "^3.828.0",

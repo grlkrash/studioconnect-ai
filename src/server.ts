@@ -32,6 +32,7 @@ import agentConfigRoutes from './api/agentConfigRoutes'
 import leadQuestionRoutes from './api/leadQuestionRoutes'
 import integrationRoutes from './api/integrationRoutes'
 import webhookRoutes from './api/webhookRoutes'
+import { startAsanaCron } from './services/projectSync/cron'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -482,6 +483,11 @@ server.listen(PORT, async () => {
   
   // Initialize Redis after server starts
   await initializeRedis()
+
+  // --- Start periodic Asana sync cron ---
+  startAsanaCron()
+
+  // --- Websocket server etc.
 })
 
 // Graceful shutdown

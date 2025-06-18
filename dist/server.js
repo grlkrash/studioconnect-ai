@@ -29,6 +29,7 @@ const agentConfigRoutes_1 = __importDefault(require("./api/agentConfigRoutes"));
 const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes"));
 const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
 const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
+const cron_1 = require("./services/projectSync/cron");
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -334,6 +335,7 @@ server.listen(PORT, async () => {
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
     await initializeRedis();
+    (0, cron_1.startAsanaCron)();
 });
 process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');

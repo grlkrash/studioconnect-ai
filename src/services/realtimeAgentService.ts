@@ -68,6 +68,12 @@ interface ConnectionState {
   openaiClient?: OpenAIRealtimeClient;
   isSpeaking: boolean;
   pendingAudioGeneration: boolean;
+  /** internal idle follow-up prompt counter */
+  idlePromptCount?: number;
+  idlePromptTimer?: NodeJS.Timeout | null;
+  callStartTime?: number;
+  /** true if current recording chunk is linear16 */
+  isLinear16Recording?: boolean;
 }
 
 interface AgentSession {
@@ -199,6 +205,8 @@ function logMemoryUsage(context: string): void {
 
 async function cleanupTempFile(filePath: string): Promise<void> {
   try {
+    // Do not delete shared cache files
+    if (filePath.includes('scai_tts_cache')) return
     if (fs.existsSync(filePath)) {
       await fs.promises.unlink(filePath);
       console.log(`[File Cleanup] Deleted temp file: ${filePath}`);
@@ -295,7 +303,10 @@ class RealtimeAgentService {
       __configLoaded: false,
       openaiClient: undefined,
       isSpeaking: false,
-      pendingAudioGeneration: false
+      pendingAudioGeneration: false,
+      idlePromptCount: 0,
+      idlePromptTimer: null,
+      callStartTime: Date.now()
     };
 
     // Try to identify client if phone number is available
@@ -430,6 +441,7 @@ class RealtimeAgentService {
             state.ttsProvider = 'openai'
             state.openaiClient = undefined
           }
+          if (state.businessId) markRealtimeFailure(state.businessId) // hard-failover for 60 min
         });
 
         state.openaiClient = client
@@ -445,6 +457,41 @@ class RealtimeAgentService {
         console.error('[REALTIME AGENT] Failed to establish OpenAI realtime session – reverting to local pipeline', err)
       }
     }
+
+    // ---- Idle follow-up scheduler (first at 2 s, then every 8 s, max 3) ----
+    const scheduleIdlePrompt = () => {
+      if (state.idlePromptTimer) clearTimeout(state.idlePromptTimer)
+      state.idlePromptTimer = setTimeout(async () => {
+        if (state.isRecording || state.isSpeaking || !this.connections.has(state.callSid || '')) return
+
+        state.idlePromptCount = (state.idlePromptCount || 0) + 1
+
+        if (state.idlePromptCount! > 3) {
+          // Politely end the call after 3 unanswered prompts
+          await this.streamTTS(state, 'It seems we got disconnected. Please call back anytime. Goodbye!')
+          this.sendTwilioMessage(state, 'Thank you for calling. Goodbye!')
+          this.cleanup('Caller inactive')
+          return
+        }
+
+        const followUp = state.idlePromptCount === 1 ? 'Is there anything I can help you with today?' : 'Can I help you with anything else?'
+        try {
+          if (state.openaiClient && state.ttsProvider === 'realtime') {
+            state.openaiClient.sendUserText(followUp)
+            state.openaiClient.requestAssistantResponse()
+          } else {
+            await this.streamTTS(state, followUp)
+          }
+        } catch (e) {
+          console.warn('[REALTIME AGENT] Failed to send idle follow-up prompt:', e)
+        }
+
+        // Schedule next follow-up in 8 s
+        scheduleIdlePrompt()
+      }, state.idlePromptCount === 0 ? 2000 : 8000)
+    }
+
+    scheduleIdlePrompt()
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
@@ -500,6 +547,12 @@ class RealtimeAgentService {
     if (this.callSid) {
       const state = this.connections.get(this.callSid);
       if (state) {
+        // ---- update callLog with duration / status ----
+        const durationMs = Date.now() - (state.callStartTime || Date.now())
+        const status = durationMs < 15000 ? 'ERROR' : 'COMPLETED'
+        if (state.callSid) {
+          prisma.callLog.update({ where: { callSid: state.callSid }, data: { updatedAt: new Date(), metadata: { endReason: status } } as any }).catch(() => {})
+        }
         try {
           state.ws.close();
         } catch (error) {
@@ -759,11 +812,12 @@ class RealtimeAgentService {
       console.log(`[REALTIME AGENT] Processing ${audioToProcess.length} audio chunks for transcription`)
 
       const rawBuffers = audioToProcess.map((b64) => Buffer.from(b64, 'base64'))
+      const isLinear16 = state.isLinear16Recording ?? false
       const rawData = Buffer.concat(rawBuffers)
 
       // Enhanced duration check for professional quality
       const MIN_DURATION_MS = 300 // Increased minimum for better accuracy
-      const bytesPerMs = 8 // 8000 samples/sec * 1 byte/sample / 1000ms
+      const bytesPerMs = isLinear16 ? 32 : 8 // adjust for codec
       const durationMs = rawData.length / bytesPerMs
 
       if (durationMs < MIN_DURATION_MS) {
@@ -780,14 +834,16 @@ class RealtimeAgentService {
       await fs.promises.writeFile(rawPath, rawData)
 
       // Enhanced audio conversion with noise reduction
+      const inputFormat = isLinear16 ? 's16le' : 'mulaw'
+      const inputRate = isLinear16 ? '16000' : '8000'
       await execFileAsync(ffmpegPath as string, [
         '-y',
-        '-f', 'mulaw',
-        '-ar', '8000',
+        '-f', inputFormat,
+        '-ar', inputRate,
         '-ac', '1',
         '-i', rawPath,
-        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.2', // Professional audio filtering
-        '-ar', '16000', // Upsample for better Whisper accuracy
+        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.2',
+        '-ar', '16000',
         wavPath
       ])
 
@@ -1122,6 +1178,14 @@ class RealtimeAgentService {
   private async loadAgentConfig(state: ConnectionState): Promise<void> {
     if (!state.businessId || state.__configLoaded) return
 
+    // --- Global override for ops ---
+    const forcedProvider = process.env.AGENT_FORCE_TTS?.toLowerCase() as 'openai' | 'polly' | 'realtime' | undefined
+    if (forcedProvider && ['openai', 'polly', 'realtime'].includes(forcedProvider)) {
+      state.ttsProvider = forcedProvider
+      state.__configLoaded = true
+      console.log(`[RealtimeAgent] AGENT_FORCE_TTS override → ${forcedProvider}`)
+    }
+
     // 1. Try cache first
     const cached = voiceConfigCache.get(state.businessId)
     const now = Date.now()
@@ -1188,11 +1252,21 @@ class RealtimeAgentService {
       return
     }
 
+    // --- New: ensure the selected voice is supported by the realtime API ---
+    const ALLOWED_REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
+    const realtimeVoice = ALLOWED_REALTIME_VOICES.includes(state.openaiVoice as any)
+      ? state.openaiVoice
+      : 'alloy' // safe default
+
+    if (realtimeVoice !== state.openaiVoice) {
+      console.warn(`[REALTIME AGENT] Voice "${state.openaiVoice}" not supported for realtime – using "${realtimeVoice}" for realtime session`)
+    }
+
     console.log('[REALTIME AGENT] Initializing OpenAI Realtime Client with professional settings...')
     try {
       const client = new OpenAIRealtimeClient(
         process.env.OPENAI_API_KEY,
-        state.openaiVoice || 'nova',
+        realtimeVoice,
         initialPrompt,
         process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
       );
@@ -1276,6 +1350,7 @@ class RealtimeAgentService {
           state.ttsProvider = 'openai'
           state.openaiClient = undefined
         }
+        if (state.businessId) markRealtimeFailure(state.businessId) // hard-failover for 60 min
       });
 
       // Handle speech events for better turn-taking
@@ -1365,9 +1440,22 @@ class RealtimeAgentService {
 
         // Enhanced VAD with better noise handling
         const buf = Buffer.from(mediaPayload, 'base64')
+
+        // Determine if payload is 16-bit Linear PCM (even length, 2-byte samples)
+        const isLinear16 = buf.length % 2 === 0
+
+        // Calculate average absolute energy (0-255 scale)
         let energy = 0
-        for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128)
-        energy = energy / buf.length
+        if (isLinear16) {
+          for (let i = 0; i < buf.length; i += 2) {
+            const sample = buf.readInt16LE(i)
+            energy += Math.abs(sample)
+          }
+          energy = energy / (buf.length / 2) / 256 // normalise to 8-bit scale
+        } else {
+          for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128)
+          energy = energy / buf.length
+        }
 
         // Improved noise-floor calibration with more samples
         if (!state.vadCalibrated) {
@@ -1434,6 +1522,7 @@ class RealtimeAgentService {
 
         // Process complete utterances with professional timing
         if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > 1000 && state.audioQueue.length > 0) {
+          state.isLinear16Recording = isLinear16
           console.log('[REALTIME AGENT] Processing complete utterance via professional Whisper pipeline')
           state.isProcessing = true
           this.flushAudioQueue(state)

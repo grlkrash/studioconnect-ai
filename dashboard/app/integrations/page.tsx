@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,75 +17,55 @@ import {
 } from "@/components/ui/dialog"
 import { Plug, CheckCircle, AlertCircle, Settings, ExternalLink } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
 
-const integrations = [
-  {
-    id: 1,
+// --- Static meta for each provider – merge with live backend status ---
+const PROVIDERS_META = {
+  ASANA: {
     name: "Asana",
     description: "Project management and task tracking",
     category: "Project Management",
-    status: "connected",
     icon: "🎯",
     features: ["Project sync", "Task updates", "Team collaboration"],
-    lastSync: "1 hour ago",
-    isEnabled: true,
   },
-  {
-    id: 2,
-    name: "Slack",
-    description: "Team communication and notifications",
-    category: "Communication",
-    status: "pending",
-    icon: "💬",
-    features: ["Real-time notifications", "Channel updates", "Direct messages"],
-    lastSync: "Not connected",
-    isEnabled: false,
-  },
-  {
-    id: 3,
-    name: "Trello",
+  MONDAY: {
+    name: "Monday.com",
     description: "Visual project management boards",
     category: "Project Management",
-    status: "available",
     icon: "📋",
-    features: ["Board sync", "Card updates", "List management"],
-    lastSync: "Not connected",
-    isEnabled: false,
+    features: ["Board sync", "Item updates", "Team collaboration"],
   },
-  {
-    id: 4,
-    name: "Microsoft Teams",
-    description: "Enterprise communication platform",
-    category: "Communication",
-    status: "available",
-    icon: "🏢",
-    features: ["Team notifications", "Meeting integration", "File sharing"],
-    lastSync: "Not connected",
-    isEnabled: false,
-  },
-  {
-    id: 5,
-    name: "Jira",
-    description: "Issue tracking and project management",
+  JIRA: {
+    name: "Jira Cloud",
+    description: "Issue tracking and agile project management",
     category: "Project Management",
-    status: "available",
     icon: "🔧",
     features: ["Issue tracking", "Sprint management", "Workflow automation"],
-    lastSync: "Not connected",
-    isEnabled: false,
   },
-  {
-    id: 6,
-    name: "Discord",
-    description: "Community and team communication",
-    category: "Communication",
-    status: "available",
-    icon: "🎮",
-    features: ["Server notifications", "Voice channels", "Bot integration"],
-    lastSync: "Not connected",
-    isEnabled: false,
-  },
-]
+} as const
+
+type ProviderKey = keyof typeof PROVIDERS_META
+
+interface IntegrationRecord {
+  provider: ProviderKey
+  syncStatus: "CONNECTED" | "ERROR" | "DISCONNECTED" | "PENDING"
+  isEnabled: boolean
+  updatedAt?: string
+}
+
+interface UiIntegration {
+  id: number
+  provider: ProviderKey
+  name: string
+  description: string
+  category: string
+  icon: string
+  features: string[]
+  status: "connected" | "pending" | "available"
+  lastSync: string
+  isEnabled: boolean
+  error?: boolean
+}
 
 const getStatusBadge = (status: string) => {
   const statusConfig = {
@@ -107,21 +87,103 @@ const getStatusBadge = (status: string) => {
 
 export default function IntegrationsPage() {
   const { toast } = useToast()
-  const [selectedIntegration, setSelectedIntegration] = useState<any>(null)
-  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false)
+  const router = useRouter()
 
-  const handleConnect = (integration: any) => {
-    toast({
-      title: `Connecting to ${integration.name}`,
-      description: "You will be redirected to authorize the connection.",
-    })
+  const [integrations, setIntegrations] = useState<UiIntegration[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // --- Monday connect dialog state ---
+  const [mondayApiKey, setMondayApiKey] = useState("")
+  const [showMondayDialog, setShowMondayDialog] = useState(false)
+
+  const fetchIntegrations = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await fetch("/api/integrations")
+      const json = await res.json()
+      const records: IntegrationRecord[] = json.integrations || []
+
+      // Build UI list for all supported providers
+      const ui: UiIntegration[] = (Object.keys(PROVIDERS_META) as ProviderKey[]).map((key, idx) => {
+        const rec = records.find(r => r.provider === key)
+        const meta = PROVIDERS_META[key]
+
+        let status: UiIntegration["status"] = "available"
+        let lastSync = "Not connected"
+        let isEnabled = false
+        let error = false
+
+        if (rec) {
+          if (rec.syncStatus === "CONNECTED") status = "connected"
+          else if (rec.syncStatus === "ERROR") { status = "pending"; error = true }
+          else status = "pending"
+
+          lastSync = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : "Unknown"
+          isEnabled = rec.isEnabled
+        }
+
+        return {
+          id: idx + 1,
+          provider: key,
+          name: meta.name,
+          description: meta.description,
+          category: meta.category,
+          icon: meta.icon,
+          features: meta.features,
+          status,
+          lastSync,
+          isEnabled,
+          error,
+        }
+      })
+
+      setIntegrations(ui)
+    } catch (err) {
+      console.error("[Integrations] Failed to fetch:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchIntegrations()
+  }, [fetchIntegrations])
+
+  // Helpers
+  const handleConnectMonday = async () => {
+    if (!mondayApiKey.trim()) {
+      toast({ title: "API Key required", variant: "destructive" })
+      return
+    }
+    try {
+      const res = await fetch("/api/integrations/monday/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: mondayApiKey.trim() }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: "Monday connected" })
+      setShowMondayDialog(false)
+      setMondayApiKey("")
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: "Failed to connect Monday", description: err.message, variant: "destructive" })
+    }
   }
 
-  const handleDisconnect = (integration: any) => {
-    toast({
-      title: `Disconnected from ${integration.name}`,
-      description: "The integration has been successfully disconnected.",
-    })
+  const handleConnectJira = () => {
+    window.location.href = "/api/integrations/jira/oauth-start"
+  }
+
+  const handleDisconnect = async (prov: ProviderKey) => {
+    try {
+      const res = await fetch(`/api/integrations/${prov.toLowerCase()}`, { method: "DELETE" })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: `${PROVIDERS_META[prov].name} disconnected` })
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: `Failed to disconnect ${PROVIDERS_META[prov].name}`, description: err.message, variant: "destructive" })
+    }
   }
 
   const connectedIntegrations = integrations.filter((i) => i.status === "connected").length
@@ -268,18 +330,75 @@ export default function IntegrationsPage() {
                           </div>
                         </DialogContent>
                       </Dialog>
-                      <Button variant="destructive" size="sm" onClick={() => handleDisconnect(integration)}>
+                      <Button variant="destructive" size="sm" onClick={() => handleDisconnect(integration.provider)}>
                         Disconnect
                       </Button>
                     </>
                   ) : integration.status === "pending" ? (
-                    <Button variant="outline" size="sm" className="w-full" disabled>
-                      Authorization Pending
-                    </Button>
+                    <>
+                      {integration.provider === "MONDAY" ? (
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowMondayDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showMondayDialog} onOpenChange={setShowMondayDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Monday.com</DialogTitle>
+                                <DialogDescription>Enter your Monday API key to connect.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>API Key</Label>
+                                  <Input type="password" placeholder="xxxxxxxxxxxxxxxx" value={mondayApiKey} onChange={e => setMondayApiKey(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowMondayDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectMonday}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      ) : integration.provider === "JIRA" ? (
+                        <Button size="sm" className="w-full" onClick={handleConnectJira}>
+                          Connect
+                        </Button>
+                      ) : null}
+                    </>
                   ) : (
-                    <Button size="sm" className="w-full" onClick={() => handleConnect(integration)}>
-                      Connect
-                    </Button>
+                    // AVAILABLE STATE
+                    <>
+                      {integration.provider === "MONDAY" ? (
+                        <>
+                          <Button size="sm" className="w-full" onClick={() => setShowMondayDialog(true)}>
+                            Connect
+                          </Button>
+                          <Dialog open={showMondayDialog} onOpenChange={setShowMondayDialog}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Connect Monday.com</DialogTitle>
+                                <DialogDescription>Enter your Monday API key to connect.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>API Key</Label>
+                                  <Input type="password" placeholder="xxxxxxxxxxxxxxxx" value={mondayApiKey} onChange={e => setMondayApiKey(e.target.value)} />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" onClick={() => setShowMondayDialog(false)}>Cancel</Button>
+                                  <Button onClick={handleConnectMonday}>Connect</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      ) : integration.provider === "JIRA" ? (
+                        <Button size="sm" className="w-full" onClick={handleConnectJira}>
+                          Connect
+                        </Button>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </CardContent>

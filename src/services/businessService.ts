@@ -18,5 +18,18 @@ export async function getBusinessWelcomeMessage(businessId: string): Promise<str
     select: { welcomeMessage: true }
   })
 
-  return agentConfig?.welcomeMessage || 'Welcome to our service!'
+  // Fetch business name for dynamic placeholder replacement
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { name: true }
+  })
+
+  const bizName = business?.name || 'our business'
+
+  if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim()) {
+    return agentConfig.welcomeMessage.replace(/\{businessName\}/gi, bizName)
+  }
+
+  // Improved default welcome
+  return `Hello! Thanks for calling ${bizName}. How can I help you today?`
 } 
