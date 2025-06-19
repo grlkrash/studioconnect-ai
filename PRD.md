@@ -1,24 +1,24 @@
 # Product Requirements Document: StudioConnect AI
 
-**Version:** 1.0  
-**Status:** Inception  
+**Version:** 2.0  
+**Status:** In Development  
 **Author:** Sonia Gibbs
 **Stakeholders:** Development Team, Marketing, Sales, Leadership  
-**Last Updated:** June 11, 2025
+**Last Updated:** June 19. 2025
 
 ## 1. Introduction: The Problem
 
 Creative agencies thrive on deep work and client relationships. However, their most valuable resources—the time and focus of their project managers, creatives, and leaders—are constantly eroded by a high volume of routine client communication. Every phone call to check a project's status, every email asking about the billing cycle, and every "quick question" is an interruption that forces context switching, kills momentum, and pulls skilled professionals away from billable, high-impact work.
 
-This "interruption tax" leads to decreased operational efficiency, frustrated employees, and a client experience that feels reactive rather than proactive. Smaller agencies struggle to appear professional and responsive, while larger agencies struggle to scale their client service without ballooning their overhead.
+This "interruption tax" leads to decreased operational efficiency, frustrated employees, and a client experience that feels reactive rather than proactive. Smaller agencies struggle to appear professional and responsive, while larger agencies struggle to scale their client service without ballooning their overhead. The risk of service degradation, missed calls, and inconsistent client interactions grows with every new project.
 
 ## 2. Vision & Opportunity
 
-Our vision is to transform client communication from an operational bottleneck into a competitive advantage for creative agencies.
+Our vision is to transform client communication from an operational bottleneck into a **bulletproof competitive advantage** for creative agencies.
 
-StudioConnect AI will be the AI-powered communication platform that evolves with an agency's needs. It starts by serving as the perfect, professional front door (capturing leads and qualifying calls) and matures into an indispensable AI Account Manager that is deeply integrated into the agency's workflow, capable of autonomously handling client service inquiries.
+StudioConnect AI will be the **enterprise-grade, AI-powered communication platform** that evolves with an agency's needs. It starts by serving as the perfect, professional front door (capturing leads and qualifying calls with Fortune-500-quality interactions) and matures into an indispensable AI Account Manager that is deeply integrated into the agency's workflow, capable of autonomously handling client service inquiries with unmatched reliability.
 
-By automating routine communication, we will free agency teams to focus on what they do best: creating exceptional work and building strategic client relationships.
+By providing a resilient, intelligent, and automated communication layer, we will free agency teams to focus on what they do best: creating exceptional work and building strategic client relationships.
 
 ## 3. Target Audience & Personas
 
@@ -60,40 +60,75 @@ This product will launch with two distinct tiers:
 | As an Agency Owner, I want the AI to answer all calls 24/7 so that I never miss a new business lead. | System handles all inbound calls to the designated Twilio number. |
 | As a Studio Manager, I want to define a set of qualifying questions so that the AI can vet potential leads. | Admin dashboard allows for creation/editing of a question-and-answer flow for lead capture. |
 | As an Agency Owner, I want to receive email summaries and transcripts of calls so that I can follow up. | Email notifications are sent to a designated address upon call completion with a summary, transcript, and lead details. |
-| As an Agency Owner, I want to customize the AI's name and voice so that it aligns with my brand. | Admin dashboard provides options for setting the AI's persona and selecting from a list of voices. |
+| As an Agency Owner, I want to customize the AI's name and voice so that it aligns with my brand. | Admin dashboard provides options for setting the AI's persona and selecting from a list of high-quality voices. |
 
 ### Tier 2: ENTERPRISE Plan ("The AI Account Manager")
-**Focus:** Client Service Automation & Operational Efficiency (Includes all PRO features)
+**Focus:** Bulletproof Client Service Automation & Operational Efficiency (Includes all PRO features)
 
 | User Story | Acceptance Criteria |
 |------------|---------------------|
-| As a Head of Ops, I want to connect our project management tool (Asana, Jira) via an API token so that the system has access to project data. | Admin dashboard has a secure section to input API credentials for supported PM tools; system validates the token. |
-| As a Head of Ops, I want the system to perform a one-way sync of project data so that our AI has fast, local access to status updates. | System periodically fetches project/task data and stores relevant fields (name, status, details, client) in its own database. A manual "Sync Now" button is also available. |
-| As a Project Manager, I want the system to use Webhooks to receive real-time updates from our PM tool so that the information is always current. | System can receive and process webhook events from Asana/Jira to update the status of specific projects in its database. |
-| As a Project Manager, I want the system to recognize existing clients by their phone number so that they receive a personalized experience. | When a call is received, the system checks the From number against the agency's client list in the database. |
-| As a Client, I want to ask for the status of my project over the phone so that I can get an instant update without waiting for an email reply. | If an existing client asks about a project, the AI uses its synced data to provide a specific, accurate, real-time status update. |
-| As a Head of Ops, I want to build an interactive FAQ so that the AI can answer common client questions about our agency (e.g., billing, feedback). | Admin dashboard includes a "Knowledge Base" or "FAQ" section where Q&A pairs can be created for the AI to use. |
+| As a Head of Ops, I want to connect our project management tool (Asana, Jira, Monday) via a secure OAuth 2.0 flow so that the system has authorized, real-time access to project data. | Admin dashboard has a secure section to initiate an OAuth 2.0 connection for supported PM tools; the system handles the token exchange, secure storage, and automated refresh of credentials. |
+| As a Head of Ops, I want the system to perform a robust, one-way sync of project data so that our AI has fast, local access to status updates. | System periodically fetches project/task data and stores relevant fields (name, status, details, client) in its own database. A manual "Sync Now" button is also available. The sync process is resilient to API failures. |
+| As a Project Manager, I want the system to use Webhooks to receive real-time updates from our PM tool so that the information is always current. | System programmatically registers webhooks and can receive/process events from Asana/Jira/Monday to update the status of specific projects in its database in real-time. |
+| As a Project Manager, I want the system to recognize existing clients by their phone number so that they receive a personalized, premium experience. | When a call is received, the system checks the `From` number against the agency's client list in the database and pre-loads their context, including past conversation history. |
+| As a Client, I want to ask for the status of my project over the phone so that I can get an instant, accurate update without waiting for an email reply. | If an existing client asks about a project, the AI uses its synced data to provide a specific, accurate, real-time status update, delivered in a natural, conversational tone. |
+| As a Head of Ops, I want to build an interactive knowledge base so that the AI can answer common client questions about our agency (e.g., billing, feedback process). | Admin dashboard includes a "Knowledge Base" section where Q&A pairs and informational content can be added for the AI to use in its responses, powered by RAG. |
 
-## 6. Features Out of Scope (For This Version)
+#### **New: Bulletproof Enterprise Voice Agent**
+| User Story | Acceptance Criteria |
+|------------|---------------------|
+| As a Head of Ops, I want our AI agent to have a premium, natural-sounding voice that is highly reliable. | The system defaults to ElevenLabs premium voices with enterprise-grade settings for clarity and tone. It has a built-in, automated fallback chain (ElevenLabs -> OpenAI HD TTS -> Polly) to ensure 99.99% availability. |
+| As a Studio Manager, I want the voice agent to intelligently handle conversational turn-taking and interruptions. | The agent uses advanced, calibrated Voice Activity Detection (VAD) to distinguish speech from background noise. It supports client barge-in, pausing its own speech to listen, and can resume if the interruption is brief. |
+| As an Agency Owner, I want to be confident our agent never responds to "phantom" speech or background noise. | A multi-layered phantom speech filter (word count, length, business context patterns, keyword validation) is applied to all transcriptions to prevent false positives and maintain a professional experience. |
+| As a Head of Ops, I want the voice system to be resilient to external service failures. | The `ElevenLabsStreamingClient` is built with a circuit breaker pattern, exponential backoff for retries, and continuous quality monitoring to gracefully handle API errors or degradation without dropping calls. |
+
+#### **New: Intelligent Lead Qualification Engine**
+| User Story | Acceptance Criteria |
+|------------|---------------------|
+| As a Studio Manager, I want to define a dynamic, multi-step qualification process for new leads. | Admin dashboard allows creating an ordered list of questions. The `LeadQualifier` service guides the caller through the questions in a natural, conversational flow. |
+| As an Agency Owner, I want the system to identify and fast-track urgent leads. | The system analyzes answers for urgency keywords (e.g., "emergency," "ASAP"). Urgent leads are flagged with `URGENT` priority. |
+| As an Agency Owner, I want to be notified immediately of high-priority leads. | For leads marked as `URGENT`, the system can trigger an immediate emergency voice call to a designated number, in addition to sending a priority email notification. |
+| As a Studio Manager, I want the AI to handle the qualification conversation professionally. | The AI uses context-aware transitional phrases ("Perfect, thank you for that," "Excellent, I've got that") to create a smooth, high-end client experience. |
+
+## 6. Feature Roadmap (Next Priorities)
+
+This section outlines the next set of high-impact features planned for development. These features are designed to deepen our integration into agency workflows and provide proactive, data-driven insights. For a detailed technical breakdown, please see the `docs/feature-plan-intelligence-scope-kb.md` document.
+
+### 6.1. Actionable Client Intelligence
+-   **Goal:** Transform raw conversation data into strategic insights for agency owners.
+-   **Implementation:** A nightly cron job will analyze the previous day's call logs, aggregating conversation intents (e.g., "status update," "billing question," "scope change").
+-   **Output:** A daily email digest sent to the business owner, summarizing the top client conversation trends, enabling them to spot patterns and potential areas for process improvement.
+
+### 6.2. Real-Time Scope-Creep Guard
+-   **Goal:** Proactively protect agencies from unbilled work and manage client expectations.
+-   **Implementation:** A lightweight intent classifier will run in real-time on every client message. If the intent is classified as a potential "scope_change," the system will trigger an immediate alert.
+-   **Output:** An instant email or SMS notification sent to the designated project manager, containing the client's request and a warning of potential scope creep.
+
+### 6.3. Integrated Knowledge Base from PM Tools
+-   **Goal:** Empower the AI agent with deep, agency-specific knowledge to answer a wider range of questions accurately.
+-   **Implementation:** Agencies will be able to import documents (e.g., project briefs, client onboarding docs, technical specifications) directly from their connected project management tools (Asana, Jira, etc.).
+-   **Mechanism:** These documents will be chunked, vectorized using `pgvector`, and stored in a searchable knowledge base. The AI agent will use this RAG (Retrieval-Augmented Generation) source to provide context-aware answers.
+
+## 7. Features Out of Scope (For This Version)
 
 To ensure a focused and timely launch, the following features will not be included in Version 1.0:
 
-- **Two-Way Project Management Sync:** The AI will not create or update tasks in Asana/Jira via voice commands. This is a one-way (read-only) integration for now.
-- **User-Level OAuth 2.0 Integration:** The initial release will use a single, admin-provided API token for integration, not individual user connections.
-- **Client-Facing Dashboard:** The agency's clients will not have a portal to log into. All interaction is via the phone.
+- **Two-Way Project Management Sync:** The AI will not create or update tasks in Asana/Jira via voice commands. The integration is focused on reading project data and status.
+- **Individual User-Level OAuth:** The integration uses a single, per-business OAuth 2.0 connection, not connections authenticated by individual end-users within the agency.
+- **Client-Facing Dashboard:** The agency's clients will not have a portal to log into. All interaction is via voice and other defined channels.
 - **Multi-Language Support:** The system will launch with English-only support.
 - **Chat/SMS Integration:** This version is focused exclusively on perfecting the voice channel.
 
-## 7. Design & UX Considerations
+## 8. Design & UX Considerations
 
 The user interface for the admin dashboard must be clean, intuitive, and simple. Agency owners are busy and not necessarily deeply technical. The design should inspire confidence and professionalism, mirroring the quality they provide to their own clients. The setup process for integrations and AI configuration must be guided and include clear validation steps.
 
-## 8. Technical Architecture
+## 9. Technical Architecture
 
-### 8.1 System Overview
-The StudioConnect AI platform is built on a modern, scalable architecture using Node.js, TypeScript, and PostgreSQL with pgvector for AI embeddings. The system is containerized using Docker and follows microservices principles for scalability and maintainability.
+### 9.1 System Overview
+The StudioConnect AI platform is built on a modern, scalable architecture using Node.js, TypeScript, and PostgreSQL with pgvector for AI embeddings. The system is containerized using Docker and is designed around a **"bulletproof" philosophy**, emphasizing enterprise-grade reliability, configuration-driven behavior, and resilient services with automated fallbacks and recovery.
 
-### 8.2 Core Components
+### 9.2 Core Components
 
 #### API Layer
 - **Express.js REST API**: Handles HTTP requests and WebSocket connections
@@ -104,10 +139,14 @@ The StudioConnect AI platform is built on a modern, scalable architecture using 
 #### AI & Voice Processing
 - **OpenAI Integration**: 
   - GPT-4 for conversation handling
-  - Whisper for transcription
-  - OpenAI Voice models for TTS
-- **Voice Activity Detection**: Server-side VAD with configurable thresholds
-- **SSML Processing**: Enhanced natural language patterns and conversational flow
+  - Whisper for high-accuracy transcription
+  - OpenAI Voice models (e.g., TTS-1-HD) serving as a high-quality fallback in the TTS chain
+- **ElevenLabs Integration**:
+  - The **primary TTS provider**, utilizing premium voices for enterprise-grade quality.
+  - The `BulletproofElevenLabsClient` manages streaming connections with built-in resilience (circuit breaker, retries, quality monitoring).
+- **Multi-Provider TTS Strategy**: A fallback chain ensures TTS availability: **ElevenLabs -> OpenAI -> Polly**.
+- **Voice Activity Detection**: Server-side, enterprise-grade VAD with dynamic noise-floor calibration and a strict phantom speech filtering layer to prevent responses to non-speech audio.
+- **SSML Processing**: Enhanced natural language patterns and conversational flow.
 
 #### Data Layer
 - **PostgreSQL**: Primary database with pgvector extension for AI embeddings
@@ -144,16 +183,16 @@ The StudioConnect AI platform is built on a modern, scalable architecture using 
   }
   ```
 
-### 8.3 Integration Architecture
+### 9.3 Integration Architecture
 
 #### Project Management Tools
-- **Supported Platforms**: Asana, Jira, Monday.com (Trello support to be evaluated post-v1)
+- **Supported Platforms**: Asana, Jira, Monday.com
 - **Core Design**: The integration is built on a provider-based architecture. A common `ProjectManagementProvider` interface defines a contract for all supported platforms, ensuring consistent integration with the core application. This allows for modular, scalable, and maintainable connections to third-party services.
 
 #### Integration Flow
 The integration process follows a standardized flow for each provider, consisting of authentication, data synchronization, and real-time updates via webhooks.
 
-1.  **Authentication**: Per section 6, v1 will use a single, admin-provided API token for each integration. The system will securely store these tokens, associating them with the business account.
+1.  **Authentication**: The system uses a secure, per-business **OAuth 2.0 flow** to connect to PM tools. It handles the complete token exchange, secure storage of access and refresh tokens, and automated token renewal to ensure uninterrupted service. For Jira, it requests a comprehensive set of scopes to enable deep, enterprise-level integration.
 2.  **Provider Abstraction Layer**:
     - A new directory `src/services/pm-providers` will house the integration logic.
     - An interface `pm.provider.interface.ts` will define the standard methods: `connect(credentials)`, `syncProjects()`, `getProjectDetails(id)`, `setupWebhooks()`, and `handleWebhook(payload)`.
@@ -183,13 +222,13 @@ The integration process follows a standardized flow for each provider, consistin
   - WebSocket-based real-time communication
   - Call recording and transcription
 - **Voice Processing Pipeline**:
-  1. Audio capture (G.711 μ-law)
-  2. Real-time transcription
-  3. AI response generation
-  4. TTS conversion
-  5. Audio playback
+  1. Audio capture (G.711 μ-law / L16)
+  2. Real-time transcription (Whisper) with enterprise-grade phantom speech filtering
+  3. AI response generation via `LeadQualifier` or core `AIHandler`
+  4. TTS conversion via bulletproof, multi-provider engine (ElevenLabs -> OpenAI -> Polly)
+  5. Audio playback with barge-in detection
 
-### 8.4 Security Architecture
+### 9.4 Security Architecture
 
 #### Authentication & Authorization
 - **JWT-based Authentication**:
@@ -213,7 +252,7 @@ The integration process follows a standardized flow for each provider, consistin
   - SOC 2 Type II (planned)
   - HIPAA compliance (optional)
 
-### 8.5 Deployment Architecture
+### 9.5 Deployment Architecture
 
 #### Infrastructure
 - **Containerization**: Docker with Docker Compose
@@ -230,7 +269,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Round-robin for API servers
   - Sticky sessions for WebSocket connections
 
-### 8.6 Performance Requirements
+### 9.6 Performance Requirements
 
 #### Latency Targets
 - Voice response time: < 500ms
@@ -250,7 +289,7 @@ The integration process follows a standardized flow for each provider, consistin
 - Storage: 100GB+ SSD
 - Network: 1Gbps+
 
-### 8.7 Monitoring & Logging
+### 9.7 Monitoring & Logging
 
 #### System Monitoring
 - **Health Checks**:
@@ -276,7 +315,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Log rotation
   - Audit trails
 
-### 8.8 Disaster Recovery
+### 9.8 Disaster Recovery
 
 #### Backup Strategy
 - **Database Backups**:
@@ -294,9 +333,9 @@ The integration process follows a standardized flow for each provider, consistin
 - **Failover Testing**: Monthly
 - **Disaster Recovery Plan**: Quarterly review
 
-## 9. Testing & Quality Assurance
+## 10. Testing & Quality Assurance
 
-### 9.1 Testing Strategy
+### 10.1 Testing Strategy
 
 #### Unit Testing
 - **Coverage Requirements**:
@@ -353,7 +392,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Data access controls
   - Privacy compliance
 
-### 9.2 Quality Assurance Process
+### 10.2 Quality Assurance Process
 
 #### Code Quality
 - **Static Analysis**:
@@ -387,7 +426,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Resource utilization
   - Cost monitoring
 
-### 9.3 Test Environments
+### 10.3 Test Environments
 
 #### Development
 - **Local Environment**:
@@ -419,7 +458,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Database rollback
   - Configuration management
 
-### 9.4 Test Data Management
+### 10.4 Test Data Management
 
 #### Test Data Strategy
 - **Data Generation**:
@@ -441,7 +480,7 @@ The integration process follows a standardized flow for each provider, consistin
   - CCPA requirements
   - Data retention
 
-### 9.5 Continuous Improvement
+### 10.5 Continuous Improvement
 
 #### Metrics & KPIs
 - **Quality Metrics**:
@@ -463,9 +502,9 @@ The integration process follows a standardized flow for each provider, consistin
   - Process improvements
   - Tool evaluation
 
-## 10. Analytics & Reporting
+## 11. Analytics & Reporting
 
-### 10.1 Core Metrics
+### 11.1 Core Metrics
 
 #### Business Metrics
 - **Revenue Metrics**:
@@ -503,7 +542,7 @@ The integration process follows a standardized flow for each provider, consistin
   - User engagement
   - Time to value
 
-### 10.2 Reporting System
+### 11.2 Reporting System
 
 #### Dashboard Requirements
 - **Executive Dashboard**:
@@ -534,7 +573,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Filtered views
   - Export capabilities
 
-### 10.3 Data Collection
+### 11.3 Data Collection
 
 #### Data Sources
 - **System Data**:
@@ -560,7 +599,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Monthly reports
   - Historical analysis
 
-### 10.4 Data Retention
+### 11.4 Data Retention
 
 #### Retention Policies
 - **Raw Data**:
@@ -586,7 +625,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Audit logging
   - Data classification
 
-### 10.5 Export & Integration
+### 11.5 Export & Integration
 
 #### Export Capabilities
 - **Formats**:
@@ -612,7 +651,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Custom CRM support
   - Data mapping
 
-### 10.6 Analytics Features
+### 11.6 Analytics Features
 
 #### Advanced Analytics
 - **Predictive Analytics**:
@@ -638,7 +677,7 @@ The integration process follows a standardized flow for each provider, consistin
   - Sharing options
   - Mobile view
 
-### 10.7 Client Satisfaction Data
+### 11.7 Client Satisfaction Data
 
 Short-term (v1):
 • Source post-call IVR surveys collected by the voice agent (1–5 star prompt).
@@ -658,9 +697,9 @@ Open Tasks:
 3. Extend analytics service to compute rolling CSAT & NPS.
 4. Add webhook handlers for Asana/Jira events once integration layer is live.
 
-## 11. Cost & Pricing
+## 12. Cost & Pricing
 
-### 11.1 Pricing Structure
+### 12.1 Pricing Structure
 
 #### PRO Plan ("AI Studio Manager")
 - **Base Price**: $299/month
@@ -691,7 +730,7 @@ Open Tasks:
   - 20 concurrent calls
   - Unlimited PM tool integrations
 
-### 11.2 Usage-Based Pricing
+### 12.2 Usage-Based Pricing
 
 #### Voice Call Pricing
 - **PRO Plan**:
@@ -713,7 +752,7 @@ Open Tasks:
   - Monthly billing
   - Custom rate limits
 
-### 11.3 Additional Services
+### 12.3 Additional Services
 
 #### Professional Services
 - **Onboarding**: $1,500
@@ -739,7 +778,7 @@ Open Tasks:
   - Priority response
   - Custom SLA options
 
-### 11.4 Billing & Payment
+### 12.4 Billing & Payment
 
 #### Billing Cycle
 - **Monthly Billing**:
@@ -765,7 +804,7 @@ Open Tasks:
   - GBP
   - CAD
 
-### 11.5 Discounts & Promotions
+### 12.5 Discounts & Promotions
 
 #### Volume Discounts
 - **Voice Minutes**:
@@ -789,7 +828,7 @@ Open Tasks:
   - Custom pricing
   - Marketing support
 
-### 11.6 Refund Policy
+### 12.6 Refund Policy
 
 #### Standard Refund Policy
 - **Monthly Plans**:
@@ -815,7 +854,7 @@ Open Tasks:
   - Adjustment options
   - Dispute resolution
 
-### 11.7 Cost Optimization
+### 12.7 Cost Optimization
 
 #### Resource Management
 - **Auto-scaling**:
@@ -841,9 +880,9 @@ Open Tasks:
   - Department billing
   - Usage reports
 
-## 12. Support & Maintenance
+## 13. Support & Maintenance
 
-### 12.1 Service Level Agreements (SLAs)
+### 13.1 Service Level Agreements (SLAs)
 
 #### System Availability
 - **PRO Plan**:
@@ -874,7 +913,7 @@ Open Tasks:
   - Business hours support
   - Standard support
 
-### 12.2 Support Channels
+### 13.2 Support Channels
 
 #### Technical Support
 - **Email Support**:
@@ -900,7 +939,7 @@ Open Tasks:
   - Bug reports
   - Community support
 
-### 12.3 Maintenance Windows
+### 13.3 Maintenance Windows
 
 #### Scheduled Maintenance
 - **Regular Updates**:
@@ -926,7 +965,7 @@ Open Tasks:
   - Email notifications
   - SMS alerts (ENTERPRISE)
 
-### 12.4 Update Process
+### 13.4 Update Process
 
 #### Release Management
 - **Version Control**:
@@ -952,7 +991,7 @@ Open Tasks:
   - Training materials
   - Migration guides
 
-### 12.5 Training & Documentation
+### 13.5 Training & Documentation
 
 #### User Training
 - **Onboarding**:
@@ -978,7 +1017,7 @@ Open Tasks:
   - Security guide
   - Troubleshooting guide
 
-### 12.6 Issue Management
+### 13.6 Issue Management
 
 #### Bug Tracking
 - **Issue Reporting**:
@@ -1004,7 +1043,7 @@ Open Tasks:
   - User feedback
   - General release
 
-### 12.7 Performance Monitoring
+### 13.7 Performance Monitoring
 
 #### System Monitoring
 - **Health Checks**:
@@ -1041,7 +1080,7 @@ The platform now adopts a **provider-based architecture** for connecting to thir
   _(Trello support will be evaluated post-v1)_
 
 #### Integration Flow
-1. **Authentication** – Each business supplies a single admin API token for the chosen tool. The token is stored securely and linked to the business record.
+1. **Authentication** – Each business connects via a secure **OAuth 2.0 flow**. The system manages the entire lifecycle of access and refresh tokens, including automated renewal, to ensure uninterrupted service. This replaces the previous single API token approach.
 2. **Provider Abstraction Layer**  
    - Directory: `src/services/pm-providers/`  
    - Interface: `pm.provider.interface.ts` exposes `connect`, `syncProjects`, `getProjectDetails`, `setupWebhooks`, and `handleWebhook` methods.  

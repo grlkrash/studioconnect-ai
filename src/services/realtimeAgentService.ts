@@ -572,24 +572,39 @@ class RealtimeAgentService {
           voiceGreetingLength: agentConfig?.voiceGreetingMessage?.length || 0,
           welcomeMessageLength: agentConfig?.welcomeMessage?.length || 0,
           businessName: business?.name,
+          agentName: agentConfig?.agentName,
           rawVoiceGreeting: agentConfig?.voiceGreetingMessage,
           rawWelcomeMessage: agentConfig?.welcomeMessage
         });
 
         let welcomeMessage = '';
         const businessName = business?.name || 'this premier creative agency';
+        const agentName = agentConfig?.agentName || 'your AI Account Manager';
         
-        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 5) {
+        // 🎯 PRIORITY 1: Use voice greeting message if configured and substantial
+        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 10) {
           welcomeMessage = agentConfig.voiceGreetingMessage.trim();
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using voice greeting message: "${welcomeMessage.substring(0, 50)}..."`);
-        } else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 5) {
+          // Replace placeholders in the configured message
+          welcomeMessage = welcomeMessage
+            .replace(/\{businessName\}/gi, businessName)
+            .replace(/\{agentName\}/gi, agentName)
+            .replace(/\{business\}/gi, businessName);
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${welcomeMessage}"`);
+        } 
+        // 🎯 PRIORITY 2: Use general welcome message if no voice greeting
+        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 10) {
           welcomeMessage = agentConfig.welcomeMessage.trim();
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using welcome message: "${welcomeMessage.substring(0, 50)}..."`);
-        } else {
-          // Enhanced Fortune 500 creative agency greeting
-          const agentName = agentConfig?.agentName || 'AI Account Manager';
-          welcomeMessage = `Good day! Thank you for calling ${businessName}. I'm ${agentName}, your dedicated creative strategist, here to provide immediate assistance with your brand projects and creative initiatives. How may I help you today?`;
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using enhanced Fortune 500 business message for ${businessName}`);
+          // Replace placeholders in the configured message
+          welcomeMessage = welcomeMessage
+            .replace(/\{businessName\}/gi, businessName)
+            .replace(/\{agentName\}/gi, agentName)
+            .replace(/\{business\}/gi, businessName);
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${welcomeMessage}"`);
+        } 
+        // 🎯 PRIORITY 3: Generate professional business-specific greeting
+        else {
+          welcomeMessage = `Hello! Thank you for calling ${businessName}. I'm ${agentName}, ready to assist you with your creative projects and business needs. How may I help you today?`;
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using GENERATED professional business message for ${businessName}`);
         }
 
         // Replace business name placeholders
@@ -783,9 +798,10 @@ class RealtimeAgentService {
       const CHUNK_SIZE = 320; // 40ms of audio at 8kHz µ-law
 
       // Stream audio in real-time with professional pacing
+      let streamingComplete = false;
       for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
-        // Check for barge-in
-        if (state.bargeInDetected) {
+        // Check for barge-in (but not during welcome message)
+        if (state.bargeInDetected && state.welcomeMessageDelivered) {
           state.pendingSpeechBuffer = ulawBuffer.subarray(offset);
           console.log('[🏢 ENTERPRISE TTS] 🛑 Playback paused due to barge-in');
           break;
@@ -807,15 +823,21 @@ class RealtimeAgentService {
 
         // Professional timing for natural speech
         await new Promise((resolve) => setTimeout(resolve, 40));
+        
+        // Check if we've reached the end
+        if (offset + CHUNK_SIZE >= ulawBuffer.length) {
+          streamingComplete = true;
+        }
       }
 
-      // Signal end of message
-      if (!state.bargeInDetected && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+      // Signal end of message only if streaming completed successfully
+      if (streamingComplete && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
         state.ws.send(JSON.stringify({ 
           event: 'mark', 
           streamSid: state.streamSid, 
           mark: { name: 'speech_complete' } 
         }));
+        console.log('[🏢 ENTERPRISE TTS] ✅ Audio streaming completed successfully');
       }
 
       console.log('[🏢 ENTERPRISE TTS] ✅ ENTERPRISE QUALITY TTS DELIVERED SUCCESSFULLY');
@@ -1079,20 +1101,34 @@ class RealtimeAgentService {
 
       console.log('[REALTIME AGENT] Starting professional transcription...')
       
-      // 🎯 BULLETPROOF TRANSCRIPTION WITH MULTIPLE FALLBACKS 🎯
+      // 🎯 BULLETPROOF TRANSCRIPTION WITH PROPER FILE MANAGEMENT 🎯
       let transcriptRaw: string | null = null;
       let attempts = 0;
       const maxAttempts = 3;
+
+      // Create multiple copies of the wav file for retry attempts
+      const wavPaths: string[] = [];
+      for (let i = 0; i < maxAttempts; i++) {
+        const retryWavPath = path.join(os.tmpdir(), `${baseName}_retry${i}.wav`);
+        await fs.promises.copyFile(wavPath, retryWavPath);
+        wavPaths.push(retryWavPath);
+      }
 
       while (!transcriptRaw && attempts < maxAttempts) {
         attempts++;
         console.log(`[REALTIME AGENT] Transcription attempt ${attempts}/${maxAttempts}`);
         
         try {
-          transcriptRaw = await getTranscription(wavPath);
-          if (transcriptRaw && transcriptRaw.trim()) {
-            console.log(`[REALTIME AGENT] ✅ Transcription SUCCESS on attempt ${attempts}`);
+          const currentWavPath = wavPaths[attempts - 1];
+          // Use new transcription function without auto-deletion
+          transcriptRaw = await getTranscription(currentWavPath, false);
+          
+          if (transcriptRaw && transcriptRaw.trim() && transcriptRaw.trim() !== '...') {
+            console.log(`[REALTIME AGENT] ✅ Transcription SUCCESS on attempt ${attempts}: "${transcriptRaw.substring(0, 50)}..."`);
             break;
+          } else {
+            console.warn(`[REALTIME AGENT] ⚠️ Empty or invalid transcription on attempt ${attempts}: "${transcriptRaw}"`);
+            transcriptRaw = null; // Reset for retry
           }
         } catch (transcriptError) {
           console.error(`[REALTIME AGENT] ❌ Transcription attempt ${attempts} failed:`, transcriptError);
@@ -1101,16 +1137,26 @@ class RealtimeAgentService {
             console.error(`[REALTIME AGENT] 🚨 ALL TRANSCRIPTION ATTEMPTS FAILED`);
             // Send recovery message instead of failing silently
             try {
-              await this.streamEnterpriseQualityTTS(state, "I'm sorry, I didn't catch that. Could you please repeat what you said?");
+              await this.streamEnterpriseQualityTTS(state, "I'm sorry, I didn't catch that clearly. Could you please repeat what you said?");
             } catch (recoveryError) {
               console.error('[REALTIME AGENT] Recovery message also failed:', recoveryError);
+            }
+            
+            // Clean up retry files
+            for (const retryPath of wavPaths) {
+              await cleanupTempFile(retryPath);
             }
             return;
           }
           
           // Wait briefly before retry
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
+      }
+
+      // Clean up retry files
+      for (const retryPath of wavPaths) {
+        await cleanupTempFile(retryPath);
       }
 
       if (!transcriptRaw || transcriptRaw.trim().length === 0) {
@@ -1504,7 +1550,12 @@ class RealtimeAgentService {
         // 🎯 BULLETPROOF WELCOME MESSAGE DELIVERY SYSTEM 🎯
         if (!state.welcomeMessageDelivered && state.streamSid) {
           console.log('[🏢 ENTERPRISE AGENT] 🎯 INITIATING BULLETPROOF WELCOME MESSAGE DELIVERY...');
-          await this.deliverBulletproofWelcomeMessage(state);
+          // Add delay to ensure Twilio stream is fully ready
+          setTimeout(async () => {
+            if (!state.welcomeMessageDelivered) {
+              await this.deliverBulletproofWelcomeMessage(state);
+            }
+          }, 500); // 500ms delay for stream stability
         }
 
         // Initialize ElevenLabs STT for high-quality transcription
@@ -2026,8 +2077,10 @@ class RealtimeAgentService {
         // ----------------------------------
         //  Barge-in detection: if caller speaks
         //  while agent is still playing audio
+        //  BUT NOT during welcome message delivery
         // ----------------------------------
-        if (state.isSpeaking && !state.bargeInDetected) {
+        if (state.isSpeaking && !state.bargeInDetected && state.welcomeMessageDelivered) {
+          // Only enable barge-in AFTER welcome message is fully delivered
           // Rough energy check on µ-law / PCM stream to avoid false positives
           let energySum = 0
           if (buf.length % 2 === 0) {
@@ -2040,7 +2093,13 @@ class RealtimeAgentService {
             energySum = energySum / buf.length
           }
 
-          if (energySum > (state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD)) {
+          // Higher threshold during first 10 seconds to prevent false barge-ins
+          const timeFromStart = Date.now() - (state.callStartTime || Date.now());
+          const adjustedThreshold = timeFromStart < 10000 
+            ? (state.vadCalibrated ? state.vadThreshold * 1.5 : VAD_THRESHOLD * 1.5)
+            : (state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD);
+
+          if (energySum > adjustedThreshold) {
             console.log('[REALTIME AGENT] Barge-in detected – pausing playback')
             state.bargeInDetected = true
           }
@@ -2070,15 +2129,16 @@ class RealtimeAgentService {
           energy = energy / buf.length
         }
 
-        // BULLETPROOF noise-floor calibration - FORTUNE 500 QUALITY
+        // 🎯 BULLETPROOF VAD CALIBRATION - ENTERPRISE GRADE 🎯
         if (!state.vadCalibrated) {
           state.vadNoiseFloor += energy
           state.vadSamples += 1
-          if (state.vadSamples >= 200) { // INCREASED - More samples for bulletproof calibration
+          if (state.vadSamples >= 100) { // Sufficient samples for calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            state.vadThreshold = state.vadNoiseFloor + 35 // INCREASED - Eliminates phantom speech completely
+            // More conservative threshold to eliminate phantom speech
+            state.vadThreshold = Math.max(state.vadNoiseFloor + 25, 30) // Minimum threshold of 30
             state.vadCalibrated = true
-            console.log(`[🎯 BULLETPROOF VAD] Calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
+            console.log(`[🎯 BULLETPROOF VAD] ✅ Calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
         }
 
@@ -2111,14 +2171,15 @@ class RealtimeAgentService {
         // Wait for business context before processing
         if (!state.businessId) return
 
-        // BULLETPROOF speech detection - FORTUNE 500 QUALITY
+        // 🎯 BULLETPROOF SPEECH DETECTION - FORTUNE 500 QUALITY 🎯
         if (energy > threshold) {
           if (!state.isRecording) {
-            console.log('[🎯 BULLETPROOF SPEECH] Recording started - Fortune 500 quality detection')
+            console.log('[🎯 BULLETPROOF SPEECH] 🎙️ Recording started - Fortune 500 quality detection')
             this._clearIdlePrompt(state);
             state.isRecording = true
             state.recordingStartMs = now
             state.audioQueue = [] // Clear any previous audio
+            state.lastActivity = now // Update activity timestamp
           }
           state.lastSpeechMs = now
           state.audioQueue.push(mediaPayload)
@@ -2127,12 +2188,29 @@ class RealtimeAgentService {
           state.audioQueue.push(mediaPayload)
         }
 
-        // Process complete utterances with BULLETPROOF timing
-        if (state.isRecording && !state.isProcessing && (now - state.lastSpeechMs > VAD_SILENCE_MS || (state.recordingStartMs && now - state.recordingStartMs > MAX_UTTERANCE_MS)) && state.audioQueue.length > 0) {
-          state.isLinear16Recording = isLinear16
-          console.log('[🎯 BULLETPROOF SPEECH] Processing complete utterance via enterprise Whisper pipeline')
-          state.isProcessing = true
-          this.flushAudioQueue(state)
+        // 🎯 PROCESS COMPLETE UTTERANCES WITH BULLETPROOF TIMING 🎯
+        const silenceDuration = now - state.lastSpeechMs
+        const recordingDuration = state.recordingStartMs ? now - state.recordingStartMs : 0
+        
+        if (state.isRecording && !state.isProcessing && state.audioQueue.length > 0) {
+          const shouldProcess = (
+            silenceDuration > VAD_SILENCE_MS || // Silence detected
+            recordingDuration > MAX_UTTERANCE_MS || // Max recording time reached
+            (silenceDuration > 800 && state.audioQueue.length >= 50) // Quick processing for short phrases
+          )
+          
+          if (shouldProcess) {
+            state.isLinear16Recording = isLinear16
+            console.log(`[🎯 BULLETPROOF SPEECH] 🔄 Processing utterance: ${state.audioQueue.length} chunks, ${recordingDuration}ms duration`)
+            state.isProcessing = true
+            // Process asynchronously to prevent blocking
+            this.flushAudioQueue(state).catch(error => {
+              console.error('[🎯 BULLETPROOF SPEECH] ❌ Error in audio processing:', error)
+              state.isProcessing = false
+              // Send recovery message
+              this.streamEnterpriseQualityTTS(state, "I apologize, could you please repeat that?").catch(() => {})
+            })
+          }
         }
 
         // Note: BulletproofElevenLabsClient is for TTS, not STT

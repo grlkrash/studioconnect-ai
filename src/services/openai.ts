@@ -87,44 +87,71 @@ export async function getChatCompletion(
 };
 
 /**
- * Transcribes audio using OpenAI's Whisper API.
+ * 🎯 BULLETPROOF ENTERPRISE TRANSCRIPTION 🎯
+ * Transcribes audio using OpenAI's Whisper API with bulletproof error handling
+ * Files are NOT automatically deleted - caller manages cleanup for retry logic
  * @param audioFilePath Path to the saved audio file to transcribe.
+ * @param deleteFileAfter Whether to delete the file after transcription (default: false)
  * @returns A promise that resolves to the transcribed text or null if transcription fails.
  */
 export const getTranscription = async (
-  audioFilePath: string
+  audioFilePath: string,
+  deleteFileAfter: boolean = false
 ): Promise<string | null> => {
-  console.log(`[OpenAI Service] Transcribing audio file at: ${audioFilePath}`);
+  console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🚀 Transcribing: ${audioFilePath}`);
   
   if (!fs.existsSync(audioFilePath)) {
-    console.error(`[OpenAI Service] Audio file not found at path: ${audioFilePath}`);
+    console.error(`[🎯 BULLETPROOF TRANSCRIPTION] ❌ Audio file not found: ${audioFilePath}`);
     return null;
   }
 
   try {
+    // Get file stats for validation
+    const stats = fs.statSync(audioFilePath);
+    if (stats.size === 0) {
+      console.error(`[🎯 BULLETPROOF TRANSCRIPTION] ❌ Audio file is empty: ${audioFilePath}`);
+      return null;
+    }
+
+    console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 📊 File size: ${Math.round(stats.size / 1024)}KB`);
+
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioFilePath),
       model: 'whisper-1',
-      // language: 'en', // Optional: specify language if known
-      // response_format: 'text' // Optional: default is json, but text can be simpler
+      language: 'en', // Specify English for better accuracy
+      response_format: 'json',
+      temperature: 0.0 // More deterministic results
     });
 
-    // For 'json' response_format (default):
-    const transcribedText = transcription.text;
-    console.log(`[OpenAI Service] Transcription successful. Text: "${transcribedText.substring(0, 100)}..."`);
+    const transcribedText = transcription.text || '';
+    
+    // Validate transcription quality
+    if (!transcribedText || transcribedText.trim().length === 0) {
+      console.warn(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Empty transcription result`);
+      return null;
+    }
+
+    if (transcribedText.trim() === '...' || transcribedText.trim().length < 2) {
+      console.warn(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Invalid transcription: "${transcribedText}"`);
+      return null;
+    }
+
+    console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ SUCCESS: "${transcribedText.substring(0, 100)}..."`);
     return transcribedText;
   } catch (error) {
-    console.error('[OpenAI Service] Error getting transcription from OpenAI:', error);
-    throw error; // Re-throw the error to be handled by the caller
+    console.error('[🎯 BULLETPROOF TRANSCRIPTION] ❌ Transcription failed:', error);
+    throw error; // Re-throw for retry logic
   } finally {
-    // Clean up the temporary audio file after transcription
-    try {
-      if (fs.existsSync(audioFilePath)) {
-        fs.unlinkSync(audioFilePath);
-        console.log(`[OpenAI Service] Deleted temporary audio file: ${audioFilePath}`);
+    // Only delete if explicitly requested
+    if (deleteFileAfter) {
+      try {
+        if (fs.existsSync(audioFilePath)) {
+          fs.unlinkSync(audioFilePath);
+          console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🗑️ Deleted: ${audioFilePath}`);
+        }
+      } catch (cleanupError) {
+        console.error(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Cleanup error:`, cleanupError);
       }
-    } catch (cleanupError) {
-      console.error(`[OpenAI Service] Error deleting temporary audio file ${audioFilePath}:`, cleanupError);
     }
   }
 };

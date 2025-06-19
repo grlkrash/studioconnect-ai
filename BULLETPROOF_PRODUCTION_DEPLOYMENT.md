@@ -51,7 +51,36 @@ REDIS_URL=your_redis_url_for_caching
 HOST=your-production-domain.com
 ```
 
-### STEP 3: DEPLOY TO PRODUCTION PLATFORM
+### STEP 3: PROJECT MANAGEMENT INTEGRATION SETUP (FOR PROJECT STATUS INTELLIGENCE)
+
+To enable the **Project Status Intelligence** feature, you must configure at least one project management integration. This requires setting up OAuth credentials for the desired platform.
+
+For detailed instructions on the OAuth 2.0 setup process, please refer to the `DEVELOPER_GUIDE.md`.
+
+Below are the required environment variables for each supported platform.
+
+```bash
+# 🎯 PROJECT MANAGEMENT INTEGRATIONS 🎯
+
+# Asana
+ASANA_CLIENT_ID=your_asana_client_id
+ASANA_CLIENT_SECRET=your_asana_client_secret
+ASANA_REDIRECT_URI=https://your-domain.com/api/integrations/asana/callback
+
+# Jira
+JIRA_CLIENT_ID=your_jira_client_id
+JIRA_CLIENT_SECRET=your_jira_client_secret
+JIRA_REDIRECT_URI=https://your-domain.com/api/integrations/jira/callback
+# You also need your Atlassian cloud_id, which can be found at https://<YOUR_SITE>.atlassian.net/_edge/tenant_info
+ATLASSIAN_CLOUD_ID=your_atlassian_cloud_id
+
+# Monday.com
+MONDAY_CLIENT_ID=your_monday_client_id
+MONDAY_CLIENT_SECRET=your_monday_client_secret
+MONDAY_REDIRECT_URI=https://your-domain.com/api/integrations/monday/callback
+```
+
+### STEP 4: DEPLOY TO PRODUCTION PLATFORM
 
 #### Option A: Deploy to Render (Recommended)
 
@@ -77,7 +106,7 @@ HOST=your-production-domain.com
 4. **Set up environment variables**
 5. **Use PM2 for process management**
 
-### STEP 4: TWILIO PHONE NUMBER CONFIGURATION
+### STEP 5: TWILIO PHONE NUMBER CONFIGURATION
 
 1. **Go to Twilio Console** → Phone Numbers
 2. **Buy a phone number** (US number recommended)
@@ -88,7 +117,7 @@ HOST=your-production-domain.com
 4. **Set HTTP Method**: POST
 5. **Test the webhook** endpoint
 
-### STEP 5: DATABASE SETUP
+### STEP 6: DATABASE SETUP
 
 Run database migrations:
 ```bash
@@ -96,7 +125,7 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
-### STEP 6: BUSINESS CONFIGURATION
+### STEP 7: BUSINESS CONFIGURATION
 
 1. **Create a business record** in your database
 2. **Set the Twilio phone number** in the business record
@@ -106,7 +135,7 @@ npx prisma generate
    - Voice greeting message
    - Lead qualification questions
 
-### STEP 7: VOICE AGENT CONFIGURATION
+### STEP 8: VOICE AGENT CONFIGURATION
 
 In your dashboard, configure:
 
@@ -124,7 +153,7 @@ In your dashboard, configure:
 3. **Agent Persona**: Professional, project-focused, helpful
 4. **Welcome Message**: Business-specific greeting
 
-### STEP 8: TESTING CHECKLIST
+### STEP 9: TESTING CHECKLIST
 
 #### 🎯 PERFORMANCE TESTING:
 - [ ] **Response Time**: Call and verify <2 second responses
@@ -141,7 +170,7 @@ In your dashboard, configure:
 - [ ] **Health Dashboard**: Confirm metrics are being tracked
 - [ ] **SLA Compliance**: Verify all guarantees are met
 
-### STEP 9: MONITORING & ALERTS SETUP
+### STEP 10: MONITORING & ALERTS SETUP
 
 The system automatically monitors:
 - Response times
@@ -158,7 +187,7 @@ To set up external alerts:
 2. **Email Alerts**: Configure SMTP settings
 3. **PagerDuty**: Set up for critical alerts
 
-### STEP 10: LOAD TESTING (Fortune 50 Requirements)
+### STEP 11: LOAD TESTING (Fortune 50 Requirements)
 
 Test with concurrent calls:
 ```bash
