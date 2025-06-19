@@ -22,6 +22,7 @@ import { createVoiceSystemPrompt } from '../core/aiHandler';
 import { LeadQualifier } from '../core/leadQualifier';
 import { getPrimaryUrl } from '../utils/env';
 import { ElevenLabsStreamingClient } from './elevenlabsStreamingClient'
+import { formatForSpeech } from '../utils/ssml';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -660,8 +661,11 @@ class RealtimeAgentService {
         ? (process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2')
         : state.openaiModel
 
+      // Apply global SSML formatting for more natural speech (pauses, speed)
+      const ssml = formatForSpeech(text, { speed: state.voiceSettings?.speed })
+
       let mp3Path = await generateSpeechFromText(
-        text,
+        ssml,
         state.openaiVoice,
         modelForProvider as any,
         state.ttsProvider as 'openai' | 'polly' | 'elevenlabs',

@@ -195,9 +195,14 @@ export const generateSpeechFromText = async (
 
     // Polly fallback (default)
     const polly = new PollyClient({ region: process.env.AWS_REGION || 'us-east-1' })
+
+    // Detect SSML input – our formatter wraps text in <speak> tags when SSML features are used.
+    const isSsml = /^<speak[\s>]/i.test(textToSpeak.trim())
+
     const synth = new SynthesizeSpeechCommand({
       Text: textToSpeak,
       OutputFormat: 'mp3',
+      TextType: isSsml ? 'ssml' : 'text',
       VoiceId: voice.charAt(0).toUpperCase() + voice.slice(1).toLowerCase() as any,
     })
     const res = await polly.send(synth)
