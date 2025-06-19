@@ -21,6 +21,7 @@ import { OpenAIRealtimeClient } from './openaiRealtimeClient';
 import { createVoiceSystemPrompt } from '../core/aiHandler';
 import { LeadQualifier } from '../core/leadQualifier';
 import { getPrimaryUrl } from '../utils/env';
+import { ElevenLabsStreamingClient } from './elevenlabsStreamingClient'
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -81,6 +82,7 @@ interface ConnectionState {
   qualAnswers?: Record<string, string>
   currentMissingQuestionId?: string;
   qualQuestionMap?: Record<string, { questionText: string; mapsToLeadField?: string }>
+  sttClient?: ElevenLabsStreamingClient;
 }
 
 interface AgentSession {
@@ -1711,6 +1713,13 @@ class RealtimeAgentService {
           state.isProcessing = true
           this.flushAudioQueue(state)
         }
+
+        // inside case 'media' after buf defined and before VAD detection
+        if (state.sttClient && state.sttClient.isReady()) {
+          try {
+            state.sttClient.sendAudio(buf)
+          } catch {}
+        }
         break
       }
       case 'stop':
@@ -1803,6 +1812,36 @@ class RealtimeAgentService {
 
     } catch (error) {
       console.error('[REALTIME AGENT] Failed to start voicemail recording:', error)
+    }
+  }
+
+  private async _handleTranscript(state: ConnectionState, transcript: string): Promise<void> {
+    transcript = transcript.trim()
+    if (!transcript) return
+
+    console.log('[STT] >>', transcript)
+
+    // Update conversation history + process message (reusing existing logic)
+    try {
+      // Lead qualification branch or normal processing identical to flushAudioQueue path
+      // Reuse existing flushAudioQueue logic by calling processMessage directly
+      const response = await processMessage({
+        message: transcript,
+        conversationHistory: state.conversationHistory,
+        businessId: state.businessId!,
+        currentActiveFlow: state.currentFlow ?? null,
+        callSid: state.callSid ?? undefined,
+        channel: 'VOICE'
+      })
+
+      this.addToConversationHistory(state, 'user', transcript)
+      if (response.reply) this.addToConversationHistory(state, 'assistant', response.reply)
+      state.currentFlow = response.currentFlow || null
+      if (response.reply) {
+        await this.streamTTS(state, response.reply)
+      }
+    } catch (err) {
+      console.error('[STT] processing error', err)
     }
   }
 }

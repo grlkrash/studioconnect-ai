@@ -324,3 +324,15 @@ enum SyncStatus {
   DISCONNECTED
   ERROR
 }
+
+model AtlassianAccount {
+  id          String   @id @default(uuid())
+  businessId  String
+  accountId   String   @unique
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  Business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}

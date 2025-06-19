@@ -10,6 +10,7 @@ import OpenAI from 'openai'
 import { UserPayload } from './api/authMiddleware'
 import next from 'next'
 import widgetConfigRoutes from './api/widgetConfigRoutes'
+import { elevenLabsRouter } from './api/elevenlabsRoutes'
 
 // Load environment variables
 dotenv.config()
@@ -320,6 +321,7 @@ nextApp.prepare()
     app.use('/api/lead-questions', leadQuestionRoutes)
     app.use('/api/integrations', integrationRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
+    app.use('/api/elevenlabs', elevenLabsRouter)
 
     // 3. Specific file serving routes
     // Serve the public chat widget bundle. Historically the snippet referenced
