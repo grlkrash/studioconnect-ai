@@ -292,14 +292,10 @@ class RealtimeAgentService {
       })
     }
 
-    // Twilio sometimes omits the query string when establishing the WebSocket – do *not* close
-    // the connection here. We rely on the subsequent START event to provide the definitive
-    // CallSid and will derive the business context at that point.
-
     this.callSid = callSid;
     console.log(`[REALTIME AGENT] New connection for call ${callSid} to business ${businessId}`);
 
-    // Initialize connection state
+    // Initialize connection state with ENTERPRISE-GRADE defaults
     const state: ConnectionState = {
       ws,
       callSid,
@@ -319,17 +315,17 @@ class RealtimeAgentService {
       isCleaningUp: false,
       lastActivity: Date.now(),
       toNumber: null,
-      ttsProvider: 'elevenlabs', // Default to ElevenLabs
-      // Use proper ElevenLabs voice ID or default to a known good one
-      openaiVoice: process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB', // Adam voice
+      // FORCE ELEVENLABS AS DEFAULT FOR ENTERPRISE QUALITY
+      ttsProvider: 'elevenlabs',
+      // Use premium ElevenLabs voice for Fortune 50 quality
+      openaiVoice: process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM', // Rachel - Professional Female
       openaiModel: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5',
       personaPrompt: undefined,
       lastSpeechMs: Date.now(),
       vadCalibrated: false,
       vadSamples: 0,
       vadNoiseFloor: 0,
-      vadThreshold: 25,
-      /** start with no active recording */
+      vadThreshold: 30, // Optimized for business calls
       isRecording: false,
       isProcessing: false,
       __configLoaded: false,
@@ -341,7 +337,15 @@ class RealtimeAgentService {
       callStartTime: Date.now(),
       hasUserTranscript: false,
       bargeInDetected: false,
-      pendingSpeechBuffer: null
+      pendingSpeechBuffer: null,
+      // Enterprise voice settings for Fortune 50 quality
+      voiceSettings: {
+        stability: 0.65,
+        similarity: 0.85,
+        style: 0.15,
+        use_speaker_boost: true,
+        speed: 1.0
+      }
     };
 
     // Try to identify client if phone number is available
@@ -360,54 +364,38 @@ class RealtimeAgentService {
     const connectionKey = callSid ?? crypto.randomUUID();
     this.connections.set(connectionKey, state);
 
-    // Register lifecycle listeners for this WebSocket so we can clean up if the
-    // client disconnects before the START event arrives.
+    // Register lifecycle listeners for this WebSocket
     this.setupWebSocketListeners(state);
 
-    // Send a welcome message and log the call only when we already have the essential identifiers
-    // (typically available for outbound calls or local tests).  For inbound calls we wait until the
-    // first START event provides the details.
+    // ENTERPRISE-GRADE INITIALIZATION SEQUENCE
     if (callSid && businessId) {
       try {
-        if (!state.welcomeMessageDelivered) {
-          const welcomeMessage = await this.getWelcomeMessage(state)
-          await this.streamTTS(state, welcomeMessage)
-          state.welcomeMessageDelivered = true
-          // Kick off ElevenLabs streaming STT for high-accuracy live transcription once the greeting is finished
-          await this.initializeElevenLabsSTT(state)
-        }
-      } catch (error) {
-        console.error('[REALTIME AGENT] Error sending welcome message:', error)
-        if (!state.welcomeMessageDelivered) {
-          await this.streamTTS(state, 'Welcome to StudioConnect AI. How can I help you today?')
-          state.welcomeMessageDelivered = true
-        }
-      }
+        // Load business configuration FIRST
+        await this.loadEnterpriseAgentConfig(state);
+        
+        // Create conversation record
+        await prisma.callLog.create({
+          data: {
+            businessId,
+            conversationId: crypto.randomUUID(),
+            callSid,
+            from: fromNumber ?? '',
+            to: '',
+            direction: 'INBOUND',
+            type: 'VOICE',
+            status: 'INITIATED',
+            source: 'TWILIO'
+          }
+        });
 
-      await prisma.callLog.create({
-        data: {
-          businessId,
-          conversationId: crypto.randomUUID(),
-          callSid,
-          from: fromNumber ?? '',
-          to: '',
-          direction: 'INBOUND',
-          type: 'VOICE',
-          status: 'INITIATED',
-          source: 'TWILIO'
-        }
-      })
+        console.log(`[REALTIME AGENT] Enterprise voice agent initialized for business ${businessId}`);
+      } catch (error) {
+        console.error('[REALTIME AGENT] Error in enterprise initialization:', error);
+      }
     }
 
-    // -----------------------------
-    // OpenAI Realtime Voice Session
-    // -----------------------------
-    // We will now initialize the OpenAI client only in `handleStartEvent` once we
-    // have the full business context, preventing race conditions and multiple
-    // client instances.
-
-    // ---- Idle follow-up scheduler (first at 2 s, then every 8 s, max 3) ----
-    this._scheduleIdlePrompt(state)
+    // Schedule idle prompts for professional call management
+    this._scheduleIdlePrompt(state);
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
@@ -1148,16 +1136,17 @@ class RealtimeAgentService {
   }
 
   private async handleStartEvent(state: ConnectionState, data: any): Promise<void> {
-    console.log('[REALTIME AGENT] Processing call start event with professional voice configuration...');
+    console.log('[REALTIME AGENT] Processing call start event with ENTERPRISE VOICE PIPELINE...');
     const callSid = data.start?.callSid;
     state.streamSid = data.start?.streamSid;
     state.isTwilioReady = true;
     state.callSid = callSid;
     this.callSid = callSid ?? this.callSid;
 
-    // Initialize state flags
+    // Initialize state flags for bulletproof operation
     state.isSpeaking = false;
     state.pendingAudioGeneration = false;
+    state.welcomeMessageDelivered = false;
 
     if (this.onCallSidReceived && callSid) this.onCallSidReceived(callSid);
 
@@ -1202,11 +1191,14 @@ class RealtimeAgentService {
       }
 
       if (business) {
-        console.log(`[REALTIME AGENT] Found business: ${business.id} - Initializing professional voice service`);
+        console.log(`[REALTIME AGENT] Found business: ${business.id} - Initializing ENTERPRISE VOICE PIPELINE`);
         
         state.businessId = business.id;
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
+
+        // Load enterprise configuration
+        await this.loadEnterpriseAgentConfig(state);
 
         // Create conversation record
         const conversation = await prisma.conversation.create({
@@ -1239,37 +1231,38 @@ class RealtimeAgentService {
           },
         });
 
-        // Load configuration and initialize voice systems
-        await this.loadAgentConfig(state);
+        // Build enterprise system prompt
         const systemPrompt = await this.buildSystemPrompt(state);
 
-        // Initialize realtime client if configured
-        if (state.ttsProvider === 'realtime' && !state.openaiClient) {
-          await this.initializeOpenAIRealtimeClient(state, systemPrompt);
-        }
-
-        // Update instructions for existing realtime client
-        if (state.openaiClient) {
-          console.log('[REALTIME AGENT] Updating realtime client with business context');
-          state.openaiClient.updateInstructions(systemPrompt);
-        }
-
-        // Deliver professional greeting
-        if (!state.welcomeMessageDelivered) {
+        // BULLETPROOF WELCOME MESSAGE DELIVERY
+        if (!state.welcomeMessageDelivered && state.streamSid) {
           try {
-            if (!(state.openaiClient && state.ttsProvider === 'realtime')) {
-              console.log('[REALTIME AGENT] Delivering professional greeting via TTS')
-              const welcome = await this.getWelcomeMessage(state)
-              await this.streamTTS(state, welcome)
-              state.welcomeMessageDelivered = true
+            console.log('[REALTIME AGENT] Delivering ENTERPRISE WELCOME MESSAGE...');
+            const welcomeMessage = await this.getEnterpriseWelcomeMessage(state);
+            
+            // Ensure we have a streamSid before attempting TTS
+            if (state.streamSid) {
+              await this.streamTTS(state, welcomeMessage);
+              state.welcomeMessageDelivered = true;
+              console.log('[REALTIME AGENT] ✅ ENTERPRISE WELCOME MESSAGE DELIVERED SUCCESSFULLY');
+            } else {
+              console.error('[REALTIME AGENT] No streamSid available for welcome message');
             }
           } catch (err) {
-            console.error('[REALTIME AGENT] Failed to deliver greeting:', err)
-            // Emergency fallback
-            await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
-            state.welcomeMessageDelivered = true
+            console.error('[REALTIME AGENT] Welcome message delivery failed, using emergency fallback:', err);
+            // Emergency fallback with bulletproof message
+            try {
+              await this.streamTTS(state, 'Hello! Thank you for calling. I\'m your AI assistant and I\'m here to help. How may I assist you today?');
+              state.welcomeMessageDelivered = true;
+              console.log('[REALTIME AGENT] ✅ EMERGENCY WELCOME MESSAGE DELIVERED');
+            } catch (emergencyErr) {
+              console.error('[REALTIME AGENT] CRITICAL: Even emergency welcome failed:', emergencyErr);
+            }
           }
         }
+
+        // Initialize ElevenLabs STT for high-quality transcription
+        await this.initializeElevenLabsSTT(state);
 
       } else {
         console.warn('[REALTIME AGENT] Business not found for phone number:', toNumber);
@@ -1278,87 +1271,32 @@ class RealtimeAgentService {
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
 
-        // Generic professional greeting
-        if (!state.welcomeMessageDelivered) {
-          await this.streamTTS(state, 'Hello! Thank you for calling StudioConnect AI. How may I assist you today?');
-          state.welcomeMessageDelivered = true;
-        }
-      }
-
-      // ---------------- Lead Qualification Engine ----------------
-      let lcQuestions: any[] = []
-      if (state.businessId) {
-        const _agentCfg: any = await prisma.agentConfig.findUnique({
-          where: { businessId: state.businessId },
-          include: { questions: { orderBy: { order: 'asc' } } },
-        })
-        lcQuestions = _agentCfg?.questions || []
-      }
-
-      if (!state.clientId && lcQuestions.length > 0) {
-        try {
-          state.leadQualifier = new LeadQualifier(
-            lcQuestions.map((q: any) => ({
-              id: q.id,
-              order: q.order,
-              questionText: q.questionText,
-              expectedFormat: q.expectedFormat || undefined,
-              isRequired: q.isRequired,
-              mapsToLeadField: q.mapsToLeadField || undefined,
-            }))
-          )
-          state.qualAnswers = {}
-          state.currentFlow = 'LEAD_QUAL'
-          state.qualQuestionMap = lcQuestions.reduce((acc: any, q: any) => {
-            acc[q.id] = { questionText: q.questionText, mapsToLeadField: q.mapsToLeadField || undefined }
-            return acc
-          }, {})
-
-          const { nextPrompt, missingKey } = state.leadQualifier.getNextPrompt({})
-          if (nextPrompt) {
-            await this.streamTTS(state, nextPrompt)
-            state.currentMissingQuestionId = missingKey
+        // Generic professional greeting for unknown businesses
+        if (!state.welcomeMessageDelivered && state.streamSid) {
+          try {
+            await this.streamTTS(state, 'Hello! Thank you for calling StudioConnect AI. I\'m your AI assistant and I\'m here to help. How may I assist you today?');
+            state.welcomeMessageDelivered = true;
+            console.log('[REALTIME AGENT] ✅ GENERIC WELCOME MESSAGE DELIVERED');
+          } catch (err) {
+            console.error('[REALTIME AGENT] Generic welcome message failed:', err);
           }
-        } catch (err) {
-          console.error('[REALTIME AGENT] LeadQualifier init failed:', err)
         }
       }
 
-      // ---- NEW: preload last conversation history for smoother multi-turn across calls ----
-      if (state.clientId) {
-        try {
-          const lastConv = await prisma.conversation.findFirst({
-            where: { clientId: state.clientId },
-            orderBy: { updatedAt: 'desc' },
-            select: { messages: true },
-          })
-          if (lastConv?.messages && Array.isArray(lastConv.messages)) {
-            for (const mRaw of lastConv.messages.slice(-20)) {
-              const m = mRaw as any
-              if (m && typeof m === 'object' && 'role' in m && 'content' in m) {
-                state.conversationHistory.push({
-                  role: m.role as 'user' | 'assistant',
-                  content: String(m.content),
-                  timestamp: new Date(),
-                })
-              }
-            }
-          }
-        } catch (histErr) {
-          console.error('[REALTIME AGENT] Failed to preload prior conversation', histErr)
-        }
-      }
+      // Initialize lead qualification if needed
+      await this.initializeLeadQualification(state);
 
     } catch (error) {
       console.error('[REALTIME AGENT] Error handling start event:', error);
       
       // Emergency recovery - still try to provide service
-      if (!state.welcomeMessageDelivered) {
+      if (!state.welcomeMessageDelivered && state.streamSid) {
         try {
-          await this.streamTTS(state, 'Hello! Thank you for calling. I apologize, but I\'m experiencing some technical difficulties. How may I help you?');
+          await this.streamTTS(state, 'Hello! Thank you for calling. I apologize for any technical difficulties. How may I help you today?');
           state.welcomeMessageDelivered = true;
+          console.log('[REALTIME AGENT] ✅ RECOVERY WELCOME MESSAGE DELIVERED');
         } catch (emergencyError) {
-          console.error('[REALTIME AGENT] Emergency greeting also failed:', emergencyError);
+          console.error('[REALTIME AGENT] CRITICAL: Recovery greeting also failed:', emergencyError);
         }
       }
     }
@@ -2174,10 +2112,189 @@ class RealtimeAgentService {
 
     state.isSpeaking = false
   }
+
+  private async loadEnterpriseAgentConfig(state: ConnectionState): Promise<void> {
+    if (!state.businessId || state.__configLoaded) return;
+
+    console.log(`[REALTIME AGENT] Loading enterprise voice configuration for business ${state.businessId}`);
+
+    try {
+      // Load business configuration with comprehensive error handling
+      const cfg: any = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        select: {
+          useOpenaiTts: true,
+          openaiVoice: true,
+          openaiModel: true,
+          personaPrompt: true,
+          ttsProvider: true,
+          voiceSettings: true,
+          elevenlabsVoice: true,
+          elevenlabsModel: true,
+          voiceGreetingMessage: true,
+          welcomeMessage: true,
+        } as any,
+      });
+
+      if (cfg) {
+        // FORCE ELEVENLABS FOR ENTERPRISE QUALITY
+        state.ttsProvider = 'elevenlabs';
+        
+        // Set premium voice configuration
+        if (cfg.elevenlabsVoice) {
+          state.openaiVoice = cfg.elevenlabsVoice;
+        } else if (cfg.openaiVoice) {
+          state.openaiVoice = cfg.openaiVoice;
+        } else {
+          // Default to Rachel (professional female voice)
+          state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+        }
+        
+        state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || 'eleven_turbo_v2_5';
+        state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS;
+        
+        // Parse voice settings with error handling
+        try {
+          if (cfg.voiceSettings) {
+            if (typeof cfg.voiceSettings === 'string') {
+              state.voiceSettings = JSON.parse(cfg.voiceSettings);
+            } else {
+              state.voiceSettings = cfg.voiceSettings;
+            }
+          }
+        } catch (jsonErr) {
+          console.warn('[REALTIME AGENT] Invalid voiceSettings JSON, using enterprise defaults');
+          state.voiceSettings = {
+            stability: 0.65,
+            similarity: 0.85,
+            style: 0.15,
+            use_speaker_boost: true,
+            speed: 1.0
+          };
+        }
+        
+        console.log(`[REALTIME AGENT] Enterprise voice config loaded: ElevenLabs with voice ${state.openaiVoice}`);
+      } else {
+        // Set enterprise defaults when no config found
+        console.log('[REALTIME AGENT] No config found, using enterprise defaults');
+        state.ttsProvider = 'elevenlabs';
+        state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+        state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5';
+        state.voiceSettings = {
+          stability: 0.65,
+          similarity: 0.85,
+          style: 0.15,
+          use_speaker_boost: true,
+          speed: 1.0
+        };
+      }
+    } catch (err) {
+      console.error('[REALTIME AGENT] Failed to load enterprise config, using bulletproof defaults:', (err as Error).message);
+      state.ttsProvider = 'elevenlabs';
+      state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+      state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5';
+      state.voiceSettings = {
+        stability: 0.65,
+        similarity: 0.85,
+        style: 0.15,
+        use_speaker_boost: true,
+        speed: 1.0
+      };
+    } finally {
+      state.__configLoaded = true;
+    }
+  }
+
+  private async getEnterpriseWelcomeMessage(state: ConnectionState): Promise<string> {
+    if (!state.businessId) {
+      return 'Hello! Thank you for calling StudioConnect AI. I\'m your AI assistant and I\'m here to help with your creative projects and business needs. How may I assist you today?';
+    }
+
+    try {
+      // Get business-specific welcome message
+      const business = await prisma.business.findUnique({
+        where: { id: state.businessId },
+        select: { name: true }
+      });
+
+      const agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        select: { 
+          welcomeMessage: true, 
+          voiceGreetingMessage: true 
+        }
+      });
+
+      let welcomeMessage = '';
+      
+      if (agentConfig?.voiceGreetingMessage) {
+        welcomeMessage = agentConfig.voiceGreetingMessage;
+      } else if (agentConfig?.welcomeMessage) {
+        welcomeMessage = agentConfig.welcomeMessage;
+      } else {
+        const businessName = business?.name || 'this creative agency';
+        welcomeMessage = `Hello! Thank you for calling ${businessName}. I'm your AI assistant and I'm here to help with your creative projects and business needs. How may I assist you today?`;
+      }
+
+      // Personalize for existing clients
+      if (state.clientId) {
+        welcomeMessage = `Welcome back! ${welcomeMessage}`;
+      }
+
+      return welcomeMessage;
+    } catch (error) {
+      console.error(`[REALTIME AGENT] Error getting enterprise welcome message:`, error);
+      return 'Hello! Thank you for calling. I\'m your AI assistant and I\'m here to help with your creative projects and business needs. How may I assist you today?';
+    }
+  }
+
+  private async initializeLeadQualification(state: ConnectionState): Promise<void> {
+    if (!state.businessId || state.clientId) return; // Skip if business unknown or existing client
+
+    try {
+      // Load lead capture questions
+      const agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        include: { questions: { orderBy: { order: 'asc' } } }
+      });
+
+      const lcQuestions = agentConfig?.questions || [];
+
+      if (lcQuestions.length > 0) {
+        console.log(`[REALTIME AGENT] Initializing lead qualification with ${lcQuestions.length} questions`);
+        
+        state.leadQualifier = new LeadQualifier(
+          lcQuestions.map((q: any) => ({
+            id: q.id,
+            order: q.order,
+            questionText: q.questionText,
+            expectedFormat: q.expectedFormat || undefined,
+            isRequired: q.isRequired,
+            mapsToLeadField: q.mapsToLeadField || undefined,
+          }))
+        );
+        
+        state.qualAnswers = {};
+        state.currentFlow = 'LEAD_QUAL';
+        state.qualQuestionMap = lcQuestions.reduce((acc: Record<string, { questionText: string; mapsToLeadField?: string }>, q: any) => {
+          acc[q.id] = { 
+            questionText: q.questionText, 
+            mapsToLeadField: q.mapsToLeadField || undefined 
+          };
+          return acc;
+        }, {} as Record<string, { questionText: string; mapsToLeadField?: string }>);
+
+        // Don't start questions immediately - let welcome message finish first
+        console.log('[REALTIME AGENT] Lead qualification initialized, will start after welcome message');
+      }
+    } catch (err) {
+      console.error('[REALTIME AGENT] Failed to initialize lead qualification:', err);
+    }
+  }
 }
 
 // Export singleton instance
 export const realtimeAgentService = RealtimeAgentService.getInstance();
 
 // Export helpers for testing purposes (tree-shaken in production builds)
-export { isRealtimeTemporarilyDisabled, markRealtimeFailure } 
+export { isRealtimeTemporarilyDisabled as isRealtimeDisabled, markRealtimeFailure as markFailure } 
