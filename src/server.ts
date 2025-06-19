@@ -489,6 +489,14 @@ server.listen(PORT, async () => {
   // --- Start periodic Asana sync cron ---
   startAsanaCron()
 
+  // --- Start Atlassian Personal Data Reporting cron (weekly) ---
+  try {
+    const { startAtlassianPdrCron } = await import('./services/projectSync/cron')
+    startAtlassianPdrCron()
+  } catch (err) {
+    console.error('[Server] Failed to start PDR cron', err)
+  }
+
   // --- Websocket server etc.
 })
 

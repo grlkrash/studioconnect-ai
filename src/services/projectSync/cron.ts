@@ -2,6 +2,7 @@ import { asanaProvider } from '../pm-providers/asana.provider'
 import { MondayProvider } from '../pm-providers/monday.provider'
 import { JiraProvider } from '../pm-providers/jira.provider'
 import prisma from '../db'
+import { cronReportPersonalData } from '../atlassianAccountService'
 
 const mondayProvider = new MondayProvider()
 const jiraProvider = new JiraProvider()
@@ -52,4 +53,26 @@ export function startAsanaCron () {
   // Run immediately on startup then every 5 min
   run()
   setInterval(run, FIVE_MIN)
+}
+
+/**
+ * Weekly Personal Data Reporting cron – fulfills Atlassian GDPR requirements.
+ * It grabs up to 90 Atlassian accountIds stored in the DB and reports them using the
+ * official Personal Data Reporting API. Atlassian returns 204/200 regardless; we log
+ * but otherwise swallow errors so production calls never crash the worker.
+ */
+export function startAtlassianPdrCron () {
+  const ONE_WEEK = 7 * 24 * 60 * 60 * 1000
+
+  const run = async () => {
+    try {
+      await cronReportPersonalData()
+    } catch (err) {
+      console.error('[PDR Cron] Failed to report personal data', err)
+    }
+  }
+
+  // Kick-off immediately once per boot and then weekly
+  run()
+  setInterval(run, ONE_WEEK)
 } 

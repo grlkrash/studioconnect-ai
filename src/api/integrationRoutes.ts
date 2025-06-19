@@ -232,6 +232,20 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
         cloudId,
       })
 
+      // Personal Data Reporting: store the current Atlassian accountId we have a token for
+      try {
+        const meResp = await axios.get('https://api.atlassian.com/me', {
+          headers: { Authorization: `Bearer ${access_token}` },
+        })
+        const accountId = meResp.data?.account_id || meResp.data?.accountId
+        if (accountId) {
+          const { upsertAtlassianAccount } = await import('../services/atlassianAccountService')
+          await upsertAtlassianAccount(businessId, accountId as string)
+        }
+      } catch (err) {
+        console.warn('[integrationRoutes] Failed to fetch Atlassian accountId for PDR:', (err as any).response?.data || err)
+      }
+
       const redirectTarget = process.env.DASHBOARD_URL || '/integrations?connected=jira'
       return res.redirect(redirectTarget)
     }
