@@ -34,6 +34,9 @@ export default function AgentSettings() {
       radius?: string
       blur?: string
     }
+    voiceStability: number
+    voiceSimilarity: number
+    voiceStyle: number
   }
 
   const defaultSettings: Settings = {
@@ -54,11 +57,15 @@ export default function AgentSettings() {
       radius: "16px",
       blur: "0px",
     },
+    voiceStability: 0.3,
+    voiceSimilarity: 0.8,
+    voiceStyle: 0.5,
   }
 
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [realtimeAvailable, setRealtimeAvailable] = useState<boolean>(false)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [voices, setVoices] = useState<any[]>([])
 
   // Fetch existing config
   useEffect(() => {
@@ -74,7 +81,13 @@ export default function AgentSettings() {
               openaiVoice: (data.config.openaiVoice || '').toLowerCase(),
               openaiModel: (data.config.openaiModel || '').toLowerCase(),
             }
-            setSettings({ ...defaultSettings, ...cfg })
+            setSettings({
+              ...defaultSettings,
+              ...cfg,
+              voiceStability: cfg.voiceSettings?.stability ?? defaultSettings.voiceStability,
+              voiceSimilarity: cfg.voiceSettings?.similarity_boost ?? defaultSettings.voiceSimilarity,
+              voiceStyle: cfg.voiceSettings?.style ?? defaultSettings.voiceStyle,
+            })
             setRealtimeAvailable(Boolean(data.realtimeAvailable))
           }
         }
@@ -84,6 +97,17 @@ export default function AgentSettings() {
     })()
   }, [businessId])
 
+  useEffect(() => {
+    const fetchVoices = async () => {
+      const resVoices = await fetch('/api/elevenlabs/voices')
+      if (resVoices.ok) {
+        const dataVoices = await resVoices.json()
+        setVoices(dataVoices?.voices || [])
+      }
+    }
+    fetchVoices()
+  }, [])
+
   const handleSave = async () => {
     try {
       const res = await fetch(`/api/agent-config${businessId ? `?businessId=${businessId}` : ''}`, {
@@ -92,8 +116,14 @@ export default function AgentSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...settings,
-          openaiVoice: settings.openaiVoice.toUpperCase(),
+          openaiVoice: settings.openaiVoice,
           ttsProvider: settings.ttsProvider,
+          voiceSettings: {
+            stability: settings.voiceStability,
+            similarity_boost: settings.voiceSimilarity,
+            style: settings.voiceStyle,
+            use_speaker_boost: true,
+          },
         }),
       })
       if (res.ok) {
@@ -224,12 +254,11 @@ export default function AgentSettings() {
                         <SelectValue placeholder="Select voice" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="alloy">Alloy (Professional Male)</SelectItem>
-                        <SelectItem value="echo">Echo (Dramatic Male)</SelectItem>
-                        <SelectItem value="fable">Fable (Story-teller Male)</SelectItem>
-                        <SelectItem value="onyx">Onyx (Deep Professional Male)</SelectItem>
-                        <SelectItem value="nova">Nova (Conversational Female)</SelectItem>
-                        <SelectItem value="shimmer">Shimmer (Expressive Female)</SelectItem>
+                        {voices.length ? voices.map(v => (
+                          <SelectItem key={v.voice_id} value={v.voice_id}>{v.name}</SelectItem>
+                        )) : (
+                          <SelectItem value="josh">Josh</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -250,6 +279,27 @@ export default function AgentSettings() {
                         <SelectItem value="tts-1-hd">TTS-1-HD (high quality)</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Stability</Label>
+                    <input type="range" min="0" max="1" step="0.05" value={settings.voiceStability}
+                      onChange={(e)=>setSettings({...settings, voiceStability: parseFloat(e.target.value)})} />
+                    <p className="text-xs text-slate-500">{settings.voiceStability}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Similarity Boost</Label>
+                    <input type="range" min="0" max="1" step="0.05" value={settings.voiceSimilarity}
+                      onChange={(e)=>setSettings({...settings, voiceSimilarity: parseFloat(e.target.value)})} />
+                    <p className="text-xs text-slate-500">{settings.voiceSimilarity}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Style</Label>
+                    <input type="range" min="0" max="1" step="0.05" value={settings.voiceStyle}
+                      onChange={(e)=>setSettings({...settings, voiceStyle: parseFloat(e.target.value)})} />
+                    <p className="text-xs text-slate-500">{settings.voiceStyle}</p>
                   </div>
                 </div>
               </CardContent>
