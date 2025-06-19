@@ -463,16 +463,16 @@ class RealtimeAgentService {
         state.ttsProvider = 'elevenlabs';
         console.log(`[🏢 ENTERPRISE CONFIG] 🎯 FORCED ELEVENLABS FOR ENTERPRISE QUALITY`);
         
-        // Set premium voice configuration with bulletproof fallbacks
-        if (cfg.elevenlabsVoice && cfg.elevenlabsVoice.trim()) {
+        // 🎯 CRITICAL FIX: Use configured voice ID properly
+        if (cfg.elevenlabsVoice && cfg.elevenlabsVoice.trim().length > 10) {
           state.openaiVoice = cfg.elevenlabsVoice.trim();
-          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using configured ElevenLabs voice: ${state.openaiVoice}`);
-        } else if (cfg.openaiVoice && cfg.openaiVoice.trim()) {
+          console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using configured ElevenLabs voice: ${state.openaiVoice}`);
+        } else if (cfg.openaiVoice && cfg.openaiVoice.trim().length > 3) {
           state.openaiVoice = cfg.openaiVoice.trim();
-          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using fallback voice: ${state.openaiVoice}`);
+          console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using configured OpenAI voice: ${state.openaiVoice}`);
         } else {
           state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
-          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using enterprise default voice: ${state.openaiVoice}`);
+          console.log(`[🏢 ENTERPRISE CONFIG] ⚠️ No voice configured - using enterprise default: ${state.openaiVoice}`);
         }
         
         // Set model with fallback
@@ -581,45 +581,46 @@ class RealtimeAgentService {
         const businessName = business?.name || 'this premier creative agency';
         const agentName = agentConfig?.agentName || 'your AI Account Manager';
         
-        // 🎯 PRIORITY 1: Use voice greeting message if configured and substantial
-        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 5) {
+        // 🎯 CRITICAL FIX: Use CONFIGURED messages with proper validation
+        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 3) {
           welcomeMessage = agentConfig.voiceGreetingMessage.trim();
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${welcomeMessage}"`);
         } 
-        // 🎯 PRIORITY 2: Use general welcome message if no voice greeting but it exists
-        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 5) {
+        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 3) {
           welcomeMessage = agentConfig.welcomeMessage.trim();
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${welcomeMessage}"`);
         } 
-        // 🎯 PRIORITY 3: Generate professional business-specific greeting
         else {
+          // Generate with actual business name
           welcomeMessage = `Hello! Thank you for calling ${businessName}. I'm ${agentName}, ready to assist you with your creative projects and business needs. How may I help you today?`;
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using GENERATED professional business message for ${businessName}`);
+          console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ NO CONFIGURED MESSAGE - Using generated for ${businessName}`);
         }
 
-        // Replace business name placeholders if they exist
+        // 🎯 CRITICAL: Replace ALL placeholders properly
         welcomeMessage = welcomeMessage
           .replace(/\{businessName\}/gi, businessName)
           .replace(/\{agentName\}/gi, agentName)
-          .replace(/\{business\}/gi, businessName);
+          .replace(/\{business\}/gi, businessName)
+          .replace(/\{company\}/gi, businessName);
 
         // Personalize for existing clients
         if (state.clientId) {
-          welcomeMessage = `Welcome back! ${welcomeMessage}`;
+          const personalizedPrefix = state.clientId ? 'Welcome back! ' : '';
+          welcomeMessage = personalizedPrefix + welcomeMessage;
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for existing client`);
         }
 
         console.log(`[🏢 ENTERPRISE WELCOME] 🎯 FINAL MESSAGE: "${welcomeMessage}"`);
         return welcomeMessage;
       } catch (error) {
-        console.error(`[🏢 ENTERPRISE WELCOME] ⚠️ Error getting business welcome message:`, error);
+        console.error(`[🏢 ENTERPRISE WELCOME] ❌ Error getting business welcome message:`, error);
         // Fall through to Layer 2
       }
     }
 
     // 🎯 LAYER 2: Generic Fortune 500 professional welcome
-    const genericMessage = 'Good day! Thank you for calling StudioConnect AI. I\'m your dedicated AI Account Manager, ready to provide immediate assistance with your creative projects and strategic business initiatives. How may I help you today?';
-    console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generic Fortune 500 professional message`);
+    const genericMessage = 'Good day! Thank you for calling. I\'m your dedicated AI Account Manager, ready to provide immediate assistance with your creative projects and business needs. How may I help you today?';
+    console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ Using generic Fortune 500 professional message`);
     return genericMessage;
   }
 
@@ -814,14 +815,17 @@ class RealtimeAgentService {
           break;
         }
 
-        // Professional timing for natural speech
-        await new Promise((resolve) => setTimeout(resolve, 40));
+        // CRITICAL FIX: Slightly faster timing for more natural speech
+        await new Promise((resolve) => setTimeout(resolve, 35));
         
         // Check if we've reached the end
         if (offset + CHUNK_SIZE >= ulawBuffer.length) {
           streamingComplete = true;
         }
       }
+
+      // CRITICAL FIX: Add small delay before marking complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Signal end of message only if streaming completed successfully
       if (streamingComplete && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
@@ -1060,8 +1064,8 @@ class RealtimeAgentService {
       const isLinear16 = state.isLinear16Recording ?? false
       const rawData = Buffer.concat(rawBuffers)
 
-      // Enhanced duration check for professional quality
-      const MIN_DURATION_MS = 300 // Increased minimum for better accuracy
+      // 🎯 CRITICAL FIX: More lenient duration check for real conversations
+      const MIN_DURATION_MS = 100 // FIXED: Much more reasonable minimum
       const bytesPerMs = isLinear16 ? 32 : 8 // adjust for codec
       const durationMs = rawData.length / bytesPerMs
 
@@ -1419,6 +1423,10 @@ class RealtimeAgentService {
         this.sendToVoicemail(state)
       }
 
+      // 🎯 CRITICAL FIX: Keep call active for continued conversation
+      console.log('[🎯 AI PROCESSING] ✅ Response delivered, ready for next interaction')
+      this._scheduleIdlePrompt(state);
+
     } catch (error) {
       console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 CRITICAL ERROR in audio processing pipeline:', error)
       
@@ -1596,12 +1604,15 @@ class RealtimeAgentService {
         // 🎯 BULLETPROOF WELCOME MESSAGE DELIVERY SYSTEM 🎯
         if (!state.welcomeMessageDelivered && state.streamSid) {
           console.log('[🏢 ENTERPRISE AGENT] 🎯 INITIATING BULLETPROOF WELCOME MESSAGE DELIVERY...');
-          // Add delay to ensure Twilio stream is fully ready
+          // CRITICAL FIX: Longer delay to ensure Twilio stream is fully ready
           setTimeout(async () => {
-            if (!state.welcomeMessageDelivered) {
+            if (!state.welcomeMessageDelivered && state.streamSid) {
+              console.log('[🏢 ENTERPRISE AGENT] 🎯 Stream ready - delivering welcome message now');
               await this.deliverBulletproofWelcomeMessage(state);
+            } else {
+              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ Stream not ready or welcome already delivered');
             }
-          }, 500); // 500ms delay for stream stability
+          }, 1500); // FIXED: 1.5s delay for proper stream stability
         }
 
         // Initialize ElevenLabs STT for high-quality transcription
@@ -2250,7 +2261,7 @@ class RealtimeAgentService {
           const shouldProcess = (
             silenceDuration > VAD_SILENCE_MS || // Silence detected
             recordingDuration > MAX_UTTERANCE_MS || // Max recording time reached
-            (silenceDuration > 800 && state.audioQueue.length >= 50) // Quick processing for short phrases
+            (silenceDuration > 500 && state.audioQueue.length >= 20) // FIXED: Faster processing for short phrases
           )
           
           if (shouldProcess) {

@@ -92,14 +92,14 @@ const ENTERPRISE_VOICE_CONFIG = {
   }
 }
 
-// 🎯 BULLETPROOF VAD SETTINGS - ZERO PHANTOM SPEECH 🎯
+// 🎯 BULLETPROOF VAD SETTINGS - BALANCED FOR REAL CONVERSATIONS 🎯
 export function getEnterpriseVADSettings() {
   return {
-    THRESHOLD: 45,              // INCREASED - Eliminates phantom speech completely
-    SILENCE_MS: 1800,          // OPTIMIZED - Professional conversation flow
-    MAX_UTTERANCE_MS: 35000,   // EXTENDED - Complex business discussions
-    CALIBRATION_SAMPLES: 250,  // ENHANCED - More accurate calibration
-    NOISE_FLOOR_BUFFER: 25     // BULLETPROOF - Handles all environments
+    THRESHOLD: 25,              // FIXED - Better speech detection sensitivity
+    SILENCE_MS: 800,           // FIXED - Natural conversation flow
+    MAX_UTTERANCE_MS: 15000,   // FIXED - Standard business discussions
+    CALIBRATION_SAMPLES: 50,   // FIXED - Faster calibration
+    NOISE_FLOOR_BUFFER: 15     // FIXED - More responsive to actual speech
   }
 }
 
