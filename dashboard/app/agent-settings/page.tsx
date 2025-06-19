@@ -147,6 +147,17 @@ export default function AgentSettings() {
     <p className="text-xs text-slate-500 italic">Coming Soon 🚧</p>
   )
 
+  /* ----------------- Color input component ------------------ */
+  const ColorInput = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
+    <div className="space-y-1 w-full">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">
+        <Input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-12 p-0 border" />
+        <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      </div>
+    </div>
+  )
+
   /* ----------------- Status metrics child component ------------------ */
   function StatusMetrics() {
     const [status, setStatus] = useState<any | null>(null)
@@ -395,123 +406,21 @@ export default function AgentSettings() {
             {/* Widget Appearance */}
             <Card>
               <CardHeader>
-                <CardTitle>Widget Appearance</CardTitle>
-                <CardDescription>Customize chat widget colors & style</CardDescription>
+                <CardTitle>Chat Widget Theme</CardTitle>
+                <CardDescription>Customize colours used by the embedded chat widget.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="primaryColor">Primary Color</Label>
-                    <Input
-                      id="primaryColor"
-                      type="color"
-                      value={settings.widgetTheme?.primary}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, primary: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="primaryDarkColor">Primary Dark</Label>
-                    <Input
-                      id="primaryDarkColor"
-                      type="color"
-                      value={settings.widgetTheme?.primaryDark}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, primaryDark: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bgColor">Background</Label>
-                    <Input
-                      id="bgColor"
-                      type="color"
-                      value={settings.widgetTheme?.bg}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, bg: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bgSecondaryColor">Bg Secondary</Label>
-                    <Input
-                      id="bgSecondaryColor"
-                      type="color"
-                      value={settings.widgetTheme?.bgSecondary}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, bgSecondary: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="font">Font Stack</Label>
-                    <Input
-                      id="font"
-                      value={settings.widgetTheme?.font}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, font: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="radius">Radius (px)</Label>
-                    <Input
-                      id="radius"
-                      value={settings.widgetTheme?.radius}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, radius: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="blur">Blur (e.g., 14px)</Label>
-                    <Input
-                      id="blur"
-                      value={settings.widgetTheme?.blur}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          widgetTheme: { ...settings.widgetTheme, blur: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
+                  <ColorInput label="Primary" value={settings.widgetTheme?.primary || ''} onChange={(v) => setSettings((s) => ({ ...s, widgetTheme: { ...s.widgetTheme!, primary: v } }))} />
+                  <ColorInput label="Primary (Dark)" value={settings.widgetTheme?.primaryDark || ''} onChange={(v) => setSettings((s) => ({ ...s, widgetTheme: { ...s.widgetTheme!, primaryDark: v } }))} />
+                  <ColorInput label="Background" value={settings.widgetTheme?.bg || ''} onChange={(v) => setSettings((s) => ({ ...s, widgetTheme: { ...s.widgetTheme!, bg: v } }))} />
+                  <ColorInput label="Background 2" value={settings.widgetTheme?.bgSecondary || ''} onChange={(v) => setSettings((s) => ({ ...s, widgetTheme: { ...s.widgetTheme!, bgSecondary: v } }))} />
                 </div>
-                {/* Code snippet */}
+
                 <div className="space-y-2">
-                  <Label>Embed Snippet</Label>
-                  <pre className="bg-slate-900 text-green-400 rounded p-4 text-xs overflow-auto select-all">
-                    {`<script defer
-                      src="https://app.cincyaisolutions.com/widget.js"
-                      data-business-id="YOUR_BUSINESS_ID_HERE"
-                      data-api-url="https://app.cincyaisolutions.com"
-                      data-primary="${settings.widgetTheme?.primary}"
-                      data-primary-dark="${settings.widgetTheme?.primaryDark}"
-                      data-bg="${settings.widgetTheme?.bg}"
-                      data-bg-secondary="${settings.widgetTheme?.bgSecondary}"
-                      data-font="${settings.widgetTheme?.font}"
-                      data-radius="${settings.widgetTheme?.radius}"
-                      data-blur="${settings.widgetTheme?.blur}"
-                    ></script>`}
+                  <Label>Embed Code</Label>
+                  <pre className="bg-slate-100 p-3 rounded-md text-xs overflow-x-auto">
+                    {`<script src="https://cdn.studioconnect.ai/widget.js" async data-business="${businessId || 'BUSINESS_ID'}"></script>`}
                   </pre>
                 </div>
               </CardContent>
