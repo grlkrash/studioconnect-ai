@@ -34,6 +34,8 @@ import agentConfigRoutes from './api/agentConfigRoutes'
 import leadQuestionRoutes from './api/leadQuestionRoutes'
 import integrationRoutes from './api/integrationRoutes'
 import webhookRoutes from './api/webhookRoutes'
+import callHistoryRoutes from './api/callHistoryRoutes'
+import interactionRoutes from './api/interactionRoutes'
 import { startAsanaCron } from './services/projectSync/cron'
 import { voiceHealthMonitor } from './monitor/voiceHealthMonitor'
 
@@ -322,6 +324,8 @@ nextApp.prepare()
     app.use('/api/agent-config', agentConfigRoutes)
     app.use('/api/lead-questions', leadQuestionRoutes)
     app.use('/api/integrations', integrationRoutes)
+    app.use('/api/calls', callHistoryRoutes)
+    app.use('/api/interactions', interactionRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)
     app.use('/api/healthz', healthzRouter)
@@ -428,17 +432,24 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Initialize Redis connection
 async function initializeRedis() {
   try {
+    console.log('🔄 Attempting Redis connection...')
     const redisManager = RedisManager.getInstance()
     await redisManager.connect()
     console.log('✅ Redis connection established')
     
     const sessionService = VoiceSessionService.getInstance()
     setInterval(async () => {
-      await sessionService.cleanupExpiredSessions()
+      try {
+        await sessionService.cleanupExpiredSessions()
+      } catch (err) {
+        console.debug('[Redis Cleanup] Session cleanup failed:', (err as Error).message)
+      }
     }, 5 * 60 * 1000) // Run cleanup every 5 minutes
     
   } catch (error) {
-    console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error)
+    console.warn('⚠️  Redis connection failed - continuing with in-memory fallback')
+    console.debug('Redis error details:', (error as Error).message)
+    // Don't throw - let the app continue without Redis
   }
 }
 

@@ -16,19 +16,38 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
-      select: {
-        id: true,
-        phoneNumber: true,
-        duration: true,
-        status: true,
-        createdAt: true,
-        endedAt: true,
-        transcript: true,
-        metadata: true,
-      },
+      include: {
+        conversation: {
+          include: {
+            client: {
+              select: { name: true }
+            }
+          }
+        }
+      }
     })
 
-    return NextResponse.json({ calls })
+    // Transform the data to match the expected format
+    const transformedCalls = calls.map(call => ({
+      id: call.id,
+      callSid: call.callSid,
+      from: call.from,
+      to: call.to,
+      direction: call.direction,
+      status: call.status,
+      type: call.type,
+      createdAt: call.createdAt.toISOString(),
+      updatedAt: call.updatedAt.toISOString(),
+      content: call.content,
+      metadata: call.metadata,
+      conversation: call.conversation ? {
+        id: call.conversation.id,
+        messages: Array.isArray(call.conversation.messages) ? call.conversation.messages : [],
+        client: call.conversation.client
+      } : null
+    }))
+
+    return NextResponse.json({ calls: transformedCalls })
   } catch (err) {
     console.error('[CALLS_GET]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

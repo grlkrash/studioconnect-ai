@@ -50,7 +50,7 @@ export async function getBusiness(req?: NextRequest) {
   // 5. cookie fallback (edge/server only)
   if (!bizId) {
     try {
-      const cookieStore = cookies()
+      const cookieStore = await cookies()
       bizId = cookieStore.get('businessId')?.value
     } catch {}
   }

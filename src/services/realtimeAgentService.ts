@@ -1720,7 +1720,10 @@ class RealtimeAgentService {
     try {
       const redis = RedisManager.getInstance()
       if (!redis.isClientConnected()) {
-        await redis.connect().catch(() => {})
+        await redis.connect().catch((err) => {
+          // Silently fail Redis connection for persona cache - not critical
+          console.debug('[RealtimeAgent] Redis persona cache unavailable:', err.message)
+        })
       }
       if (redis.isClientConnected()) {
         const key = `persona:${state.businessId}`
@@ -1730,7 +1733,8 @@ class RealtimeAgentService {
         }
       }
     } catch (err) {
-      console.warn('[RealtimeAgent] Redis persona cache unavailable', (err as Error).message)
+      // Don't log Redis errors repeatedly - they're not critical for voice operation
+      console.debug('[RealtimeAgent] Redis persona cache unavailable:', (err as Error).message)
     }
 
     // --- Global override for ops ---
@@ -1801,12 +1805,16 @@ class RealtimeAgentService {
         // Persist persona prompt to Redis cache for 1 hour
         try {
           const redis = RedisManager.getInstance()
-          if (!redis.isClientConnected()) await redis.connect().catch(() => {})
+          if (!redis.isClientConnected()) {
+            await redis.connect().catch((err) => {
+              console.debug('[RealtimeAgent] Redis cache unavailable for persona storage:', err.message)
+            })
+          }
           if (redis.isClientConnected() && state.personaPrompt) {
             await redis.getClient().setEx(`persona:${state.businessId}`, 3600, cfg.personaPrompt || '')
           }
         } catch (err) {
-          console.warn('[RealtimeAgent] Failed to store persona in Redis', (err as Error).message)
+          console.debug('[RealtimeAgent] Failed to store persona in Redis:', (err as Error).message)
         }
 
         // Cache it

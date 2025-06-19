@@ -4,6 +4,10 @@ class RedisManager {
   private static instance: RedisManager
   private client: RedisClientType | null = null
   private isConnected = false
+  private connectionAttempts = 0
+  private maxConnectionAttempts = 3
+  private lastConnectionAttempt = 0
+  private connectionCooldown = 30000 // 30 seconds
 
   private constructor() {}
 
@@ -16,6 +20,21 @@ class RedisManager {
 
   async connect(): Promise<void> {
     if (this.isConnected && this.client) return
+
+    // Check if we're in cooldown period
+    const now = Date.now()
+    if (this.connectionAttempts >= this.maxConnectionAttempts && 
+        now - this.lastConnectionAttempt < this.connectionCooldown) {
+      throw new Error('Redis connection in cooldown period')
+    }
+
+    // Reset attempts if cooldown period has passed
+    if (now - this.lastConnectionAttempt > this.connectionCooldown) {
+      this.connectionAttempts = 0
+    }
+
+    this.connectionAttempts++
+    this.lastConnectionAttempt = now
 
     try {
       // Create Redis client with connection string or individual options
@@ -30,6 +49,7 @@ class RedisManager {
           socket: {
             host: process.env.REDIS_HOST || 'localhost',
             port: parseInt(process.env.REDIS_PORT || '6379'),
+            connectTimeout: 5000
           },
           password: process.env.REDIS_PASSWORD,
           database: parseInt(process.env.REDIS_DB || '0'),
@@ -37,13 +57,16 @@ class RedisManager {
       }
 
       this.client.on('error', (err) => {
-        console.error('[Redis] Connection error:', err)
+        if (this.connectionAttempts <= this.maxConnectionAttempts) {
+          console.error('[Redis] Connection error:', err.message)
+        }
         this.isConnected = false
       })
 
       this.client.on('connect', () => {
         console.log('[Redis] Connected successfully')
         this.isConnected = true
+        this.connectionAttempts = 0 // Reset on successful connection
       })
 
       this.client.on('ready', () => {
@@ -60,8 +83,15 @@ class RedisManager {
       console.log('[Redis] Client connected and ready')
       
     } catch (error) {
-      console.error('[Redis] Failed to connect:', error)
+      if (this.connectionAttempts <= this.maxConnectionAttempts) {
+        console.error('[Redis] Failed to connect:', (error as Error).message)
+      }
       this.isConnected = false
+      
+      if (this.connectionAttempts >= this.maxConnectionAttempts) {
+        console.warn(`[Redis] Max connection attempts (${this.maxConnectionAttempts}) reached. Will retry after cooldown.`)
+      }
+      
       throw error
     }
   }

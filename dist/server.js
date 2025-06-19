@@ -64,6 +64,8 @@ const agentConfigRoutes_1 = __importDefault(require("./api/agentConfigRoutes"));
 const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes"));
 const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
 const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
+const callHistoryRoutes_1 = __importDefault(require("./api/callHistoryRoutes"));
+const interactionRoutes_1 = __importDefault(require("./api/interactionRoutes"));
 const cron_1 = require("./services/projectSync/cron");
 const voiceHealthMonitor_1 = require("./monitor/voiceHealthMonitor");
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
@@ -257,6 +259,8 @@ nextApp.prepare()
     app.use('/api/agent-config', agentConfigRoutes_1.default);
     app.use('/api/lead-questions', leadQuestionRoutes_1.default);
     app.use('/api/integrations', integrationRoutes_1.default);
+    app.use('/api/calls', callHistoryRoutes_1.default);
+    app.use('/api/interactions', interactionRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
     app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
     app.use('/api/healthz', healthzRoutes_1.healthzRouter);
@@ -333,16 +337,23 @@ app.use((err, req, res, next) => {
 });
 async function initializeRedis() {
     try {
+        console.log('🔄 Attempting Redis connection...');
         const redisManager = redis_1.default.getInstance();
         await redisManager.connect();
         console.log('✅ Redis connection established');
         const sessionService = voiceSessionService_1.default.getInstance();
         setInterval(async () => {
-            await sessionService.cleanupExpiredSessions();
+            try {
+                await sessionService.cleanupExpiredSessions();
+            }
+            catch (err) {
+                console.debug('[Redis Cleanup] Session cleanup failed:', err.message);
+            }
         }, 5 * 60 * 1000);
     }
     catch (error) {
-        console.warn('⚠️  Redis connection failed, falling back to in-memory sessions:', error);
+        console.warn('⚠️  Redis connection failed - continuing with in-memory fallback');
+        console.debug('Redis error details:', error.message);
     }
 }
 let server;
