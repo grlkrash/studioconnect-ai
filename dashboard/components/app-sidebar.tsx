@@ -43,6 +43,11 @@ const navigationItems = [
     icon: BarChart3,
   },
   {
+    title: "Interactions",
+    url: "/interactions",
+    icon: MessageSquare,
+  },
+  {
     title: "Call History",
     url: "/calls",
     icon: Phone,

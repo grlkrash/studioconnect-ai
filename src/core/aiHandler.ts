@@ -76,8 +76,15 @@ type ClientLookup = {
 /**
  * Creates a refined system prompt for natural voice interactions with strict business rules
  */
-export const createVoiceSystemPrompt = (businessName?: string, context?: string, leadCaptureQuestions?: any[]): string => {
+export const createVoiceSystemPrompt = (
+  businessName?: string,
+  context?: string,
+  leadCaptureQuestions?: any[],
+  personaPrompt?: string
+): string => {
   return `You are a professional AI Account Manager for ${businessName || 'this creative agency'}. Your ONLY goal is to serve existing clients and qualify new leads with exceptional professionalism. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller.
+
+${personaPrompt ? `\n--- PERSONA GUIDELINES ---\n${personaPrompt}\n` : ''}
 
 🎯 **PRIMARY OBJECTIVES:**
 1. **Existing Clients**: Provide instant project status updates, answer questions, and escalate urgent matters
@@ -665,25 +672,45 @@ const _processMessage = async (
 
     const leadCaptureQuestions = business.agentConfig?.questions || []
 
+    const personaPrompt = business.agentConfig?.personaPrompt
     const systemMessage = createVoiceSystemPrompt(
       business.name,
       context,
-      leadCaptureQuestions
+      leadCaptureQuestions,
+      personaPrompt || undefined
     )
     
-    // Add persona prompt from agent config if it exists
-    const personaPrompt = business.agentConfig?.personaPrompt
-    if (personaPrompt) {
-      // We can decide how to best integrate this. Appending to system message for now.
-      // systemMessage += `\n\n**ADDITIONAL PERSONA GUIDELINES:**\n${personaPrompt}`;
-    }
-
     const finalHistory = conversationHistory.map((h: { role: string; content: string }) => ({
       role: h.role as 'user' | 'assistant',
       content: h.content,
     }))
 
     console.log('[AI Handler] Generating chat completion with system message:', systemMessage.substring(0, 500) + '...')
+
+    // --- FAST PATH: direct project status inquiry detection before invoking LLM ---
+    try {
+      const statusRegex = /(status|update|progress)\s+(of|for)?\s+([\w\s\-']{3,})/i
+      const m = message.match(statusRegex)
+      if (m && m[3] && businessId) {
+        const projName = m[3].trim()
+        // Simple match: first project whose name includes the captured phrase (case-insensitive)
+        const proj = await prisma.project.findFirst({
+          where: {
+            businessId,
+            name: { contains: projName, mode: 'insensitive' },
+          },
+          select: { name: true, status: true, details: true },
+        })
+        if (proj) {
+          const statusText = proj.status?.toLowerCase().replace(/_/g, ' ') || 'in progress'
+          const detailsText = proj.details ? ` Latest update: ${proj.details}.` : ''
+          const quickReply = `The current status of ${proj.name} is ${statusText}.${detailsText}`
+          return { reply: quickReply, currentFlow: currentActiveFlow || null, nextAction: 'CONTINUE' }
+        }
+      }
+    } catch (quickErr) {
+      console.warn('[AI Handler] Quick project status check failed, falling back to LLM', quickErr)
+    }
 
     const aiResponse = await getChatCompletion([
       { role: 'system', content: systemMessage },

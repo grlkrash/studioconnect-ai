@@ -45,8 +45,10 @@ const DEFAULT_EMERGENCY_QUESTIONS = [
         isEssentialForEmergency: true
     }
 ];
-const createVoiceSystemPrompt = (businessName, context, leadCaptureQuestions) => {
+const createVoiceSystemPrompt = (businessName, context, leadCaptureQuestions, personaPrompt) => {
     return `You are a professional AI Account Manager for ${businessName || 'this creative agency'}. Your ONLY goal is to serve existing clients and qualify new leads with exceptional professionalism. You are engaged in a REAL-TIME PHONE CONVERSATION with a human caller.
+
+${personaPrompt ? `\n--- PERSONA GUIDELINES ---\n${personaPrompt}\n` : ''}
 
 🎯 **PRIMARY OBJECTIVES:**
 1. **Existing Clients**: Provide instant project status updates, answer questions, and escalate urgent matters
@@ -408,7 +410,7 @@ const determineNextVoiceAction = (intent, currentFlow) => {
     return 'CONTINUE';
 };
 const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
-    var _a, _b;
+    var _a, _b, _c;
     const voiceSessionService = voiceSessionService_1.default.getInstance();
     const session = callSid ? await voiceSessionService.getVoiceSession(callSid) : null;
     try {
@@ -483,15 +485,36 @@ const _processMessage = async (message, conversationHistory, businessId, current
             context = contextParts.join('\n\n');
         }
         const leadCaptureQuestions = ((_a = business.agentConfig) === null || _a === void 0 ? void 0 : _a.questions) || [];
-        const systemMessage = (0, exports.createVoiceSystemPrompt)(business.name, context, leadCaptureQuestions);
         const personaPrompt = (_b = business.agentConfig) === null || _b === void 0 ? void 0 : _b.personaPrompt;
-        if (personaPrompt) {
-        }
+        const systemMessage = (0, exports.createVoiceSystemPrompt)(business.name, context, leadCaptureQuestions, personaPrompt || undefined);
         const finalHistory = conversationHistory.map((h) => ({
             role: h.role,
             content: h.content,
         }));
         console.log('[AI Handler] Generating chat completion with system message:', systemMessage.substring(0, 500) + '...');
+        try {
+            const statusRegex = /(status|update|progress)\s+(of|for)?\s+([\w\s\-']{3,})/i;
+            const m = message.match(statusRegex);
+            if (m && m[3] && businessId) {
+                const projName = m[3].trim();
+                const proj = await db_1.prisma.project.findFirst({
+                    where: {
+                        businessId,
+                        name: { contains: projName, mode: 'insensitive' },
+                    },
+                    select: { name: true, status: true, details: true },
+                });
+                if (proj) {
+                    const statusText = ((_c = proj.status) === null || _c === void 0 ? void 0 : _c.toLowerCase().replace(/_/g, ' ')) || 'in progress';
+                    const detailsText = proj.details ? ` Latest update: ${proj.details}.` : '';
+                    const quickReply = `The current status of ${proj.name} is ${statusText}.${detailsText}`;
+                    return { reply: quickReply, currentFlow: currentActiveFlow || null, nextAction: 'CONTINUE' };
+                }
+            }
+        }
+        catch (quickErr) {
+            console.warn('[AI Handler] Quick project status check failed, falling back to LLM', quickErr);
+        }
         const aiResponse = await (0, openai_1.getChatCompletion)([
             { role: 'system', content: systemMessage },
             ...finalHistory,

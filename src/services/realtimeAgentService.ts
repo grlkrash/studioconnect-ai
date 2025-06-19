@@ -1189,6 +1189,31 @@ class RealtimeAgentService {
         }
       }
 
+      // ---- NEW: preload last conversation history for smoother multi-turn across calls ----
+      if (state.clientId) {
+        try {
+          const lastConv = await prisma.conversation.findFirst({
+            where: { clientId: state.clientId },
+            orderBy: { updatedAt: 'desc' },
+            select: { messages: true },
+          })
+          if (lastConv?.messages && Array.isArray(lastConv.messages)) {
+            for (const mRaw of lastConv.messages.slice(-20)) {
+              const m = mRaw as any
+              if (m && typeof m === 'object' && 'role' in m && 'content' in m) {
+                state.conversationHistory.push({
+                  role: m.role as 'user' | 'assistant',
+                  content: String(m.content),
+                  timestamp: new Date(),
+                })
+              }
+            }
+          }
+        } catch (histErr) {
+          console.error('[REALTIME AGENT] Failed to preload prior conversation', histErr)
+        }
+      }
+
     } catch (error) {
       console.error('[REALTIME AGENT] Error handling start event:', error);
       
@@ -1205,7 +1230,7 @@ class RealtimeAgentService {
   }
 
   private async buildSystemPrompt(state: ConnectionState): Promise<string> {
-    if (!state.businessId) return createVoiceSystemPrompt('this creative agency');
+    if (!state.businessId) return createVoiceSystemPrompt('this creative agency', undefined, undefined, state.personaPrompt);
 
     const business = await prisma.business.findUnique({
       where: { id: state.businessId },
@@ -1231,14 +1256,28 @@ class RealtimeAgentService {
       const client = await getClientByPhoneNumber(state.fromNumber);
       if (client && client.businessId === state.businessId) {
         clientContext = `--- CALLER INFORMATION ---\nThis call is from an existing client: ${client.name}.`;
-        const projects = await prisma.project.findMany({
-          where: { clientId: client.id, status: { not: 'COMPLETED' } },
-          select: { name: true, status: true, details: true },
-        });
-        if (projects.length > 0) {
-          projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\n` + projects.map((p: { name: string; status: string; details: string | null }) => `  - Project: "${p.name}", Status: ${p.status}, Last Update: ${p.details || 'No details available'}`).join('\n');
-        } else {
-          projectContext = `--- ACTIVE PROJECTS for ${client.name} ---\nThis client currently has no active projects.`;
+
+        // ---- NEW: preload last conversation history for smoother multi-turn across calls ----
+        try {
+          const lastConv = await prisma.conversation.findFirst({
+            where: { clientId: client.id },
+            orderBy: { updatedAt: 'desc' },
+            select: { messages: true },
+          })
+          if (lastConv?.messages && Array.isArray(lastConv.messages)) {
+            for (const mRaw of lastConv.messages.slice(-20)) {
+              const m = mRaw as any
+              if (m && typeof m === 'object' && 'role' in m && 'content' in m) {
+                state.conversationHistory.push({
+                  role: m.role as 'user' | 'assistant',
+                  content: String(m.content),
+                  timestamp: new Date(),
+                })
+              }
+            }
+          }
+        } catch (histErr) {
+          console.error('[REALTIME AGENT] Failed to preload prior conversation', histErr)
         }
       }
     }
@@ -1256,7 +1295,7 @@ class RealtimeAgentService {
     });
     const leadCaptureQuestions = agentConfig?.questions || [];
 
-    return createVoiceSystemPrompt(business?.name || 'this creative agency', context, leadCaptureQuestions);
+    return createVoiceSystemPrompt(business?.name || 'this creative agency', context, leadCaptureQuestions, state.personaPrompt);
   }
 
   private async loadAgentConfig(state: ConnectionState): Promise<void> {

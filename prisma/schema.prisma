@@ -24,6 +24,8 @@ model Business {
   twilioPhoneNumber       String?         @unique
   businessHours           Json?
   timezone                String?
+  logoUrl                 String?
+  brandColors             Json?
   /// *
   /// * One or more email addresses that will receive notifications (comma-separated
   /// * string array in Postgres). Replaces the old single `notificationEmail`
