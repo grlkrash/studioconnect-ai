@@ -25,7 +25,8 @@
     "start:dashboard": "npm --prefix dashboard run start -- -p 3100",
     "postinstall": "npm --prefix dashboard install --legacy-peer-deps",
     "monitor": "ts-node src/monitor/syntheticMonitor.ts",
-    "stress": "ts-node scripts/stressTest.ts"
+    "stress": "ts-node scripts/stressTest.ts",
+    "voice-monitor": "ts-node src/monitor/voiceHealthMonitor.ts"
   },
   "_moduleAliases": {
     "@": "dist"

@@ -24,8 +24,21 @@ const twilioClient = twilio(
 
 const MONITOR_CALLER_ID = process.env.MONITOR_CALLER_ID || '+15005550006' // Twilio test number
 const MAX_WAIT_MS = 40_000 // 40 seconds per call
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL
+const MOS_THRESHOLD = 4
 
 type Biz = { id: string; name: string; twilioPhoneNumber: string | null }
+
+function postSlackAlert(text: string): void {
+  if (!SLACK_WEBHOOK_URL) return
+  fetch(SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch((err) => {
+    console.warn('[Monitor] Failed to post Slack alert:', (err as Error).message)
+  })
+}
 
 async function placeTestCall(biz: Biz): Promise<void> {
   if (!biz.twilioPhoneNumber) return
@@ -51,9 +64,27 @@ async function placeTestCall(biz: Biz): Promise<void> {
 
   console.log(`[Monitor] 📞 Call ${call.sid} finished with status: ${lastStatus}`)
 
-  if (!['in-progress', 'completed'].includes(lastStatus)) {
-    console.error(`[Monitor] ❌ ALERT: Synthetic call to ${biz.name} did not connect (status: ${lastStatus})`)
-    // TODO: send notification via email / Slack / PagerDuty
+  let mosScore: number | null = null
+  try {
+    // @ts-ignore – Feedback API not in older twilio typings
+    const feedback = await (twilioClient.calls(call.sid) as any).feedback().fetch()
+    // feedback.qualityScore can be string or number depending on SDK version
+    if (feedback && (feedback as any).qualityScore !== undefined) {
+      mosScore = parseFloat(String((feedback as any).qualityScore))
+      console.log(`[Monitor] MOS for ${call.sid}: ${mosScore}`)
+    }
+  } catch (err) {
+    console.warn('[Monitor] Unable to fetch feedback for call', call.sid)
+  }
+
+  const badStatus = !['in-progress', 'completed'].includes(lastStatus)
+  const badMos = mosScore !== null && mosScore < MOS_THRESHOLD
+
+  if (badStatus || badMos) {
+    const reason = badStatus ? `status: ${lastStatus}` : `MOS ${mosScore}`
+    const alertText = `:rotating_light: Synthetic call alert for *${biz.name}* – ${reason}`
+    console.error(`[Monitor] ❌ ALERT: ${alertText}`)
+    postSlackAlert(alertText)
   }
 }
 

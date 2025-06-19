@@ -23,6 +23,7 @@ import { LeadQualifier } from '../core/leadQualifier';
 import { getPrimaryUrl } from '../utils/env';
 import { ElevenLabsStreamingClient } from './elevenlabsStreamingClient'
 import { formatForSpeech } from '../utils/ssml';
+import RedisManager from '../config/redis';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -93,6 +94,10 @@ interface ConnectionState {
   realtimeAudioTimer?: NodeJS.Timeout | null;
   /** last assistant text received (for TTS fallback) */
   lastAssistantText?: string;
+  /** --- NEW: barge-in handling --- */
+  bargeInDetected?: boolean;
+  /** Remaining speech buffer that was interrupted */
+  pendingSpeechBuffer?: Buffer | null;
 }
 
 interface AgentSession {
@@ -239,6 +244,9 @@ async function cleanupTempFile(filePath: string): Promise<void> {
   }
 }
 
+// Add conversational fillers to enhance naturalness of the assistant tone.
+const FILLER_INSTRUCTIONS = '\nWhen responding, occasionally use natural fillers such as "Got it.", "Perfect.", "Let me check that for you…", or "Absolutely." to sound conversational.'
+
 /**
  * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
  * Handles real-time bidirectional voice conversations with lead capture integration
@@ -331,7 +339,9 @@ class RealtimeAgentService {
       idlePromptCount: 0,
       idlePromptTimer: null,
       callStartTime: Date.now(),
-      hasUserTranscript: false
+      hasUserTranscript: false,
+      bargeInDetected: false,
+      pendingSpeechBuffer: null
     };
 
     // Try to identify client if phone number is available
@@ -604,7 +614,7 @@ class RealtimeAgentService {
             
             state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
             state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
-            state.personaPrompt = cfg.personaPrompt
+            state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
             state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
             
             console.log(`[REALTIME AGENT] Voice config loaded: ${state.ttsProvider} with voice ${state.openaiVoice}`)
@@ -727,11 +737,18 @@ class RealtimeAgentService {
       const ulawBuffer = await fs.promises.readFile(ulawPath)
       const CHUNK_SIZE = 320 // 40ms of audio at 8kHz µ-law
 
-      // Stream audio in real-time with proper pacing
+      // Stream audio in real-time with proper pacing & barge-in support
       for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
+        // If caller barged-in, pause playback and queue remaining audio
+        if (state.bargeInDetected) {
+          state.pendingSpeechBuffer = ulawBuffer.subarray(offset)
+          console.log('[REALTIME AGENT] Playback paused – remaining audio queued for later')
+          break
+        }
+
         const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE)
         const payload = chunk.toString('base64')
-        
+
         if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
           state.ws.send(JSON.stringify({
             event: 'media',
@@ -742,13 +759,13 @@ class RealtimeAgentService {
           console.warn('[REALTIME AGENT] WebSocket not ready, stopping audio stream')
           break
         }
-        
+
         // Precise timing for natural speech
         await new Promise((resolve) => setTimeout(resolve, 40))
       }
 
-      // Signal end of message
-      if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+      // Signal end of message only if we finished playback fully
+      if (!state.bargeInDetected && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
         state.ws.send(JSON.stringify({ 
           event: 'mark', 
           streamSid: state.streamSid, 
@@ -1082,6 +1099,17 @@ class RealtimeAgentService {
       // Reset processing state
       state.isProcessing = false
       state.audioQueue = [] // Ensure queue is clear
+
+      // Resume any interrupted speech if conditions allow
+      if (!state.isSpeaking && state.pendingSpeechBuffer && state.pendingSpeechBuffer.length > 0) {
+        try {
+          await this._playBufferedAudio(state, state.pendingSpeechBuffer)
+          state.pendingSpeechBuffer = null
+          state.bargeInDetected = false
+        } catch (err) {
+          console.error('[REALTIME AGENT] Failed to resume queued speech:', err)
+        }
+      }
     }
   }
 
@@ -1382,6 +1410,23 @@ class RealtimeAgentService {
   private async loadAgentConfig(state: ConnectionState): Promise<void> {
     if (!state.businessId || state.__configLoaded) return
 
+    // --- Attempt Redis cache for persona prompt ---
+    try {
+      const redis = RedisManager.getInstance()
+      if (!redis.isClientConnected()) {
+        await redis.connect().catch(() => {})
+      }
+      if (redis.isClientConnected()) {
+        const key = `persona:${state.businessId}`
+        const cachedPersona = await redis.getClient().get(key)
+        if (cachedPersona) {
+          state.personaPrompt = cachedPersona + FILLER_INSTRUCTIONS
+        }
+      }
+    } catch (err) {
+      console.warn('[RealtimeAgent] Redis persona cache unavailable', (err as Error).message)
+    }
+
     // --- Global override for ops ---
     const forcedProvider = process.env.AGENT_FORCE_TTS?.toLowerCase() as 'openai' | 'polly' | 'realtime' | 'elevenlabs' | undefined
     if (forcedProvider && ['openai', 'polly', 'realtime', 'elevenlabs'].includes(forcedProvider)) {
@@ -1428,8 +1473,19 @@ class RealtimeAgentService {
         if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
         state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
         state.openaiModel = cfg.openaiModel || 'tts-1'
-        state.personaPrompt = cfg.personaPrompt
+        state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
         state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
+
+        // Persist persona prompt to Redis cache for 1 hour
+        try {
+          const redis = RedisManager.getInstance()
+          if (!redis.isClientConnected()) await redis.connect().catch(() => {})
+          if (redis.isClientConnected() && state.personaPrompt) {
+            await redis.getClient().setEx(`persona:${state.businessId}`, 3600, cfg.personaPrompt || '')
+          }
+        } catch (err) {
+          console.warn('[RealtimeAgent] Failed to store persona in Redis', (err as Error).message)
+        }
 
         // Cache it
         voiceConfigCache.set(state.businessId, {
@@ -1729,13 +1785,39 @@ class RealtimeAgentService {
         const mediaPayload = (payload as any).media?.payload as string | undefined
         if (!mediaPayload) return
 
-        // Skip processing if we're currently speaking to prevent interruption
-        if (state.isSpeaking || state.pendingAudioGeneration) {
+        // Decode payload early for energy calculations
+        const buf = Buffer.from(mediaPayload, 'base64')
+
+        // ----------------------------------
+        //  Barge-in detection: if caller speaks
+        //  while agent is still playing audio
+        // ----------------------------------
+        if (state.isSpeaking && !state.bargeInDetected) {
+          // Rough energy check on µ-law / PCM stream to avoid false positives
+          let energySum = 0
+          if (buf.length % 2 === 0) {
+            for (let i = 0; i < buf.length; i += 2) {
+              energySum += Math.abs(buf.readInt16LE(i))
+            }
+            energySum = energySum / (buf.length / 2) / 256
+          } else {
+            for (let i = 0; i < buf.length; i++) energySum += Math.abs(buf[i] - 128)
+            energySum = energySum / buf.length
+          }
+
+          if (energySum > (state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD)) {
+            console.log('[REALTIME AGENT] Barge-in detected – pausing playback')
+            state.bargeInDetected = true
+          }
+        }
+
+        // Skip processing if currently speaking *and* no barge-in detected
+        if ((state.isSpeaking && !state.bargeInDetected) || state.pendingAudioGeneration) {
           return
         }
 
         // --- Audio pre-processing for VAD & fallback pipeline ---
-        const buf = Buffer.from(mediaPayload, 'base64')
+        // buf already decoded above
 
         // Determine if payload is 16-bit Linear PCM (even length → 2-byte samples)
         const isLinear16 = buf.length % 2 === 0
@@ -2000,6 +2082,45 @@ class RealtimeAgentService {
         console.error('[REALTIME AGENT] Fallback TTS also failed:', err)
       }
     }, 3500)
+  }
+
+  /** Plays a raw µ-law audio buffer to the caller in real-time (used for resuming after barge-in). */
+  private async _playBufferedAudio(state: ConnectionState, buffer: Buffer): Promise<void> {
+    if (!state.streamSid || buffer.length === 0) return
+
+    const CHUNK_SIZE = 320 // 40 ms
+    state.isSpeaking = true
+
+    for (let offset = 0; offset < buffer.length; offset += CHUNK_SIZE) {
+      // Allow nested barge-in while resuming too
+      if (state.bargeInDetected) {
+        // Keep the *new* remaining audio in queue (overwrite) and exit
+        state.pendingSpeechBuffer = buffer.subarray(offset)
+        console.log('[REALTIME AGENT] Playback paused again due to barge-in')
+        break
+      }
+
+      const chunk = buffer.subarray(offset, offset + CHUNK_SIZE)
+      const payload = chunk.toString('base64')
+      if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+        state.ws.send(JSON.stringify({
+          event: 'media',
+          streamSid: state.streamSid,
+          media: { payload }
+        }))
+      } else {
+        console.warn('[REALTIME AGENT] WebSocket not ready – stop buffered playback')
+        break
+      }
+      await new Promise((r) => setTimeout(r, 40))
+    }
+
+    // Playback done
+    if (!state.bargeInDetected && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+      state.ws.send(JSON.stringify({ event: 'mark', streamSid: state.streamSid, mark: { name: 'speech_complete' } }))
+    }
+
+    state.isSpeaking = false
   }
 }
 
