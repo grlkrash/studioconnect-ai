@@ -18,6 +18,7 @@ import {
 import { Plug, CheckCircle, AlertCircle, Settings, ExternalLink } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // --- Static meta for each provider – merge with live backend status ---
 const PROVIDERS_META = {
@@ -63,6 +64,8 @@ interface UiIntegration {
   features: string[]
   status: "connected" | "pending" | "available"
   lastSync: string
+  lastSyncRaw: Date | null
+  diffHrs: number
   isEnabled: boolean
   error?: boolean
 }
@@ -111,7 +114,9 @@ export default function IntegrationsPage() {
         const meta = PROVIDERS_META[key]
 
         let status: UiIntegration["status"] = "available"
-        let lastSync = "Not connected"
+        let lastSync = "Never"
+        let lastSyncRaw: Date | null = null
+        let diffHrs = Infinity
         let isEnabled = false
         let error = false
 
@@ -120,7 +125,11 @@ export default function IntegrationsPage() {
           else if (rec.syncStatus === "ERROR") { status = "pending"; error = true }
           else status = "pending"
 
-          lastSync = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : "Unknown"
+          if (rec.updatedAt) {
+            lastSyncRaw = new Date(rec.updatedAt)
+            diffHrs = (Date.now() - lastSyncRaw.getTime()) / 36e5
+            lastSync = lastSyncRaw.toLocaleString()
+          }
           isEnabled = rec.isEnabled
         }
 
@@ -134,6 +143,8 @@ export default function IntegrationsPage() {
           features: meta.features,
           status,
           lastSync,
+          lastSyncRaw,
+          diffHrs,
           isEnabled,
           error,
         }
@@ -211,6 +222,13 @@ export default function IntegrationsPage() {
   const connectedIntegrations = integrations.filter((i) => i.status === "connected").length
   const pendingIntegrations = integrations.filter((i) => i.status === "pending").length
 
+  const getSyncColor = (intg: UiIntegration) => {
+    if (intg.error) return "text-red-600"
+    if (intg.diffHrs < 12) return "text-green-600"
+    if (intg.diffHrs < 48) return "text-yellow-600"
+    return "text-red-600"
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -277,125 +295,139 @@ export default function IntegrationsPage() {
         </div>
 
         {/* Integrations Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {integrations.map((integration) => (
-            <Card key={integration.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="text-2xl">{integration.icon}</div>
-                    <div>
-                      <CardTitle className="text-lg">{integration.name}</CardTitle>
-                      <CardDescription className="text-sm">{integration.category}</CardDescription>
+        <TooltipProvider delayDuration={0}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {integrations.map((integration) => (
+              <Card key={integration.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="text-2xl">{integration.icon}</div>
+                      <div>
+                        <CardTitle className="text-lg">{integration.name}</CardTitle>
+                        <CardDescription className="text-sm">{integration.category}</CardDescription>
+                      </div>
                     </div>
+                    {getStatusBadge(integration.status)}
                   </div>
-                  {getStatusBadge(integration.status)}
-                </div>
-                <p className="text-sm text-slate-600 mt-2">{integration.description}</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-slate-900">Features</h4>
-                  <ul className="text-xs text-slate-600 space-y-1">
-                    {integration.features.map((feature, index) => (
-                      <li key={index} className="flex items-center">
-                        <div className="w-1 h-1 bg-slate-400 rounded-full mr-2"></div>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {integration.status === "connected" && (
-                  <div className="space-y-3 pt-2 border-t">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-600">Enable notifications</span>
-                      <Switch checked={integration.isEnabled} onCheckedChange={(v) => handleToggleEnabled(integration.provider, v)} />
-                    </div>
-                    <div className="text-xs text-slate-500">Last sync: {integration.lastSync}</div>
+                  <p className="text-sm text-slate-600 mt-2">{integration.description}</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-slate-900">Features</h4>
+                    <ul className="text-xs text-slate-600 space-y-1">
+                      {integration.features.map((feature, index) => (
+                        <li key={index} className="flex items-center">
+                          <div className="w-1 h-1 bg-slate-400 rounded-full mr-2"></div>
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                )}
 
-                <div className="flex gap-2 pt-2">
-                  {integration.status === "connected" ? (
-                    <>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <Settings className="w-4 h-4 mr-1" />
-                            Configure
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Configure {integration.name}</DialogTitle>
-                            <DialogDescription>Manage your {integration.name} integration settings</DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <Label>API Token</Label>
-                              <Input type="password" placeholder="••••••••••••••••" />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Sync Frequency</Label>
-                              <select className="w-full p-2 border border-slate-200 rounded-md">
-                                <option>Every 15 minutes</option>
-                                <option>Every 30 minutes</option>
-                                <option>Every hour</option>
-                                <option>Every 4 hours</option>
-                              </select>
-                            </div>
-                            <div className="flex justify-end space-x-2">
-                              <Button variant="outline" onClick={() => handleTestConnection(integration.provider)}>Test Connection</Button>
-                              <Button onClick={() => handleSyncNow(integration.provider)}>Sync Now</Button>
-                              <Button>Save Changes</Button>
-                            </div>
+                  {integration.status === "connected" && (
+                    <div className="space-y-3 pt-2 border-t">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Enable notifications</span>
+                        <Switch checked={integration.isEnabled} onCheckedChange={(v) => handleToggleEnabled(integration.provider, v)} />
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" className={`text-xs font-medium ${getSyncColor(integration)} underline-offset-2 hover:underline`} onClick={() => handleSyncNow(integration.provider)}>
+                            Last sync: {integration.lastSync}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="flex items-center gap-2">
+                            <span>{integration.lastSyncRaw ? integration.lastSyncRaw.toLocaleString() : 'Never'}</span>
+                            <Button size="sm" onClick={() => handleSyncNow(integration.provider)}>Manual Sync</Button>
                           </div>
-                        </DialogContent>
-                      </Dialog>
-                      <Button variant="destructive" size="sm" onClick={() => handleDisconnect(integration.provider)}>
-                        Disconnect
-                      </Button>
-                    </>
-                  ) : integration.status === "pending" ? (
-                    <>
-                      {integration.provider === "MONDAY" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
-                          Connect
-                        </Button>
-                      ) : integration.provider === "JIRA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
-                          Connect
-                        </Button>
-                      ) : integration.provider === "ASANA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
-                          Connect
-                        </Button>
-                      ) : null}
-                    </>
-                  ) : (
-                    // AVAILABLE STATE
-                    <>
-                      {integration.provider === "MONDAY" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
-                          Connect
-                        </Button>
-                      ) : integration.provider === "JIRA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
-                          Connect
-                        </Button>
-                      ) : integration.provider === "ASANA" ? (
-                        <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
-                          Connect
-                        </Button>
-                      ) : null}
-                    </>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+
+                  <div className="flex gap-2 pt-2">
+                    {integration.status === "connected" ? (
+                      <>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="flex-1">
+                              <Settings className="w-4 h-4 mr-1" />
+                              Configure
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Configure {integration.name}</DialogTitle>
+                              <DialogDescription>Manage your {integration.name} integration settings</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <Label>API Token</Label>
+                                <Input type="password" placeholder="••••••••••••••••" />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Sync Frequency</Label>
+                                <select className="w-full p-2 border border-slate-200 rounded-md">
+                                  <option>Every 15 minutes</option>
+                                  <option>Every 30 minutes</option>
+                                  <option>Every hour</option>
+                                  <option>Every 4 hours</option>
+                                </select>
+                              </div>
+                              <div className="flex justify-end space-x-2">
+                                <Button variant="outline" onClick={() => handleTestConnection(integration.provider)}>Test Connection</Button>
+                                <Button onClick={() => handleSyncNow(integration.provider)}>Sync Now</Button>
+                                <Button>Save Changes</Button>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        <Button variant="destructive" size="sm" onClick={() => handleDisconnect(integration.provider)}>
+                          Disconnect
+                        </Button>
+                      </>
+                    ) : integration.status === "pending" ? (
+                      <>
+                        {integration.provider === "MONDAY" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
+                            Connect
+                          </Button>
+                        ) : integration.provider === "JIRA" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
+                            Connect
+                          </Button>
+                        ) : integration.provider === "ASANA" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
+                            Connect
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : (
+                      // AVAILABLE STATE
+                      <>
+                        {integration.provider === "MONDAY" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
+                            Connect
+                          </Button>
+                        ) : integration.provider === "JIRA" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
+                            Connect
+                          </Button>
+                        ) : integration.provider === "ASANA" ? (
+                          <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
+                            Connect
+                          </Button>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TooltipProvider>
 
         {/* Help Section */}
         <Card>

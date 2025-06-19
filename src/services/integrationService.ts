@@ -126,6 +126,34 @@ class IntegrationService {
       where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
       data: { isEnabled, updatedAt: new Date() },
     }).catch(() => {/* ignore if row missing */})
+
+    // Enterprise-only: fire Slack / Teams webhook notification when enabling
+    if (isEnabled) {
+      try {
+        const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { name: true, planTier: true } })
+        if (biz?.planTier === 'ENTERPRISE') {
+          const text = `${biz.name} enabled ${providerKey.toUpperCase()} notifications`
+
+          if (process.env.SLACK_WEBHOOK_URL) {
+            await fetch(process.env.SLACK_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            }).catch(() => {})
+          }
+
+          if (process.env.TEAMS_WEBHOOK_URL) {
+            await fetch(process.env.TEAMS_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            }).catch(() => {})
+          }
+        }
+      } catch (err) {
+        console.warn('[IntegrationService] webhook notify failed:', (err as Error).message)
+      }
+    }
   }
 
   /** Performs a lightweight check to verify stored credentials are still valid */
