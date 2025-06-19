@@ -302,7 +302,8 @@ class RealtimeAgentService {
       lastActivity: Date.now(),
       toNumber: null,
       ttsProvider: 'elevenlabs',
-      openaiVoice: (process.env.ELEVENLABS_VOICE_ID || 'josh').toLowerCase(),
+      // Preserve exact casing for ElevenLabs voice IDs; fallback to "Josh" if not provided.
+      openaiVoice: process.env.ELEVENLABS_VOICE_ID || 'Josh',
       openaiModel: 'tts-1',
       personaPrompt: undefined,
       lastSpeechMs: Date.now(),
@@ -352,6 +353,8 @@ class RealtimeAgentService {
           const welcomeMessage = await this.getWelcomeMessage(state)
           await this.streamTTS(state, welcomeMessage)
           state.welcomeMessageDelivered = true
+          // Kick off ElevenLabs streaming STT for high-accuracy live transcription once the greeting is finished
+          await this.initializeElevenLabsSTT(state)
         }
       } catch (error) {
         console.error('[REALTIME AGENT] Error sending welcome message:', error)
@@ -481,6 +484,10 @@ class RealtimeAgentService {
         if (state.openaiClient) {
           try { state.openaiClient.close() } catch {}
         }
+        // Close ElevenLabs STT client if active
+        if (state.sttClient) {
+          try { state.sttClient.close() } catch {}
+        }
         this.connections.delete(this.callSid);
         console.log(`[REALTIME AGENT] Cleaned up connection for call ${this.callSid}: ${reason}`);
       }
@@ -585,7 +592,7 @@ class RealtimeAgentService {
             // Default to ElevenLabs for premium quality
             if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
             
-            state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
+            state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
             state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
             state.personaPrompt = cfg.personaPrompt
             state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
@@ -622,7 +629,8 @@ class RealtimeAgentService {
       if (state.ttsProvider === 'elevenlabs') {
         // ElevenLabs expects a valid voice ID (usually a UUID). If the configured voice
         // does not resemble an ID, fall back to the default voice or env-configured ID.
-        const voiceLooksValid = /^[a-f0-9]{20,}$/i.test(state.openaiVoice)
+        // Accept wider character set for ElevenLabs voice IDs (mixed-case, underscore, hyphen)
+        const voiceLooksValid = /^[a-zA-Z0-9_-]{20,}$/.test(state.openaiVoice)
         if (!voiceLooksValid) {
           const fallbackVoice = (process.env.ELEVENLABS_VOICE_ID || 'Rachel').toLowerCase()
           console.warn(`[REALTIME AGENT] Invalid ElevenLabs voice "${state.openaiVoice}", using fallback "${fallbackVoice}"`)
@@ -1399,7 +1407,7 @@ class RealtimeAgentService {
           state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
         }
         if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
-        state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase()
+        state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
         state.openaiModel = cfg.openaiModel || 'tts-1'
         state.personaPrompt = cfg.personaPrompt
         state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
@@ -1910,6 +1918,29 @@ class RealtimeAgentService {
       }
     } catch (err) {
       console.error('[STT] processing error', err)
+    }
+  }
+
+  private async initializeElevenLabsSTT(state: ConnectionState): Promise<void> {
+    if (state.sttClient || !process.env.ELEVENLABS_API_KEY) return
+
+    try {
+      const client = new ElevenLabsStreamingClient({ apiKey: process.env.ELEVENLABS_API_KEY })
+      await client.connect()
+      client.on('transcript', async (text: string) => {
+        try {
+          await this._handleTranscript(state, text)
+        } catch (err) {
+          console.error('[REALTIME AGENT] Error handling ElevenLabs transcript:', err)
+        }
+      })
+      client.on('close', () => {
+        state.sttClient = undefined
+      })
+      state.sttClient = client
+      console.log('[REALTIME AGENT] ElevenLabs Streaming STT client connected')
+    } catch (err) {
+      console.error('[REALTIME AGENT] Failed to initialise ElevenLabs STT client:', err)
     }
   }
 }

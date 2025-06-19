@@ -36,20 +36,31 @@ export async function generateSpeechWithElevenLabs(
     return null
   }
 
-  const finalVoice = (voiceId || process.env.ELEVENLABS_VOICE_ID || 'Josh').toLowerCase()
+  // ------------------------------------------------------------------
+  //  Determine whether the provided value is already a **voice ID** or
+  //  a **friendly name** (e.g. "Josh", "Rachel").  A voice ID can now
+  //  contain mixed-case alphanumerics as well as dashes/underscores and
+  //  is typically 20+ characters long (e.g. "kdmDKE6EkgrWrrykO9Qt").
+  // ------------------------------------------------------------------
+
+  const rawVoice = voiceId || process.env.ELEVENLABS_VOICE_ID || 'Josh'
+
+  // Broadened regex: allow letters **beyond** hex as well as hyphens/underscores.
+  const voiceIdPattern = /^[a-zA-Z0-9_-]{20,}$/
+  const looksLikeVoiceId = voiceIdPattern.test(rawVoice)
+
+  // Preserve original casing for IDs — ElevenLabs IDs are case-sensitive.
+  const finalVoice = looksLikeVoiceId ? rawVoice : rawVoice.toLowerCase()
 
   // ----------------------------------------------------------------------------------
-  //  ElevenLabs expects a voice *ID* (UUID-like).  Many configs still use the friendly
-  //  voice *name* (e.g. "Josh", "Rachel").  When the supplied value doesn't look like
-  //  a UUID we transparently resolve it to an ID via the /v1/voices endpoint once and
-  //  cache the mapping for the lifetime of the process.
+  //  If the caller supplied a friendly name we resolve it to the
+  //  corresponding voice ID once and cache the mapping.
   // ----------------------------------------------------------------------------------
 
-  const looksLikeVoiceId = /^[a-f0-9]{20,}$/i.test(finalVoice)
   let voiceIdForRequest = finalVoice
 
   if (!looksLikeVoiceId) {
-    // Simple in-memory cache
+    // Simple in-memory cache so we only hit the /voices endpoint once per process
     const cache: Record<string, string> = (global as any).__scaiVoiceCache ?? {}
     if (!(global as any).__scaiVoiceCache) (global as any).__scaiVoiceCache = cache
 
@@ -61,14 +72,14 @@ export async function generateSpeechWithElevenLabs(
           headers: { 'xi-api-key': apiKey },
           timeout: 10000,
         })
-        const match = (data?.voices || []).find((v: any) => v.name.toLowerCase() === finalVoice)
+        const match = (data?.voices || []).find((v: any) => v.name.toLowerCase() === finalVoice.toLowerCase())
         if (match?.voice_id) {
           cache[finalVoice] = match.voice_id
           voiceIdForRequest = match.voice_id
           console.log(`[ElevenLabs] Resolved voice "${finalVoice}" → ${voiceIdForRequest}`)
         } else {
           console.warn(`[ElevenLabs] Voice name "${finalVoice}" not found – using default voice ID`)
-          voiceIdForRequest = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' // Rachel
+          voiceIdForRequest = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'
         }
       } catch (err) {
         console.error('[ElevenLabs] Voice list fetch failed – falling back to default voice ID', err instanceof Error ? err.message : err)
