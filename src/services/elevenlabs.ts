@@ -22,6 +22,7 @@ export async function generateSpeechWithElevenLabs(
   voiceSettings?: {
     stability?: number
     similarity?: number
+    similarity_boost?: number
     style?: number
     use_speaker_boost?: boolean
     speed?: number
@@ -118,20 +119,22 @@ export async function generateSpeechWithElevenLabs(
       model_id: modelId,
       voice_settings: {
         stability: voiceSettings?.stability ?? enterpriseDefaults.stability,
-        similarity_boost: voiceSettings?.similarity ?? enterpriseDefaults.similarity_boost,
+        similarity_boost: voiceSettings?.similarity_boost ?? voiceSettings?.similarity ?? enterpriseDefaults.similarity_boost,
         style: voiceSettings?.style ?? enterpriseDefaults.style,
         use_speaker_boost: voiceSettings?.use_speaker_boost ?? enterpriseDefaults.use_speaker_boost,
       }
     }
 
-    // Add enterprise-optimized speed
+    // Add enterprise-optimized speed if available
     if (voiceSettings?.speed !== undefined) {
       (requestBody.voice_settings as any).speed = voiceSettings.speed
-    } else if (enterpriseDefaults.speed !== undefined) {
-      (requestBody.voice_settings as any).speed = enterpriseDefaults.speed
     }
 
-    console.log(`[🎯 BULLETPROOF ELEVENLABS] 🚀 Generating Fortune 500 quality TTS with voice ${voiceIdForRequest} and model ${modelId}`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 🚀 Generating Fortune 500 quality TTS:`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 🎙️ Voice ID: ${voiceIdForRequest}`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 🔧 Model: ${modelId}`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 📊 Voice Settings:`, requestBody.voice_settings)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 📝 Text: "${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}"`)
 
     const response = await axios.post(url, requestBody, {
       headers: {
@@ -147,11 +150,11 @@ export async function generateSpeechWithElevenLabs(
     const targetPath = cachedPath || path.join(os.tmpdir(), `11labs_speech_${Date.now()}.mp3`)
     await fs.promises.writeFile(targetPath, buffer)
     
-    console.log(`[ElevenLabs] Successfully generated speech: ${targetPath}`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] ✅ Successfully generated Fortune 500 quality speech: ${targetPath} (${buffer.length} bytes)`)
     return targetPath
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      console.error('[ElevenLabs] API Error:', {
+      console.error('[🎯 BULLETPROOF ELEVENLABS] ❌ API Error:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: error.response?.data,
@@ -160,16 +163,26 @@ export async function generateSpeechWithElevenLabs(
         textLength: cleanText.length
       })
       
-      // Log specific error details for debugging
+      // Enhanced error handling with specific remediation advice
       if (error.response?.status === 400) {
-        console.error('[ElevenLabs] Bad Request - Check voice ID and model compatibility')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 🚫 Bad Request - Check voice ID and model compatibility')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Voice ID used:', voiceIdForRequest)
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Model used:', modelId)
       } else if (error.response?.status === 401) {
-        console.error('[ElevenLabs] Authentication failed - Check API key')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 🔐 Authentication failed - Check API key')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Please verify ELEVENLABS_API_KEY in environment variables')
+      } else if (error.response?.status === 403) {
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 🚫 Forbidden - API key may not have access to this voice')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Voice ID:', voiceIdForRequest)
       } else if (error.response?.status === 422) {
-        console.error('[ElevenLabs] Validation error - Check request parameters')
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 🔧 Validation error - Check request parameters')
+      } else if (error.response?.status === 429) {
+        console.error('[🎯 BULLETPROOF ELEVENLABS] ⏰ Rate limit exceeded - Too many requests')
+      } else if (error.response && error.response.status >= 500) {
+        console.error('[🎯 BULLETPROOF ELEVENLABS] 🏥 Server error - ElevenLabs service issue')
       }
     } else {
-      console.error('[ElevenLabs] Error generating speech:', error)
+      console.error('[🎯 BULLETPROOF ELEVENLABS] ❌ Error generating speech:', error)
     }
     return null
   }

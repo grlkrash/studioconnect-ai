@@ -582,23 +582,13 @@ class RealtimeAgentService {
         const agentName = agentConfig?.agentName || 'your AI Account Manager';
         
         // 🎯 PRIORITY 1: Use voice greeting message if configured and substantial
-        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 10) {
+        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 5) {
           welcomeMessage = agentConfig.voiceGreetingMessage.trim();
-          // Replace placeholders in the configured message
-          welcomeMessage = welcomeMessage
-            .replace(/\{businessName\}/gi, businessName)
-            .replace(/\{agentName\}/gi, agentName)
-            .replace(/\{business\}/gi, businessName);
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${welcomeMessage}"`);
         } 
-        // 🎯 PRIORITY 2: Use general welcome message if no voice greeting
-        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 10) {
+        // 🎯 PRIORITY 2: Use general welcome message if no voice greeting but it exists
+        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 5) {
           welcomeMessage = agentConfig.welcomeMessage.trim();
-          // Replace placeholders in the configured message
-          welcomeMessage = welcomeMessage
-            .replace(/\{businessName\}/gi, businessName)
-            .replace(/\{agentName\}/gi, agentName)
-            .replace(/\{business\}/gi, businessName);
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${welcomeMessage}"`);
         } 
         // 🎯 PRIORITY 3: Generate professional business-specific greeting
@@ -607,8 +597,11 @@ class RealtimeAgentService {
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using GENERATED professional business message for ${businessName}`);
         }
 
-        // Replace business name placeholders
-        welcomeMessage = welcomeMessage.replace(/\{businessName\}/gi, businessName);
+        // Replace business name placeholders if they exist
+        welcomeMessage = welcomeMessage
+          .replace(/\{businessName\}/gi, businessName)
+          .replace(/\{agentName\}/gi, agentName)
+          .replace(/\{business\}/gi, businessName);
 
         // Personalize for existing clients
         if (state.clientId) {
@@ -1061,7 +1054,7 @@ class RealtimeAgentService {
     let wavPath: string | null = null
 
     try {
-      console.log(`[REALTIME AGENT] Processing ${audioToProcess.length} audio chunks for transcription`)
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🚀 Processing ${audioToProcess.length} audio chunks for Fortune 500 quality transcription`)
 
       const rawBuffers = audioToProcess.map((b64) => Buffer.from(b64, 'base64'))
       const isLinear16 = state.isLinear16Recording ?? false
@@ -1073,11 +1066,12 @@ class RealtimeAgentService {
       const durationMs = rawData.length / bytesPerMs
 
       if (durationMs < MIN_DURATION_MS) {
-        console.log(`[REALTIME AGENT] Audio too short (${durationMs.toFixed(0)}ms), skipping transcription`)
+        console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Audio too short (${durationMs.toFixed(0)}ms), skipping transcription`)
+        state.isProcessing = false
         return
       }
 
-      console.log(`[REALTIME AGENT] Processing ${durationMs.toFixed(0)}ms of audio`)
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 📊 Processing ${durationMs.toFixed(0)}ms of audio (${rawData.length} bytes)`)
 
       const baseName = `${state.callSid || 'unknown'}_${Date.now()}`
       rawPath = path.join(os.tmpdir(), `${baseName}.ulaw`)
@@ -1088,84 +1082,115 @@ class RealtimeAgentService {
       // Enhanced audio conversion with noise reduction
       const inputFormat = isLinear16 ? 's16le' : 'mulaw'
       const inputRate = isLinear16 ? '16000' : '8000'
+      
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🔄 Converting ${inputFormat} audio to WAV...`)
+      
       await execFileAsync(ffmpegPath as string, [
         '-y',
         '-f', inputFormat,
         '-ar', inputRate,
         '-ac', '1',
         '-i', rawPath,
-        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.2',
+        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.5,dynaudnorm',
         '-ar', '16000',
         wavPath
       ])
 
-      console.log('[REALTIME AGENT] Starting professional transcription...')
+      // Verify WAV file was created and has content
+      if (!fs.existsSync(wavPath)) {
+        throw new Error('WAV file was not created by ffmpeg')
+      }
       
-      // 🎯 BULLETPROOF TRANSCRIPTION WITH PROPER FILE MANAGEMENT 🎯
+      const wavStats = await fs.promises.stat(wavPath)
+      if (wavStats.size < 1000) { // Less than 1KB is suspicious
+        throw new Error(`WAV file too small (${wavStats.size} bytes)`)
+      }
+      
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ WAV file created: ${wavStats.size} bytes`)
+
+      // 🎯 BULLETPROOF TRANSCRIPTION WITH COMPREHENSIVE ERROR HANDLING 🎯
       let transcriptRaw: string | null = null;
       let attempts = 0;
-      const maxAttempts = 3;
-
-      // Create multiple copies of the wav file for retry attempts
-      const wavPaths: string[] = [];
-      for (let i = 0; i < maxAttempts; i++) {
-        const retryWavPath = path.join(os.tmpdir(), `${baseName}_retry${i}.wav`);
-        await fs.promises.copyFile(wavPath, retryWavPath);
-        wavPaths.push(retryWavPath);
-      }
+      const maxAttempts = 5; // Increased attempts for reliability
 
       while (!transcriptRaw && attempts < maxAttempts) {
         attempts++;
-        console.log(`[REALTIME AGENT] Transcription attempt ${attempts}/${maxAttempts}`);
+        console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🔄 Transcription attempt ${attempts}/${maxAttempts}`);
         
         try {
-          const currentWavPath = wavPaths[attempts - 1];
-          // Use new transcription function without auto-deletion
-          transcriptRaw = await getTranscription(currentWavPath, false);
+          // Create a fresh copy for this attempt to avoid file locks
+          const attemptWavPath = path.join(os.tmpdir(), `${baseName}_attempt${attempts}.wav`);
+          await fs.promises.copyFile(wavPath, attemptWavPath);
           
-          if (transcriptRaw && transcriptRaw.trim() && transcriptRaw.trim() !== '...') {
-            console.log(`[REALTIME AGENT] ✅ Transcription SUCCESS on attempt ${attempts}: "${transcriptRaw.substring(0, 50)}..."`);
-            break;
+          console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 📡 Sending to Whisper... (attempt ${attempts})`);
+          
+          // Use the transcription service with explicit error handling
+          transcriptRaw = await getTranscription(attemptWavPath, false);
+          
+          // Clean up attempt file
+          await cleanupTempFile(attemptWavPath);
+          
+          if (transcriptRaw && transcriptRaw.trim() && transcriptRaw.trim() !== '...' && transcriptRaw.trim() !== '') {
+            // Additional validation for meaningful content
+            const words = transcriptRaw.trim().split(/\s+/);
+            if (words.length >= 1 && words[0].length >= 2) {
+              console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ SUCCESS on attempt ${attempts}: "${transcriptRaw.substring(0, 100)}..."`);
+              break;
+            } else {
+              console.warn(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Transcript too short or unclear on attempt ${attempts}: "${transcriptRaw}"`);
+              transcriptRaw = null; // Reset for retry
+            }
           } else {
-            console.warn(`[REALTIME AGENT] ⚠️ Empty or invalid transcription on attempt ${attempts}: "${transcriptRaw}"`);
+            console.warn(`[🎯 BULLETPROOF TRANSCRIPTION] ⚠️ Empty or invalid transcription on attempt ${attempts}: "${transcriptRaw}"`);
             transcriptRaw = null; // Reset for retry
           }
         } catch (transcriptError) {
-          console.error(`[REALTIME AGENT] ❌ Transcription attempt ${attempts} failed:`, transcriptError);
+          console.error(`[🎯 BULLETPROOF TRANSCRIPTION] ❌ Transcription attempt ${attempts} failed:`, transcriptError);
           
           if (attempts === maxAttempts) {
-            console.error(`[REALTIME AGENT] 🚨 ALL TRANSCRIPTION ATTEMPTS FAILED`);
-            // Send recovery message instead of failing silently
+            console.error(`[🎯 BULLETPROOF TRANSCRIPTION] 🚨 ALL TRANSCRIPTION ATTEMPTS FAILED - ACTIVATING RECOVERY`);
+            
+            // Send professional recovery message instead of failing silently
             try {
-              await this.streamEnterpriseQualityTTS(state, "I'm sorry, I didn't catch that clearly. Could you please repeat what you said?");
+              const recoveryMessages = [
+                "I apologize, I didn't catch that clearly. Could you please repeat what you said?",
+                "Sorry, there was some audio interference. Would you mind saying that again?",
+                "I'm having trouble hearing you clearly. Please repeat your message.",
+                "Let me ask you to speak a bit more clearly - how can I help you today?"
+              ];
+              const randomRecovery = recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
+              
+              await this.streamEnterpriseQualityTTS(state, randomRecovery);
+              console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ Recovery message delivered: "${randomRecovery}"`);
             } catch (recoveryError) {
-              console.error('[REALTIME AGENT] Recovery message also failed:', recoveryError);
+              console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 CRITICAL: Recovery message also failed:', recoveryError);
+              // Last resort - try to keep call alive
+              try {
+                await this.streamEnterpriseQualityTTS(state, "How may I help you?");
+              } catch (finalError) {
+                console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 FINAL FALLBACK FAILED:', finalError);
+              }
             }
             
-            // Clean up retry files
-            for (const retryPath of wavPaths) {
-              await cleanupTempFile(retryPath);
-            }
+            state.isProcessing = false;
             return;
           }
           
-          // Wait briefly before retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait briefly before retry with exponential backoff
+          const delay = Math.min(1000 * Math.pow(2, attempts - 1), 5000);
+          console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ⏳ Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
 
-      // Clean up retry files
-      for (const retryPath of wavPaths) {
-        await cleanupTempFile(retryPath);
-      }
-
       if (!transcriptRaw || transcriptRaw.trim().length === 0) {
-        console.log('[REALTIME AGENT] No transcription received after all attempts')
+        console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 CRITICAL: No transcription received after all attempts')
+        state.isProcessing = false;
         return
       }
 
       const transcript = transcriptRaw.trim()
-      console.log(`[REALTIME AGENT] ✅ FINAL TRANSCRIPT: "${transcript}"`)
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ FINAL TRANSCRIPT: "${transcript}"`)
 
       // -------------------- Deterministic Lead Qualification --------------------
       if (state.leadQualifier) {
@@ -1181,7 +1206,10 @@ class RealtimeAgentService {
           if (!finished) {
             // Ask next question
             state.currentMissingQuestionId = missingKey || undefined
-            if (nextPrompt) await this.streamTTS(state, nextPrompt)
+            if (nextPrompt) {
+              console.log(`[🎯 LEAD QUALIFICATION] 📝 Next question: "${nextPrompt}"`);
+              await this.streamTTS(state, nextPrompt)
+            }
             // Reset flags for next utterance
             state.isProcessing = false
             return
@@ -1266,7 +1294,7 @@ class RealtimeAgentService {
 
               await this.streamTTS(state, 'Thanks for those details! Someone from our team will reach out shortly. How else can I assist you today?')
             } catch (err) {
-              console.error('[REALTIME AGENT] Failed to process lead qualification completion:', err)
+              console.error('[🎯 LEAD QUALIFICATION] ❌ Failed to process lead qualification completion:', err)
             }
 
             // Clear qualifier and continue normal flow
@@ -1276,7 +1304,7 @@ class RealtimeAgentService {
             // Continue to AI processing if user said something else
           }
         } catch (err) {
-          console.error('[REALTIME AGENT] Lead qualification error:', err)
+          console.error('[🎯 LEAD QUALIFICATION] ❌ Lead qualification error:', err)
         }
       }
 
@@ -1323,13 +1351,14 @@ class RealtimeAgentService {
       )
 
       if (!isValid) {
-        console.log(`[🎯 BULLETPROOF FILTER] Eliminated phantom transcription: "${transcript}" (VAD false positive - Fortune 500 quality maintained)`)
+        console.log(`[🎯 BULLETPROOF FILTER] ⚠️ Eliminated phantom transcription: "${transcript}" (${words.length} words) - maintaining Fortune 500 quality`)
+        state.isProcessing = false
         return
       }
 
       const callSid = state.callSid ?? 'UNKNOWN_CALLSID'
 
-      console.log('[REALTIME AGENT] Processing message with AI handler...')
+      console.log('[🎯 AI PROCESSING] 🧠 Processing message with AI handler...')
       // 🎯 TRACK RESPONSE TIME FOR FORTUNE 50 GUARANTEE 🎯
       const responseStartTime = Date.now();
       
@@ -1347,6 +1376,8 @@ class RealtimeAgentService {
       if (callSid) {
         voiceHealthMonitor.trackResponseTime(callSid, responseTime);
       }
+
+      console.log(`[🎯 AI PROCESSING] ✅ AI Response generated in ${responseTime}ms: "${response.reply?.substring(0, 100) || 'No reply'}..."`);
 
       // Update conversation history
       this.addToConversationHistory(state, 'user', transcript)
@@ -1366,13 +1397,16 @@ class RealtimeAgentService {
       }
 
       if (response.reply) {
-        console.log(`[REALTIME AGENT] AI Response: "${response.reply.substring(0, 100)}..."`)
+        console.log(`[🎯 AI PROCESSING] 🗣️ Delivering AI response via TTS: "${response.reply.substring(0, 100)}..."`)
         await this.streamTTS(state, response.reply)
+      } else {
+        console.warn(`[🎯 AI PROCESSING] ⚠️ No reply generated from AI - sending fallback response`)
+        await this.streamTTS(state, "I understand. How else can I help you with your creative projects today?")
       }
 
       // Handle escalation request (warm transfer)
       if (response.nextAction === 'TRANSFER') {
-        console.log('[REALTIME AGENT] AI requested live escalation – initiating warm transfer')
+        console.log('[🎯 AI PROCESSING] 📞 AI requested live escalation – initiating warm transfer')
         // Use business notification phone if available
         let targetNum: string | undefined
         if (state.businessId) {
@@ -1381,12 +1415,12 @@ class RealtimeAgentService {
         }
         this.escalateToHuman(state, targetNum)
       } else if (response.nextAction === 'VOICEMAIL') {
-        console.log('[REALTIME AGENT] AI requested voicemail – redirecting caller')
+        console.log('[🎯 AI PROCESSING] 📧 AI requested voicemail – redirecting caller')
         this.sendToVoicemail(state)
       }
 
     } catch (error) {
-      console.error('[REALTIME AGENT] Critical error in audio processing pipeline:', error)
+      console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 CRITICAL ERROR in audio processing pipeline:', error)
       
       // 🎯 TRACK ERROR RECOVERY TIME 🎯
       const recoveryStartTime = Date.now();
@@ -1396,6 +1430,7 @@ class RealtimeAgentService {
       const randomMessage = enterpriseErrors.RECOVERY[Math.floor(Math.random() * enterpriseErrors.RECOVERY.length)]
       
       try {
+        console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🛡️ ACTIVATING ENTERPRISE ERROR RECOVERY: "${randomMessage}"`);
         await this.streamEnterpriseQualityTTS(state, randomMessage) // Use enterprise TTS for recovery
         
         // 🎯 TRACK SUCCESSFUL ERROR RECOVERY 🎯
@@ -1403,13 +1438,22 @@ class RealtimeAgentService {
         if (state.callSid) {
           voiceHealthMonitor.trackErrorRecovery(state.callSid, recoveryTime);
         }
+        console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ Enterprise recovery completed in ${recoveryTime}ms`);
       } catch (fallbackError) {
-        console.error('[🎯 BULLETPROOF RECOVERY] Even enterprise error recovery failed:', fallbackError)
+        console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 Enterprise error recovery also failed:', fallbackError)
         
         // 🎯 TRACK FAILED ERROR RECOVERY 🎯
         const recoveryTime = Date.now() - recoveryStartTime;
         if (state.callSid) {
           voiceHealthMonitor.trackErrorRecovery(state.callSid, recoveryTime);
+        }
+        
+        // Absolute last resort
+        try {
+          await this.streamEnterpriseQualityTTS(state, "I apologize for the technical difficulty. How may I assist you?");
+          console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ Final fallback message delivered`);
+        } catch (finalError) {
+          console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 FINAL FALLBACK ALSO FAILED:', finalError);
         }
       }
       
@@ -1429,9 +1473,11 @@ class RealtimeAgentService {
           state.pendingSpeechBuffer = null
           state.bargeInDetected = false
         } catch (err) {
-          console.error('[REALTIME AGENT] Failed to resume queued speech:', err)
+          console.error('[🎯 BULLETPROOF TRANSCRIPTION] ❌ Failed to resume queued speech:', err)
         }
       }
+      
+      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🏁 Processing complete, state reset`)
     }
   }
 
