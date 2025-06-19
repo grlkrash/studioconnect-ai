@@ -193,6 +193,21 @@ export default function IntegrationsPage() {
     }
   }
 
+  const handleToggleEnabled = async (prov: ProviderKey, enabled: boolean) => {
+    try {
+      const res = await fetch(`/api/integrations/${prov.toLowerCase()}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isEnabled: enabled }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: `${PROVIDERS_META[prov].name} ${enabled ? 'enabled' : 'disabled'}` })
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: 'Update failed', description: err.message, variant: 'destructive' })
+    }
+  }
+
   const connectedIntegrations = integrations.filter((i) => i.status === "connected").length
   const pendingIntegrations = integrations.filter((i) => i.status === "pending").length
 
@@ -295,7 +310,7 @@ export default function IntegrationsPage() {
                   <div className="space-y-3 pt-2 border-t">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-slate-600">Enable notifications</span>
-                      <Switch checked={integration.isEnabled} />
+                      <Switch checked={integration.isEnabled} onCheckedChange={(v) => handleToggleEnabled(integration.provider, v)} />
                     </div>
                     <div className="text-xs text-slate-500">Last sync: {integration.lastSync}</div>
                   </div>

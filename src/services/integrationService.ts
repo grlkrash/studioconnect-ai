@@ -112,13 +112,20 @@ class IntegrationService {
     await prisma.integration.update({
       where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
       data: {
-        lastSyncedAt: new Date(),
         syncStatus: 'CONNECTED',
         updatedAt: new Date(),
       },
     }).catch(() => {/* ignore if row missing */})
 
     return result
+  }
+
+  /** Enable / disable a provider for the business (dashboard toggle) */
+  async setEnabled (businessId: string, providerKey: string, isEnabled: boolean): Promise<void> {
+    await prisma.integration.update({
+      where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
+      data: { isEnabled, updatedAt: new Date() },
+    }).catch(() => {/* ignore if row missing */})
   }
 
   /** Performs a lightweight check to verify stored credentials are still valid */
@@ -128,7 +135,7 @@ class IntegrationService {
     })
     if (!integration?.credentials) throw new Error('Provider not connected')
     const provider = this.getProvider(providerKey)
-    return provider.connect({ ...integration.credentials, businessId })
+    return provider.connect({ ...(integration.credentials as any), businessId })
   }
 }
 

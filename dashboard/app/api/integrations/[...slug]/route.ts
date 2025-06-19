@@ -45,4 +45,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug?: st
 export async function PUT(req: NextRequest, { params }: { params: { slug?: string[] } }) {
   const subPath = params.slug ? '/' + params.slug.join('/') : ''
   return proxy(req, subPath)
+}
+export async function PATCH(req: NextRequest, { params }: { params: { slug?: string[] } }) {
+  const subPath = params.slug ? '/' + params.slug.join('/') : ''
+  return proxy(req, subPath)
 } 

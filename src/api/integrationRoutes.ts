@@ -328,4 +328,22 @@ router.post('/:provider/test', authMiddleware, async (req: Request, res: Respons
   }
 })
 
+// Enable / disable provider notifications
+router.patch('/:provider', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' })
+    const provider = req.params.provider
+    const { isEnabled } = req.body as { isEnabled?: boolean }
+    if (typeof isEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'isEnabled boolean required in body' })
+    }
+
+    await integrationService.setEnabled(req.user.businessId, provider, isEnabled)
+    res.json({ status: 'ok', isEnabled })
+  } catch (err: any) {
+    console.error('[integrationRoutes] setEnabled error:', err)
+    res.status(500).json({ error: err.message || 'Update failed' })
+  }
+})
+
 export default router 
