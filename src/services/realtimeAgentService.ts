@@ -85,6 +85,7 @@ interface ConnectionState {
   currentMissingQuestionId?: string;
   qualQuestionMap?: Record<string, { questionText: string; mapsToLeadField?: string }>
   sttClient?: ElevenLabsStreamingClient;
+  voiceSettings?: any;
 }
 
 interface AgentSession {
@@ -560,7 +561,8 @@ class RealtimeAgentService {
        */
       if (state.businessId && !state.__configLoaded) {
         try {
-          const cfg = await prisma.agentConfig.findUnique({
+          // @ts-ignore – voiceSettings is a JSON column not yet in generated types
+          const cfg: any = await prisma.agentConfig.findUnique({
             where: { businessId: state.businessId },
             select: {
               useOpenaiTts: true,
@@ -568,7 +570,8 @@ class RealtimeAgentService {
               openaiModel: true,
               personaPrompt: true,
               ttsProvider: true,
-            },
+              voiceSettings: true,
+            } as any,
           })
 
           if (cfg) {
@@ -585,6 +588,7 @@ class RealtimeAgentService {
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
             state.personaPrompt = cfg.personaPrompt
+            state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
             
             console.log(`[REALTIME AGENT] Voice config loaded: ${state.ttsProvider} with voice ${state.openaiVoice}`)
           }
@@ -637,7 +641,8 @@ class RealtimeAgentService {
         text,
         state.openaiVoice,
         modelForProvider as any,
-        state.ttsProvider as 'openai' | 'polly' | 'elevenlabs'
+        state.ttsProvider as 'openai' | 'polly' | 'elevenlabs',
+        state.voiceSettings as any
       )
 
       // --- Automatic multi-provider fallback chain ---
@@ -1373,7 +1378,8 @@ class RealtimeAgentService {
 
     // 2. Fetch from DB
     try {
-      const cfg = await prisma.agentConfig.findUnique({
+      // @ts-ignore – voiceSettings column typed dynamically
+      const cfg: any = await prisma.agentConfig.findUnique({
         where: { businessId: state.businessId },
         select: {
           useOpenaiTts: true,
@@ -1381,7 +1387,8 @@ class RealtimeAgentService {
           openaiModel: true,
           personaPrompt: true,
           ttsProvider: true,
-        },
+          voiceSettings: true,
+        } as any,
       })
 
       if (cfg) {
@@ -1395,6 +1402,7 @@ class RealtimeAgentService {
         state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase()
         state.openaiModel = cfg.openaiModel || 'tts-1'
         state.personaPrompt = cfg.personaPrompt
+        state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
 
         // Cache it
         voiceConfigCache.set(state.businessId, {

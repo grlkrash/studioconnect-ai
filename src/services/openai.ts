@@ -139,8 +139,15 @@ export const getTranscription = async (
 export const generateSpeechFromText = async (
   textToSpeak: string,
   voice: string = 'nova',
-  model: 'tts-1' | 'tts-1-hd' = 'tts-1',
-  provider: 'openai' | 'polly' | 'elevenlabs' = 'elevenlabs'
+  model: string = 'tts-1',
+  provider: 'openai' | 'polly' | 'elevenlabs' = 'elevenlabs',
+  voiceSettings?: {
+    stability?: number
+    similarity?: number
+    style?: number
+    use_speaker_boost?: boolean
+    speed?: number
+  }
 ): Promise<string | null> => {
   if (!textToSpeak || textToSpeak.trim().length === 0) {
     console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
@@ -183,7 +190,7 @@ export const generateSpeechFromText = async (
       return targetPath
     } else if (provider === 'elevenlabs') {
       const { generateSpeechWithElevenLabs } = await import('./elevenlabs')
-      return generateSpeechWithElevenLabs(textToSpeak, voice, model)
+      return generateSpeechWithElevenLabs(textToSpeak, voice, model, voiceSettings)
     }
 
     // Polly fallback (default)

@@ -16,7 +16,14 @@ import axios from 'axios'
 export async function generateSpeechWithElevenLabs(
   text: string,
   voiceId?: string,
-  modelId: string = process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2'
+  modelId: string = process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2',
+  voiceSettings?: {
+    stability?: number
+    similarity?: number
+    style?: number
+    use_speaker_boost?: boolean
+    speed?: number
+  }
 ): Promise<string | null> {
   const apiKey = process.env.ELEVENLABS_API_KEY
   if (!apiKey) {
@@ -75,7 +82,7 @@ export async function generateSpeechWithElevenLabs(
   try {
     const cacheDir = path.join(os.tmpdir(), 'scai_tts_cache')
     await fs.promises.mkdir(cacheDir, { recursive: true })
-    const hash = crypto.createHash('sha256').update(`11labs|${modelId}|${voiceIdForRequest}|${text}`).digest('hex')
+    const hash = crypto.createHash('sha256').update(`11labs|${modelId}|${voiceIdForRequest}|${text}|${JSON.stringify(voiceSettings || {})}`).digest('hex')
     cachedPath = path.join(cacheDir, `${hash}.mp3`)
     if (fs.existsSync(cachedPath)) {
       console.log(`[ElevenLabs] Returning cached speech (hash=${hash.slice(0,8)})`)
@@ -94,10 +101,11 @@ export async function generateSpeechWithElevenLabs(
         model_id: modelId,
         text,
         voice_settings: {
-          stability: 0.3,
-          similarity_boost: 0.8,
-          style: 0.5,
-          use_speaker_boost: true,
+          stability: voiceSettings?.stability ?? 0.3,
+          similarity_boost: voiceSettings?.similarity ?? 0.8,
+          style: voiceSettings?.style ?? 0.5,
+          use_speaker_boost: voiceSettings?.use_speaker_boost ?? true,
+          speed: voiceSettings?.speed ?? undefined,
         },
       },
       {
