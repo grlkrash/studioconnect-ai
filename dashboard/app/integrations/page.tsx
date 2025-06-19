@@ -171,6 +171,28 @@ export default function IntegrationsPage() {
     }
   }
 
+  const handleTestConnection = async (prov: ProviderKey) => {
+    try {
+      const res = await fetch(`/api/integrations/${prov.toLowerCase()}/test`, { method: 'POST' })
+      const json = await res.json()
+      if (json.ok) toast({ title: `${PROVIDERS_META[prov].name} connection verified` })
+      else throw new Error('Provider returned error')
+    } catch (err: any) {
+      toast({ title: `Connection test failed`, description: err.message, variant: 'destructive' })
+    }
+  }
+
+  const handleSyncNow = async (prov: ProviderKey) => {
+    try {
+      const res = await fetch(`/api/integrations/${prov.toLowerCase()}/sync`, { method: 'POST' })
+      if (!res.ok) throw new Error(await res.text())
+      toast({ title: `${PROVIDERS_META[prov].name} synced successfully` })
+      fetchIntegrations()
+    } catch (err: any) {
+      toast({ title: 'Sync failed', description: err.message, variant: 'destructive' })
+    }
+  }
+
   const connectedIntegrations = integrations.filter((i) => i.status === "connected").length
   const pendingIntegrations = integrations.filter((i) => i.status === "pending").length
 
@@ -309,7 +331,8 @@ export default function IntegrationsPage() {
                               </select>
                             </div>
                             <div className="flex justify-end space-x-2">
-                              <Button variant="outline">Test Connection</Button>
+                              <Button variant="outline" onClick={() => handleTestConnection(integration.provider)}>Test Connection</Button>
+                              <Button onClick={() => handleSyncNow(integration.provider)}>Sync Now</Button>
                               <Button>Save Changes</Button>
                             </div>
                           </div>

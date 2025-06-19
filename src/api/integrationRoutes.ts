@@ -302,4 +302,30 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 })
 
+// Trigger manual sync
+router.post('/:provider/sync', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' })
+    const provider = req.params.provider
+    const result = await integrationService.syncNow(req.user.businessId, provider)
+    res.json({ status: 'ok', ...result })
+  } catch (err: any) {
+    console.error('[integrationRoutes] syncNow error:', err)
+    res.status(500).json({ error: err.message || 'Sync failed' })
+  }
+})
+
+// Test connectivity (lightweight)
+router.post('/:provider/test', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' })
+    const provider = req.params.provider
+    const ok = await integrationService.testConnection(req.user.businessId, provider)
+    res.json({ ok })
+  } catch (err: any) {
+    console.error('[integrationRoutes] testConnection error:', err)
+    res.status(500).json({ error: err.message || 'Test failed' })
+  }
+})
+
 export default router 

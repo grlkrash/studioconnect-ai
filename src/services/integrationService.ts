@@ -104,6 +104,32 @@ class IntegrationService {
   async getIntegrationStatus (businessId: string) {
     return prisma.integration.findMany({ where: { businessId } })
   }
+
+  async syncNow (businessId: string, providerKey: string): Promise<{ projectCount: number; taskCount: number }> {
+    const provider = this.getProvider(providerKey)
+    const result = await provider.syncProjects(businessId)
+
+    await prisma.integration.update({
+      where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
+      data: {
+        lastSyncedAt: new Date(),
+        syncStatus: 'CONNECTED',
+        updatedAt: new Date(),
+      },
+    }).catch(() => {/* ignore if row missing */})
+
+    return result
+  }
+
+  /** Performs a lightweight check to verify stored credentials are still valid */
+  async testConnection (businessId: string, providerKey: string): Promise<boolean> {
+    const integration = await prisma.integration.findUnique({
+      where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
+    })
+    if (!integration?.credentials) throw new Error('Provider not connected')
+    const provider = this.getProvider(providerKey)
+    return provider.connect({ ...integration.credentials, businessId })
+  }
 }
 
 export const integrationService = IntegrationService.instance 
