@@ -86,6 +86,12 @@ interface ConnectionState {
   qualQuestionMap?: Record<string, { questionText: string; mapsToLeadField?: string }>
   sttClient?: ElevenLabsStreamingClient;
   voiceSettings?: any;
+  /** timestamp when current recording started */
+  recordingStartMs?: number;
+  /** timer waiting for first realtime audio chunk */
+  realtimeAudioTimer?: NodeJS.Timeout | null;
+  /** last assistant text received (for TTS fallback) */
+  lastAssistantText?: string;
 }
 
 interface AgentSession {
@@ -139,7 +145,10 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
 const VAD_THRESHOLD = 25; // Increased µ-law sample energy threshold
-const VAD_SILENCE_MS = 2000; // flush after 2 s of silence for natural pauses
+// Reduce required silence before processing an utterance to improve responsiveness
+const VAD_SILENCE_MS = 1200; // flush after ~1.2 s of silence for natural pauses
+// Hard cap on a single caller utterance – flush even if still talking after 6 seconds
+const MAX_UTTERANCE_MS = 6000;
 const IDLE_PROMPT_DELAYS_MS: [number, number] = [20000, 35000]
 
 // State management
@@ -616,6 +625,9 @@ class RealtimeAgentService {
           this.addToConversationHistory(state, 'user', text)
           state.openaiClient.sendUserText(text)
           state.openaiClient.requestAssistantResponse()
+
+          // Start fallback timer – if no audio within 3.5 s switch to TTS
+          this._scheduleRealtimeAudioFallback(state)
           return
         } catch (error) {
           console.error('[REALTIME AGENT] Realtime client failed, falling back to TTS:', error)
@@ -632,7 +644,10 @@ class RealtimeAgentService {
         // Accept wider character set for ElevenLabs voice IDs (mixed-case, underscore, hyphen)
         const voiceLooksValid = /^[a-zA-Z0-9_-]{20,}$/.test(state.openaiVoice)
         if (!voiceLooksValid) {
-          const fallbackVoice = (process.env.ELEVENLABS_VOICE_ID || 'Rachel').toLowerCase()
+          const rawFallback = process.env.ELEVENLABS_VOICE_ID || 'Rachel'
+          // Preserve original casing if the env var already appears to be a voice ID (IDs are case-sensitive)
+          const isId = /^[a-zA-Z0-9_-]{20,}$/.test(rawFallback)
+          const fallbackVoice = isId ? rawFallback : rawFallback.toLowerCase()
           console.warn(`[REALTIME AGENT] Invalid ElevenLabs voice "${state.openaiVoice}", using fallback "${fallbackVoice}"`)
           state.openaiVoice = fallbackVoice
         }
@@ -1552,6 +1567,10 @@ class RealtimeAgentService {
       client.on('speechStarted', () => {
         console.log('[REALTIME AGENT] User speech started (realtime VAD)')
         state.isRecording = true
+        if (state.realtimeAudioTimer) {
+          clearTimeout(state.realtimeAudioTimer)
+          state.realtimeAudioTimer = null
+        }
       });
 
       client.on('speechStopped', () => {
@@ -1578,6 +1597,10 @@ class RealtimeAgentService {
       client.on('responseComplete', () => {
         console.log('[REALTIME AGENT] Response complete')
         state.isSpeaking = false // Response finished
+        if (state.realtimeAudioTimer) {
+          clearTimeout(state.realtimeAudioTimer)
+          state.realtimeAudioTimer = null
+        }
         this._scheduleIdlePrompt(state)
       });
 
@@ -1773,6 +1796,7 @@ class RealtimeAgentService {
             console.log('[REALTIME AGENT] Professional speech detection: Recording started')
             this._clearIdlePrompt(state);
             state.isRecording = true
+            state.recordingStartMs = now
             state.audioQueue = [] // Clear any previous audio
           }
           state.lastSpeechMs = now
@@ -1783,7 +1807,7 @@ class RealtimeAgentService {
         }
 
         // Process complete utterances with professional timing
-        if (state.isRecording && !state.isProcessing && now - state.lastSpeechMs > VAD_SILENCE_MS && state.audioQueue.length > 0) {
+        if (state.isRecording && !state.isProcessing && (now - state.lastSpeechMs > VAD_SILENCE_MS || (state.recordingStartMs && now - state.recordingStartMs > MAX_UTTERANCE_MS)) && state.audioQueue.length > 0) {
           state.isLinear16Recording = isLinear16
           console.log('[REALTIME AGENT] Processing complete utterance via professional Whisper pipeline')
           state.isProcessing = true
@@ -1942,6 +1966,36 @@ class RealtimeAgentService {
     } catch (err) {
       console.error('[REALTIME AGENT] Failed to initialise ElevenLabs STT client:', err)
     }
+  }
+
+  /**
+   * If we requested a realtime response but no audio arrives within 3.5 s, switch to OpenAI TTS fallback.
+   */
+  private _scheduleRealtimeAudioFallback(state: ConnectionState): void {
+    // Clear previous timer
+    if (state.realtimeAudioTimer) {
+      clearTimeout(state.realtimeAudioTimer)
+      state.realtimeAudioTimer = null
+    }
+
+    state.realtimeAudioTimer = setTimeout(async () => {
+      if (state.isSpeaking) return // audio arrived afterwards
+
+      console.warn('[REALTIME AGENT] Realtime response timeout – falling back to OpenAI TTS')
+
+      // Switch provider
+      state.ttsProvider = 'openai'
+      state.openaiVoice = 'nova'
+      state.openaiModel = 'tts-1-hd'
+      state.openaiClient = undefined
+
+      const fallbackText = state.lastAssistantText || 'I apologize, I am having some technical difficulties. Could you please repeat that?'
+      try {
+        await this.streamTTS(state, fallbackText)
+      } catch (err) {
+        console.error('[REALTIME AGENT] Fallback TTS also failed:', err)
+      }
+    }, 3500)
   }
 }
 
