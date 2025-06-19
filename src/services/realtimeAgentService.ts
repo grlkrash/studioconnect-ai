@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import twilio from 'twilio';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, LeadPriority } from '@prisma/client';
 import { processMessage } from '../core/aiHandler';
 import { getChatCompletion } from '../services/openai';
 import { cleanVoiceResponse } from '../utils/voiceHelpers';
@@ -20,6 +20,7 @@ import { promisify } from 'util';
 import { OpenAIRealtimeClient } from './openaiRealtimeClient';
 import { createVoiceSystemPrompt } from '../core/aiHandler';
 import { LeadQualifier } from '../core/leadQualifier';
+import { getPrimaryUrl } from '../utils/env';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -429,21 +430,47 @@ class RealtimeAgentService {
     });
   }
 
-  public cleanup(reason: string): void {
+  public async cleanup(reason: string): Promise<void> {
     if (this.callSid) {
       const state = this.connections.get(this.callSid);
       if (state) {
         // ---- update callLog with duration / status ----
         const durationMs = Date.now() - (state.callStartTime || Date.now())
         const status = durationMs < 15000 ? 'ERROR' : 'COMPLETED'
+
         if (state.callSid) {
-          prisma.callLog.update({ where: { callSid: state.callSid }, data: { updatedAt: new Date(), metadata: { endReason: status } } as any }).catch(() => {})
+          await prisma.callLog.update({ where: { callSid: state.callSid }, data: { updatedAt: new Date(), metadata: { endReason: status } } } as any).catch(() => {})
         }
+
+        // ---- send call summary email ----
+        if (state.businessId) {
+          try {
+            const biz = await prisma.business.findUnique({ where: { id: state.businessId }, select: { id: true, name: true, notificationEmails: true, notificationPhoneNumber: true } })
+            if (biz?.notificationEmails && biz.notificationEmails.length) {
+              const transcriptText = state.conversationHistory
+                .map((m) => `${m.role === 'user' ? 'Client' : 'Agent'}: ${m.content}`)
+                .join('\n')
+
+              const { sendCallSummaryEmail } = await import('./notificationService')
+              await sendCallSummaryEmail(biz.notificationEmails, {
+                businessName: biz.name,
+                caller: state.fromNumber || 'Unknown',
+                callee: state.toNumber || undefined,
+                durationSec: Math.round(durationMs / 1000),
+                transcript: transcriptText,
+              })
+            }
+          } catch (err) {
+            console.error('[REALTIME AGENT] Failed to send call summary email', err)
+          }
+        }
+
         try {
           state.ws.close();
         } catch (error) {
           console.error(`[REALTIME AGENT] Error closing WebSocket:`, error);
         }
+
         // Gracefully close realtime voice session
         if (state.openaiClient) {
           try { state.openaiClient.close() } catch {}
@@ -477,7 +504,8 @@ class RealtimeAgentService {
 
     try {
       // Build the WebSocket URL that Twilio should reconnect to after speaking
-      const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
+      const base = getPrimaryUrl() || (process.env.HOST ? `https://${process.env.HOST}` : '')
+      const host = base.replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
       const wsBase = host.replace(/^https?:\/\//, 'wss://')
       const wsUrl = `${wsBase}/?callSid=${encodeURIComponent(callSid)}${businessId ? `&businessId=${encodeURIComponent(businessId)}` : ''}`
 
@@ -801,6 +829,14 @@ class RealtimeAgentService {
                 }
               })
 
+              // Determine priority – mark URGENT if any answer contains keywords or an explicit emergency question exists
+              let leadPriority: LeadPriority = 'NORMAL'
+              const emergencyKeywords = /(urgent|emergency|asap|immediately|right away|straight away|crisis)/i
+              const answersConcat = Object.values(capturedData).join(' ').toLowerCase()
+              if (emergencyKeywords.test(answersConcat)) {
+                leadPriority = 'URGENT'
+              }
+
               const newLead = await prisma.lead.create({
                 data: {
                   businessId: state.businessId!,
@@ -811,17 +847,26 @@ class RealtimeAgentService {
                   contactName,
                   address,
                   notes,
+                  priority: leadPriority,
                 },
               })
 
               // Notification email
               const biz = await prisma.business.findUnique({
                 where: { id: state.businessId! },
-                select: { name: true, notificationEmails: true },
+                select: { id: true, name: true, notificationEmails: true, notificationPhoneNumber: true },
               })
 
               if (biz?.notificationEmails?.length) {
-                await sendLeadNotificationEmail(biz.notificationEmails as any, newLead, null, biz.name)
+                await sendLeadNotificationEmail(biz.notificationEmails as any, newLead, leadPriority, biz.name)
+              }
+
+              // Trigger emergency voice alert if URGENT and phone configured
+              if (leadPriority === 'URGENT' && biz && biz.notificationEmails?.length) {
+                if (biz.notificationPhoneNumber) {
+                  const summary = `${contactName || 'Unknown'} – ${notes?.slice(0, 120) || 'urgent request'}`
+                  initiateEmergencyVoiceCall(biz.notificationPhoneNumber, biz.name, summary, biz.id).catch(() => {})
+                }
               }
 
               await this.streamTTS(state, 'Thanks for those details! Someone from our team will reach out shortly. How else can I assist you today?')
@@ -1649,14 +1694,30 @@ class RealtimeAgentService {
     }
 
     // Determine fallback voicemail URL
-    const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
+    const base = getPrimaryUrl() || (process.env.HOST ? `https://${process.env.HOST}` : '')
+    const host = base.replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
     const voicemailUrl = `${host}/api/voice/voicemail` // must be implemented as POST returning TwiML <Record>
 
-    // Pick escalation number
-    const dialNumber = targetNumber || process.env.DEFAULT_ESCALATION_NUMBER || state.toNumber || null
+    // Pick escalation number (ENV overrides > business setting > explicit parameter)
+    const dialNumber = targetNumber || process.env.DEFAULT_ESCALATION_NUMBER || undefined
 
+    // If we still do not have a valid destination, gracefully route to voicemail
     if (!dialNumber) {
-      console.error('[REALTIME AGENT] No escalation target number configured')
+      console.warn('[REALTIME AGENT] No escalation number configured – routing caller to voicemail instead')
+      // Inform the caller politely before recording
+      try {
+        const twiml = new twilio.twiml.VoiceResponse()
+        twiml.say({ voice: 'Polly.Amy' }, 'I\'m transferring you to voicemail so our team can follow up shortly. Please leave your message after the beep.')
+        twiml.record({ action: voicemailUrl, maxLength: 120, playBeep: true, trim: 'trim-silence' })
+        twiml.say({ voice: 'Polly.Amy' }, 'Thank you. Goodbye.')
+        twiml.hangup()
+
+        this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
+      } catch (err) {
+        console.error('[REALTIME AGENT] Failed to redirect to voicemail during escalation fallback:', err)
+      }
+
+      prisma.callLog.update({ where: { callSid }, data: { status: 'VOICEMAIL', metadata: { reason: 'ESCALATION_FALLBACK' } } } as any).catch(() => {})
       return
     }
 
@@ -1664,7 +1725,7 @@ class RealtimeAgentService {
       const twiml = new twilio.twiml.VoiceResponse()
       const dial = twiml.dial({ action: voicemailUrl, timeout: 20, callerId: state.fromNumber || undefined })
       dial.number(dialNumber)
-      twiml.say({ voice: 'Polly.Amy' }, 'Transferring you now, please hold.')
+      twiml.say({ voice: 'Polly.Amy' }, 'Connecting you now, please hold.')
 
       this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
       console.log(`[REALTIME AGENT] Warm transfer initiated to ${dialNumber} for call ${callSid}`)
@@ -1674,6 +1735,8 @@ class RealtimeAgentService {
 
     } catch (error) {
       console.error('[REALTIME AGENT] Failed to initiate warm transfer:', error)
+      // As a last resort, fall back to voicemail so the caller is never left hanging
+      this.sendToVoicemail(state)
     }
   }
 
@@ -1684,8 +1747,8 @@ class RealtimeAgentService {
       return
     }
 
-    const host = (process.env.APP_PRIMARY_URL || '').replace(/\/$/, '') || `https://${process.env.HOST || 'localhost'}`
-    const recordUrl = `${host}/api/voice/voicemail` // will store recording
+    const base = getPrimaryUrl() || (process.env.HOST ? `https://${process.env.HOST}` : '')
+    const recordUrl = `${base}/api/voice/voicemail` // will store recording
 
     try {
       const twiml = new twilio.twiml.VoiceResponse()

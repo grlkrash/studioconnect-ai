@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto'
 import RedisManager from '../config/redis'
 import axios from 'axios'
 import { generateCodeVerifier, deriveCodeChallenge } from '../utils/pkce'
+import { isProviderEnabled, getMissingKeys } from '../config/providerEnv'
+import { getAppBaseUrl } from '../utils/env'
 
 const router = Router()
 
@@ -24,9 +26,13 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
     if (!redis.isClientConnected()) await redis.connect()
 
     if (provider === 'ASANA') {
-      const clientId = process.env.ASANA_CLIENT_ID
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !appBaseUrl) return res.status(500).json({ error: 'Missing Asana env vars' })
+      if (!isProviderEnabled('ASANA')) {
+        const missing = getMissingKeys('ASANA').join(', ')
+        return res.status(500).json({ error: `Asana integration disabled – missing ${missing}` })
+      }
+      const clientId = process.env.ASANA_CLIENT_ID!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       const verifier = generateCodeVerifier()
       const challenge = deriveCodeChallenge(verifier)
@@ -46,9 +52,13 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
     }
 
     if (provider === 'MONDAY') {
-      const clientId = process.env.MONDAY_CLIENT_ID
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !appBaseUrl) return res.status(500).json({ error: 'Missing Monday env vars' })
+      if (!isProviderEnabled('MONDAY')) {
+        const missing = getMissingKeys('MONDAY').join(', ')
+        return res.status(500).json({ error: `Monday integration disabled – missing ${missing}` })
+      }
+      const clientId = process.env.MONDAY_CLIENT_ID!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       await redis.getClient().setEx(`oauth:${state}`, 600, JSON.stringify({ provider, businessId: req.user.businessId }))
 
@@ -62,9 +72,13 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
     }
 
     if (provider === 'JIRA') {
-      const clientId = process.env.JIRA_CLIENT_ID
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !appBaseUrl) return res.status(500).json({ error: 'Missing Jira env vars' })
+      if (!isProviderEnabled('JIRA')) {
+        const missing = getMissingKeys('JIRA').join(', ')
+        return res.status(500).json({ error: `Jira integration disabled – missing ${missing}` })
+      }
+      const clientId = process.env.JIRA_CLIENT_ID!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       const verifier = generateCodeVerifier()
       const challenge = deriveCodeChallenge(verifier)
@@ -114,13 +128,15 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' })
 
     if (provider === 'ASANA') {
-      const { verifier, businessId } = savedObj
-      const clientId = process.env.ASANA_CLIENT_ID
-      const clientSecret = process.env.ASANA_CLIENT_SECRET
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !clientSecret || !appBaseUrl) {
-        return res.status(500).send('Server missing Asana OAuth env vars')
+      if (!isProviderEnabled('ASANA')) {
+        const missing = getMissingKeys('ASANA').join(', ')
+        return res.status(500).send(`Asana integration disabled – missing ${missing}`)
       }
+      const { verifier, businessId } = savedObj
+      const clientId = process.env.ASANA_CLIENT_ID!
+      const clientSecret = process.env.ASANA_CLIENT_SECRET!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       // Exchange code → tokens
       const tokenResp = await axios.post('https://app.asana.com/-/oauth_token', new URLSearchParams({
@@ -157,11 +173,15 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
     }
 
     if (provider === 'MONDAY') {
+      if (!isProviderEnabled('MONDAY')) {
+        const missing = getMissingKeys('MONDAY').join(', ')
+        return res.status(500).send(`Monday integration disabled – missing ${missing}`)
+      }
       const { businessId } = savedObj
-      const clientId = process.env.MONDAY_CLIENT_ID
-      const clientSecret = process.env.MONDAY_CLIENT_SECRET
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !clientSecret || !appBaseUrl) return res.status(500).send('Missing Monday env vars')
+      const clientId = process.env.MONDAY_CLIENT_ID!
+      const clientSecret = process.env.MONDAY_CLIENT_SECRET!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       const tokenResp = await axios.post('https://auth.monday.com/oauth2/token', new URLSearchParams({
         client_id: clientId,
@@ -181,11 +201,15 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
     }
 
     if (provider === 'JIRA') {
+      if (!isProviderEnabled('JIRA')) {
+        const missing = getMissingKeys('JIRA').join(', ')
+        return res.status(500).send(`Jira integration disabled – missing ${missing}`)
+      }
       const { verifier, businessId } = savedObj
-      const clientId = process.env.JIRA_CLIENT_ID
-      const clientSecret = process.env.JIRA_CLIENT_SECRET
-      const appBaseUrl = process.env.APP_BASE_URL
-      if (!clientId || !clientSecret || !appBaseUrl) return res.status(500).send('Missing Jira env vars')
+      const clientId = process.env.JIRA_CLIENT_ID!
+      const clientSecret = process.env.JIRA_CLIENT_SECRET!
+      const appBaseUrl = getAppBaseUrl()
+      if (!appBaseUrl) return res.status(500).json({ error: 'Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)' })
 
       const tokenResp = await axios.post('https://auth.atlassian.com/oauth/token', {
         grant_type: 'authorization_code',

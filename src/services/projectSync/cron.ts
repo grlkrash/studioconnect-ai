@@ -26,7 +26,8 @@ export function startAsanaCron () {
           where: {
             provider: key,
             isEnabled: true,
-            syncStatus: { in: ['CONNECTED', 'ERROR'] },
+            // Temporarily omit syncStatus filter to avoid enum-type mismatch errors on some deployments.
+            // Once the database enum type is aligned with the Prisma schema, this filter can be re-enabled.
           },
           select: { businessId: true },
         })

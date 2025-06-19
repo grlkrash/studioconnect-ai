@@ -1,6 +1,7 @@
 import { Project } from "@prisma/client"
 import axios, { AxiosInstance } from "axios"
 import crypto from "crypto"
+import { getAppBaseUrl } from "../../utils/env"
 
 import { prisma } from "../db"
 import { ProjectManagementProvider } from "./pm.provider.interface"
@@ -162,11 +163,12 @@ class AsanaProvider implements ProjectManagementProvider {
     const apiClient = await this.getApiClient(businessId)
     const { asanaWorkspaceGid } = await this.getBusinessCredentials(businessId)
 
-    if (!process.env.APP_BASE_URL) {
-      throw new Error("APP_BASE_URL environment variable is not set.")
+    const baseUrl = getAppBaseUrl()
+    if (!baseUrl) {
+      throw new Error("Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)")
     }
 
-    const targetUrl = `${process.env.APP_BASE_URL}${WEBHOOK_TARGET_PATH}?businessId=${businessId}`
+    const targetUrl = `${baseUrl}${WEBHOOK_TARGET_PATH}?businessId=${businessId}`
 
     try {
       const response = await apiClient.post("/webhooks", {

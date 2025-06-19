@@ -605,3 +605,59 @@ export async function initiateCall(to: string, from: string, businessId: string)
   // Implementation for initiating a call
   return 'test-call-sid'
 }
+
+/**
+ * Sends an after-call summary email to all business notification recipients.
+ * This is triggered for every completed call (new or existing client).
+ */
+export async function sendCallSummaryEmail(
+  toEmails: string[] | string,
+  summary: {
+    businessName: string
+    caller: string
+    callee?: string
+    durationSec: number
+    transcript?: string
+  },
+): Promise<void> {
+  const recipients = Array.isArray(toEmails) ? toEmails : [toEmails]
+  if (!recipients.length) return
+
+  if (!transporter) {
+    console.error('[NotificationService] Transporter not initialised – cannot send call summary')
+    return
+  }
+
+  const fromEmail = process.env.FROM_EMAIL || 'noreply@studioconnect.ai'
+  const subject = `Call Summary – ${summary.businessName}`
+
+  const bodyLines: string[] = [
+    `<p>Hello ${summary.businessName} team,</p>`,
+    `<p>Here is the summary of the recent call:</p>`,
+    '<ul>',
+    `<li><strong>Caller:</strong> ${summary.caller}</li>`,
+    summary.callee ? `<li><strong>To:</strong> ${summary.callee}</li>` : '',
+    `<li><strong>Duration:</strong> ${Math.round(summary.durationSec)} seconds</li>`,
+    '</ul>',
+  ]
+
+  if (summary.transcript) {
+    bodyLines.push('<h3>Transcript</h3>')
+    bodyLines.push(`<pre style="background:#f8fafc;padding:12px;border-radius:6px;font-family:monospace;white-space:pre-wrap;">${summary.transcript}</pre>`)
+  }
+
+  bodyLines.push('<p>Best regards,<br/>StudioConnect AI</p>')
+
+  const htmlBody = bodyLines.filter(Boolean).join('\n')
+
+  const base = { from: fromEmail, subject, html: htmlBody }
+
+  try {
+    for (const to of recipients) {
+      await transporter.sendMail({ ...base, to })
+    }
+    console.log(`[NotificationService] Call summary email sent to ${recipients.join(', ')}`)
+  } catch (err) {
+    console.error('[NotificationService] Failed to send call summary email', err)
+  }
+}

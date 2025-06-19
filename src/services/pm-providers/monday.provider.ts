@@ -3,6 +3,7 @@ import axios from 'axios'
 import { prisma } from '../db'
 import { ProjectManagementProvider } from './pm.provider.interface'
 import { getOrCreateClient } from './client-helper'
+import { getAppBaseUrl } from '../../utils/env'
 
 const MONDAY_API_URL = 'https://api.monday.com/v2'
 
@@ -167,7 +168,9 @@ export class MondayProvider implements ProjectManagementProvider {
    */
   async setupWebhooks(businessId: string): Promise<{ webhookId: string }> {
     const apiClient = await this.getApiClient(businessId)
-    const webhookUrl = `${process.env.APP_URL}/api/webhooks/pm/monday?businessId=${businessId}`
+    const baseUrl = getAppBaseUrl() || process.env.APP_URL || ''
+    if (!baseUrl) throw new Error('Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)')
+    const webhookUrl = `${baseUrl}/api/webhooks/pm/monday?businessId=${businessId}`
     let lastWebhookId = ''
 
     const boardsQuery = 'query { boards(limit: 100) { id } }'

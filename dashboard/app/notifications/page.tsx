@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Bell, Mail, MessageSquare, Phone, Slack, TestTube } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { parsePhoneNumberFromString } from "libphonenumber-js"
 
 const notificationChannels = [
   {
@@ -97,6 +98,8 @@ export default function NotificationsPage() {
   // --- NEW: multiple email addresses ---
   const [emailInput, setEmailInput] = useState("")
   const [emails, setEmails] = useState<string[]>([])
+  const [phoneNumber, setPhoneNumber] = useState<string>("")
+  const [phoneError, setPhoneError] = useState<string | null>(null)
 
   // Fetch existing emails on mount
   useEffect(() => {
@@ -111,6 +114,18 @@ export default function NotificationsPage() {
         }
       } catch (err) {
         console.error("Failed to load notification emails", err)
+      }
+    })()
+
+    ;(async () => {
+      try {
+        const res = await fetch("/api/business/notification-phone", { credentials: "include" })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.notificationPhoneNumber) setPhoneNumber(data.notificationPhoneNumber)
+        }
+      } catch (err) {
+        console.error("Failed to load notification phone", err)
       }
     })()
   }, [])
@@ -168,6 +183,36 @@ export default function NotificationsPage() {
     } catch (err) {
       console.error(err)
       toast({ title: "Error", description: "Could not save emails", variant: "destructive" })
+    }
+  }
+
+  const handleSavePhone = async () => {
+    setPhoneError(null)
+    const formatted = phoneNumber.trim()
+    if (!formatted) {
+      setPhoneError("Phone is required")
+      return
+    }
+    const pn = parsePhoneNumberFromString(formatted, "US")
+    if (!pn || !pn.isValid()) {
+      setPhoneError("Invalid phone number")
+      return
+    }
+    try {
+      const res = await fetch("/api/business/notification-phone", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber: pn.number })
+      })
+      if (res.ok) {
+        toast({ title: "Saved", description: "Notification phone updated." })
+      } else {
+        toast({ title: "Error", description: "Could not save phone", variant: "destructive" })
+      }
+    } catch (err) {
+      console.error(err)
+      toast({ title: "Error", description: "Could not save phone", variant: "destructive" })
     }
   }
 
@@ -271,6 +316,27 @@ export default function NotificationsPage() {
             )}
 
             <Button onClick={handleSaveEmails}>Save Emails</Button>
+          </CardContent>
+        </Card>
+
+        {/* Notification Phone */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Notification Phone</CardTitle>
+            <CardDescription>Configure your notification phone</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex space-x-2">
+              <Input
+                placeholder="+1 (555) 123-4567"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                error={phoneError}
+              />
+              <Button type="button" onClick={handleSavePhone} disabled={!phoneNumber.trim() || !!phoneError}>
+                Save
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -422,55 +488,6 @@ export default function NotificationsPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Notifications</CardTitle>
-            <CardDescription>Your latest notification activity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[
-                {
-                  time: "2 minutes ago",
-                  type: "New Client",
-                  message: "Sarah Johnson from TechStart Inc. completed intake",
-                  channel: "Email, SMS",
-                },
-                {
-                  time: "1 hour ago",
-                  type: "Call Completed",
-                  message: "15-minute call with potential client",
-                  channel: "Email",
-                },
-                {
-                  time: "3 hours ago",
-                  type: "New Client",
-                  message: "Michael Chen from Green Energy Co. interested in branding",
-                  channel: "Email, SMS",
-                },
-                {
-                  time: "1 day ago",
-                  type: "Daily Summary",
-                  message: "Daily activity report: 12 calls, 3 new clients",
-                  channel: "Email",
-                },
-              ].map((notification, index) => (
-                <div key={index} className="flex items-start space-x-3 p-3 bg-slate-50 rounded-lg">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-slate-900">{notification.type}</h4>
-                      <span className="text-xs text-slate-500">{notification.time}</span>
-                    </div>
-                    <p className="text-sm text-slate-600">{notification.message}</p>
-                    <p className="text-xs text-slate-500 mt-1">Sent via: {notification.channel}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

@@ -2,6 +2,7 @@ import { Project } from '@prisma/client'
 import axios, { AxiosInstance } from 'axios'
 import crypto from 'crypto'
 import { prisma } from '../db'
+import { getAppBaseUrl } from '../../utils/env'
 import { ProjectManagementProvider } from './pm.provider.interface'
 import { getOrCreateClient } from './client-helper'
 
@@ -109,7 +110,9 @@ export class JiraProvider implements ProjectManagementProvider {
   async setupWebhooks(businessId: string): Promise<{ webhookId: string }> {
     const client = this.getApiClient(businessId)
     const secret = crypto.randomBytes(32).toString('hex')
-    const webhookUrl = `${process.env.APP_BASE_URL}/api/webhooks/pm/jira?token=${secret}`
+    const baseUrl = getAppBaseUrl()
+    if (!baseUrl) throw new Error('Base URL env var missing (APP_BASE_URL or ADMIN_CUSTOM_DOMAIN_URL)')
+    const webhookUrl = `${baseUrl}/api/webhooks/pm/jira?token=${secret}`
 
     try {
       const response = await client.post('/webhook', {
