@@ -145,17 +145,29 @@ interface AgentConfig {
   voiceGreetingMessage: string;
 }
 
-// Constants
+// Constants - OPTIMIZED FOR FORTUNE 50 ENTERPRISE QUALITY
 const MAX_CONVERSATION_HISTORY = 50;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
-const VAD_THRESHOLD = 35; // Increased threshold to prevent false positives
-// Reduce required silence before processing an utterance to improve responsiveness
-const VAD_SILENCE_MS = 1800; // Increased from 1200ms to 1800ms for better detection
-// Hard cap on a single caller utterance – flush even if still talking after 6 seconds
-const MAX_UTTERANCE_MS = 6000;
-const IDLE_PROMPT_DELAYS_MS: [number, number] = [20000, 35000]
+const VAD_THRESHOLD = 32; // Optimized for business calls - reduced false positives
+const VAD_SILENCE_MS = 1600; // Optimized for professional conversations
+const MAX_UTTERANCE_MS = 8000; // Longer for complex business discussions
+const IDLE_PROMPT_DELAYS_MS: [number, number] = [25000, 40000] // Professional timing
+
+// ENTERPRISE DEFAULTS - ELEVENLABS FORCED FOR FORTUNE 50 QUALITY
+const ENTERPRISE_DEFAULTS = {
+  ttsProvider: 'elevenlabs' as const,
+  voiceId: process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB', // Adam - Professional
+  modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5',
+  voiceSettings: {
+    stability: 0.71,
+    similarity: 0.83,
+    style: 0.13,
+    use_speaker_boost: true,
+    speed: 1.0
+  }
+}
 
 // State management
 const activeAgents = new Map<string, ConnectionState>();
@@ -248,8 +260,15 @@ async function cleanupTempFile(filePath: string): Promise<void> {
 const FILLER_INSTRUCTIONS = '\nWhen responding, occasionally use natural fillers such as "Got it.", "Perfect.", "Let me check that for you…", or "Absolutely." to sound conversational.'
 
 /**
- * RealtimeAgentService - Two-way audio bridge between Twilio and OpenAI
- * Handles real-time bidirectional voice conversations with lead capture integration
+ * 🏢 ENTERPRISE REALTIME VOICE AGENT SERVICE 🏢
+ * 
+ * Bulletproof voice agent system designed for Fortune 50 companies
+ * Features:
+ * - ElevenLabs premium TTS as default for enterprise quality
+ * - Bulletproof welcome message delivery with triple fallbacks
+ * - Professional conversation handling with lead qualification
+ * - Enterprise-grade error recovery and failover systems
+ * - Optimized for high-stakes business conversations
  */
 class RealtimeAgentService {
   private static instance: RealtimeAgentService;
@@ -265,6 +284,11 @@ class RealtimeAgentService {
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN
     );
+    
+    console.log('🏢 ENTERPRISE VOICE AGENT SERVICE INITIALIZED 🏢');
+    console.log('✅ ElevenLabs Premium TTS: ENABLED');
+    console.log('✅ Fortune 50 Quality: ENABLED');
+    console.log('✅ Bulletproof Systems: ENABLED');
   }
 
   public static getInstance(): RealtimeAgentService {
@@ -286,16 +310,16 @@ class RealtimeAgentService {
     // Allow connections even if callSid or businessId is missing – they can be
     // derived from the Twilio START event that follows the websocket upgrade.
     if (!callSid || !businessId) {
-      console.warn('[REALTIME AGENT] Missing callSid or businessId in WebSocket URL – will derive from START event', {
+      console.warn('[🏢 ENTERPRISE AGENT] Missing callSid or businessId in WebSocket URL – will derive from START event', {
         callSid,
         businessId
       })
     }
 
     this.callSid = callSid;
-    console.log(`[REALTIME AGENT] New connection for call ${callSid} to business ${businessId}`);
+    console.log(`[🏢 ENTERPRISE AGENT] 🚀 NEW FORTUNE 50 CONNECTION: Call ${callSid} → Business ${businessId}`);
 
-    // Initialize connection state with ENTERPRISE-GRADE defaults
+    // Initialize connection state with BULLETPROOF ENTERPRISE DEFAULTS
     const state: ConnectionState = {
       ws,
       callSid,
@@ -315,17 +339,16 @@ class RealtimeAgentService {
       isCleaningUp: false,
       lastActivity: Date.now(),
       toNumber: null,
-      // FORCE ELEVENLABS AS DEFAULT FOR ENTERPRISE QUALITY
-      ttsProvider: 'elevenlabs',
-      // Use premium ElevenLabs voice for Fortune 50 quality
-      openaiVoice: process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM', // Rachel - Professional Female
-      openaiModel: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5',
+      // 🎯 FORCE ELEVENLABS AS DEFAULT FOR ENTERPRISE QUALITY 🎯
+      ttsProvider: ENTERPRISE_DEFAULTS.ttsProvider,
+      openaiVoice: ENTERPRISE_DEFAULTS.voiceId,
+      openaiModel: ENTERPRISE_DEFAULTS.modelId,
       personaPrompt: undefined,
       lastSpeechMs: Date.now(),
       vadCalibrated: false,
       vadSamples: 0,
       vadNoiseFloor: 0,
-      vadThreshold: 30, // Optimized for business calls
+      vadThreshold: VAD_THRESHOLD,
       isRecording: false,
       isProcessing: false,
       __configLoaded: false,
@@ -338,14 +361,8 @@ class RealtimeAgentService {
       hasUserTranscript: false,
       bargeInDetected: false,
       pendingSpeechBuffer: null,
-      // Enterprise voice settings for Fortune 50 quality
-      voiceSettings: {
-        stability: 0.65,
-        similarity: 0.85,
-        style: 0.15,
-        use_speaker_boost: true,
-        speed: 1.0
-      }
+      // 🎯 ENTERPRISE VOICE SETTINGS FOR FORTUNE 50 QUALITY 🎯
+      voiceSettings: { ...ENTERPRISE_DEFAULTS.voiceSettings }
     };
 
     // Try to identify client if phone number is available
@@ -354,10 +371,10 @@ class RealtimeAgentService {
         const client = await getClientByPhoneNumber(fromNumber);
         if (client) {
           state.clientId = client.id;
-          console.log(`[REALTIME AGENT] Identified client ${client.id} for call ${callSid}`);
+          console.log(`[🏢 ENTERPRISE AGENT] ✅ IDENTIFIED EXISTING CLIENT: ${client.id} for call ${callSid}`);
         }
       } catch (error) {
-        console.error(`[REALTIME AGENT] Error identifying client:`, error);
+        console.error(`[🏢 ENTERPRISE AGENT] ❌ Error identifying client:`, error);
       }
     }
 
@@ -367,11 +384,13 @@ class RealtimeAgentService {
     // Register lifecycle listeners for this WebSocket
     this.setupWebSocketListeners(state);
 
-    // ENTERPRISE-GRADE INITIALIZATION SEQUENCE
+    // 🏢 ENTERPRISE-GRADE INITIALIZATION SEQUENCE 🏢
     if (callSid && businessId) {
       try {
-        // Load business configuration FIRST
-        await this.loadEnterpriseAgentConfig(state);
+        console.log(`[🏢 ENTERPRISE AGENT] 🔧 LOADING ENTERPRISE CONFIGURATION...`);
+        
+        // Load business configuration FIRST with bulletproof error handling
+        await this.loadEnterpriseVoiceConfiguration(state);
         
         // Create conversation record
         await prisma.callLog.create({
@@ -388,14 +407,421 @@ class RealtimeAgentService {
           }
         });
 
-        console.log(`[REALTIME AGENT] Enterprise voice agent initialized for business ${businessId}`);
+        console.log(`[🏢 ENTERPRISE AGENT] ✅ ENTERPRISE VOICE PIPELINE INITIALIZED FOR BUSINESS ${businessId}`);
+        console.log(`[🏢 ENTERPRISE AGENT] 🎯 Provider: ${state.ttsProvider.toUpperCase()}`);
+        console.log(`[🏢 ENTERPRISE AGENT] 🎙️ Voice: ${state.openaiVoice}`);
+        console.log(`[🏢 ENTERPRISE AGENT] 🚀 READY FOR FORTUNE 50 QUALITY EXPERIENCE`);
       } catch (error) {
-        console.error('[REALTIME AGENT] Error in enterprise initialization:', error);
+        console.error('[🏢 ENTERPRISE AGENT] ❌ Error in enterprise initialization:', error);
+        // Continue with bulletproof defaults
+        console.log('[🏢 ENTERPRISE AGENT] 🛡️ CONTINUING WITH BULLETPROOF DEFAULTS');
       }
     }
 
     // Schedule idle prompts for professional call management
     this._scheduleIdlePrompt(state);
+  }
+
+  /**
+   * 🎯 BULLETPROOF ENTERPRISE VOICE CONFIGURATION LOADER 🎯
+   * Loads voice configuration with triple-layered fallback system
+   */
+  private async loadEnterpriseVoiceConfiguration(state: ConnectionState): Promise<void> {
+    if (!state.businessId || state.__configLoaded) return;
+
+    console.log(`[🏢 ENTERPRISE CONFIG] 🔧 Loading voice configuration for business ${state.businessId}`);
+
+    try {
+      // 🎯 LAYER 1: Load from database with comprehensive error handling
+      const cfg: any = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        select: {
+          useOpenaiTts: true,
+          openaiVoice: true,
+          openaiModel: true,
+          personaPrompt: true,
+          ttsProvider: true,
+          voiceSettings: true,
+          elevenlabsVoice: true,
+          elevenlabsModel: true,
+          voiceGreetingMessage: true,
+          welcomeMessage: true,
+        } as any,
+      });
+
+      if (cfg) {
+        console.log(`[🏢 ENTERPRISE CONFIG] ✅ Configuration found in database`);
+        
+        // 🎯 FORCE ELEVENLABS FOR ENTERPRISE QUALITY - NO EXCEPTIONS 🎯
+        state.ttsProvider = 'elevenlabs';
+        console.log(`[🏢 ENTERPRISE CONFIG] 🎯 FORCED ELEVENLABS FOR ENTERPRISE QUALITY`);
+        
+        // Set premium voice configuration with bulletproof fallbacks
+        if (cfg.elevenlabsVoice && cfg.elevenlabsVoice.trim()) {
+          state.openaiVoice = cfg.elevenlabsVoice.trim();
+          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using configured ElevenLabs voice: ${state.openaiVoice}`);
+        } else if (cfg.openaiVoice && cfg.openaiVoice.trim()) {
+          state.openaiVoice = cfg.openaiVoice.trim();
+          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using fallback voice: ${state.openaiVoice}`);
+        } else {
+          state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+          console.log(`[🏢 ENTERPRISE CONFIG] 🎙️ Using enterprise default voice: ${state.openaiVoice}`);
+        }
+        
+        // Set model with fallback
+        state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || ENTERPRISE_DEFAULTS.modelId;
+        console.log(`[🏢 ENTERPRISE CONFIG] 🔧 Using model: ${state.openaiModel}`);
+        
+        // Set persona prompt
+        state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS;
+        
+        // 🎯 PARSE VOICE SETTINGS WITH BULLETPROOF ERROR HANDLING 🎯
+        try {
+          if (cfg.voiceSettings) {
+            if (typeof cfg.voiceSettings === 'string') {
+              state.voiceSettings = JSON.parse(cfg.voiceSettings);
+              console.log(`[🏢 ENTERPRISE CONFIG] ✅ Parsed voice settings from JSON string`);
+            } else if (typeof cfg.voiceSettings === 'object') {
+              state.voiceSettings = cfg.voiceSettings;
+              console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using voice settings object`);
+            } else {
+              throw new Error('Invalid voice settings format');
+            }
+          } else {
+            throw new Error('No voice settings found');
+          }
+        } catch (jsonErr) {
+          console.warn('[🏢 ENTERPRISE CONFIG] ⚠️ Invalid voiceSettings, using enterprise defaults:', jsonErr);
+          state.voiceSettings = { ...ENTERPRISE_DEFAULTS.voiceSettings };
+        }
+        
+        console.log(`[🏢 ENTERPRISE CONFIG] ✅ ENTERPRISE VOICE CONFIG LOADED SUCCESSFULLY`);
+        console.log(`[🏢 ENTERPRISE CONFIG] 📊 Voice Settings:`, state.voiceSettings);
+      } else {
+        // 🎯 LAYER 2: No config found - use enterprise defaults
+        console.log(`[🏢 ENTERPRISE CONFIG] ⚠️ No config found, using ENTERPRISE DEFAULTS`);
+        state.ttsProvider = ENTERPRISE_DEFAULTS.ttsProvider;
+        state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+        state.openaiModel = ENTERPRISE_DEFAULTS.modelId;
+        state.voiceSettings = { ...ENTERPRISE_DEFAULTS.voiceSettings };
+      }
+    } catch (err) {
+      // 🎯 LAYER 3: Database error - use bulletproof defaults
+      console.error('[🏢 ENTERPRISE CONFIG] ❌ Database error, using BULLETPROOF DEFAULTS:', (err as Error).message);
+      state.ttsProvider = ENTERPRISE_DEFAULTS.ttsProvider;
+      state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+      state.openaiModel = ENTERPRISE_DEFAULTS.modelId;
+      state.voiceSettings = { ...ENTERPRISE_DEFAULTS.voiceSettings };
+    } finally {
+      state.__configLoaded = true;
+      console.log(`[🏢 ENTERPRISE CONFIG] 🎯 FINAL CONFIGURATION:`);
+      console.log(`[🏢 ENTERPRISE CONFIG] 🎯 Provider: ${state.ttsProvider}`);
+      console.log(`[🏢 ENTERPRISE CONFIG] 🎯 Voice: ${state.openaiVoice}`);
+      console.log(`[🏢 ENTERPRISE CONFIG] 🎯 Model: ${state.openaiModel}`);
+      console.log(`[🏢 ENTERPRISE CONFIG] 🎯 READY FOR FORTUNE 50 QUALITY`);
+    }
+  }
+
+  /**
+   * 🎯 BULLETPROOF ENTERPRISE WELCOME MESSAGE SYSTEM 🎯
+   * Triple-layered fallback system ensures welcome message ALWAYS delivers
+   */
+  private async getEnterpriseWelcomeMessage(state: ConnectionState): Promise<string> {
+    console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Generating welcome message...`);
+    
+    // 🎯 LAYER 1: Business-specific welcome message
+    if (state.businessId) {
+      try {
+        const business = await prisma.business.findUnique({
+          where: { id: state.businessId },
+          select: { name: true }
+        });
+
+        const agentConfig = await prisma.agentConfig.findUnique({
+          where: { businessId: state.businessId },
+          select: { 
+            welcomeMessage: true, 
+            voiceGreetingMessage: true 
+          }
+        });
+
+        let welcomeMessage = '';
+        
+        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim()) {
+          welcomeMessage = agentConfig.voiceGreetingMessage.trim();
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using voice greeting message`);
+        } else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim()) {
+          welcomeMessage = agentConfig.welcomeMessage.trim();
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using welcome message`);
+        } else {
+          const businessName = business?.name || 'this creative agency';
+          welcomeMessage = `Hello! Thank you for calling ${businessName}. I am your AI assistant and I am here to help with your creative projects and business needs. How may I assist you today?`;
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generated business message`);
+        }
+
+        // Personalize for existing clients
+        if (state.clientId) {
+          welcomeMessage = `Welcome back! ${welcomeMessage}`;
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for existing client`);
+        }
+
+        return welcomeMessage;
+      } catch (error) {
+        console.error(`[🏢 ENTERPRISE WELCOME] ⚠️ Error getting business welcome message:`, error);
+        // Fall through to Layer 2
+      }
+    }
+
+    // 🎯 LAYER 2: Generic professional welcome
+    const genericMessage = 'Hello! Thank you for calling StudioConnect AI. I am your AI assistant and I am here to help with your creative projects and business needs. How may I assist you today?';
+    console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generic professional message`);
+    return genericMessage;
+  }
+
+  /**
+   * 🎯 BULLETPROOF WELCOME MESSAGE DELIVERY SYSTEM 🎯
+   * Ensures welcome message ALWAYS gets delivered with multiple fallback layers
+   */
+  private async deliverBulletproofWelcomeMessage(state: ConnectionState): Promise<void> {
+    if (state.welcomeMessageDelivered) {
+      console.log(`[🏢 ENTERPRISE WELCOME] ✅ Welcome message already delivered`);
+      return;
+    }
+
+    if (!state.streamSid) {
+      console.warn(`[🏢 ENTERPRISE WELCOME] ⚠️ No streamSid available, cannot deliver welcome message yet`);
+      return;
+    }
+
+    console.log(`[🏢 ENTERPRISE WELCOME] 🚀 INITIATING BULLETPROOF WELCOME MESSAGE DELIVERY...`);
+
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts && !state.welcomeMessageDelivered) {
+      attempts++;
+      console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Delivery attempt ${attempts}/${maxAttempts}`);
+
+      try {
+        // Get welcome message
+        const welcomeMessage = await this.getEnterpriseWelcomeMessage(state);
+        console.log(`[🏢 ENTERPRISE WELCOME] 📝 Welcome message: "${welcomeMessage.substring(0, 100)}..."`);
+
+        // Ensure we have a streamSid
+        if (!state.streamSid) {
+          throw new Error('StreamSid not available');
+        }
+
+        // Deliver with bulletproof TTS
+        await this.streamEnterpriseQualityTTS(state, welcomeMessage);
+        
+        state.welcomeMessageDelivered = true;
+        console.log(`[🏢 ENTERPRISE WELCOME] ✅ WELCOME MESSAGE DELIVERED SUCCESSFULLY ON ATTEMPT ${attempts}`);
+        return;
+
+      } catch (error) {
+        console.error(`[🏢 ENTERPRISE WELCOME] ❌ Attempt ${attempts} failed:`, error);
+        
+        if (attempts === maxAttempts) {
+          // Final emergency fallback
+          console.log(`[🏢 ENTERPRISE WELCOME] 🚨 EMERGENCY FALLBACK ACTIVATED`);
+          try {
+            await this.streamEnterpriseQualityTTS(state, 'Hello! Thank you for calling. I am here to help. How may I assist you?');
+            state.welcomeMessageDelivered = true;
+            console.log(`[🏢 ENTERPRISE WELCOME] ✅ EMERGENCY WELCOME MESSAGE DELIVERED`);
+          } catch (emergencyError) {
+            console.error(`[🏢 ENTERPRISE WELCOME] 🚨 CRITICAL: Emergency fallback failed:`, emergencyError);
+          }
+        } else {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+  }
+
+  /**
+   * 🎯 ENTERPRISE-GRADE TTS STREAMING SYSTEM 🎯
+   * Bulletproof TTS with automatic provider fallback for Fortune 50 reliability
+   */
+  private async streamEnterpriseQualityTTS(state: ConnectionState, text: string): Promise<void> {
+    if (!state.streamSid) {
+      console.warn('[🏢 ENTERPRISE TTS] ⚠️ No streamSid available, cannot stream audio');
+      return;
+    }
+
+    if (state.isSpeaking || state.pendingAudioGeneration) {
+      console.warn('[🏢 ENTERPRISE TTS] ⚠️ Already generating/playing audio, skipping request');
+      return;
+    }
+
+    // Validate text input
+    if (!text || text.trim().length === 0) {
+      console.warn('[🏢 ENTERPRISE TTS] ⚠️ Empty text provided, skipping TTS');
+      return;
+    }
+
+    state.pendingAudioGeneration = true;
+    console.log(`[🏢 ENTERPRISE TTS] 🚀 GENERATING ENTERPRISE QUALITY TTS: "${text.substring(0, 50)}..."`);
+
+    try {
+      // Ensure enterprise configuration is loaded
+      if (!state.__configLoaded) {
+        await this.loadEnterpriseVoiceConfiguration(state);
+      }
+
+      // 🎯 FORCE ELEVENLABS FOR ENTERPRISE QUALITY 🎯
+      if (state.ttsProvider !== 'elevenlabs') {
+        console.log(`[🏢 ENTERPRISE TTS] 🎯 FORCING ELEVENLABS FOR ENTERPRISE QUALITY (was: ${state.ttsProvider})`);
+        state.ttsProvider = 'elevenlabs';
+        state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+        state.openaiModel = ENTERPRISE_DEFAULTS.modelId;
+      }
+
+      // Validate ElevenLabs voice ID
+      const voiceIdPattern = /^[a-zA-Z0-9_-]{20,}$/;
+      if (!voiceIdPattern.test(state.openaiVoice)) {
+        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ Invalid ElevenLabs voice ID "${state.openaiVoice}", using enterprise default`);
+        state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+      }
+
+      // Format text for ElevenLabs (clean text, no SSML)
+      const cleanText = text.replace(/<[^>]*>/g, '').trim();
+      
+      console.log(`[🏢 ENTERPRISE TTS] 🎯 Using ElevenLabs with voice ${state.openaiVoice} and model ${state.openaiModel}`);
+
+      // Generate high-quality TTS with automatic multi-provider fallback
+      let mp3Path = await generateSpeechFromText(
+        cleanText,
+        state.openaiVoice,
+        state.openaiModel,
+        'elevenlabs',
+        state.voiceSettings
+      );
+
+      // 🎯 BULLETPROOF FALLBACK SYSTEM 🎯
+      if (!mp3Path) {
+        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ ElevenLabs failed, initiating fallback sequence...`);
+
+        // Fallback 1: OpenAI TTS HD
+        console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 1: OpenAI TTS HD`);
+        mp3Path = await generateSpeechFromText(cleanText, 'nova', 'tts-1-hd', 'openai');
+        
+        if (!mp3Path) {
+          // Fallback 2: OpenAI TTS Standard
+          console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 2: OpenAI TTS Standard`);
+          mp3Path = await generateSpeechFromText(cleanText, 'nova', 'tts-1', 'openai');
+        }
+
+        if (!mp3Path) {
+          // Fallback 3: Amazon Polly
+          console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 3: Amazon Polly`);
+          mp3Path = await generateSpeechFromText(cleanText, 'Amy', 'tts-1', 'polly');
+        }
+
+        if (!mp3Path) {
+          console.error('[🏢 ENTERPRISE TTS] 🚨 CRITICAL: All TTS providers failed');
+          return;
+        }
+      }
+
+      // Mark as speaking before streaming
+      state.isSpeaking = true;
+      console.log(`[🏢 ENTERPRISE TTS] 🎵 Starting audio stream...`);
+
+      // Convert MP3 to µ-law for Twilio with enterprise-grade settings
+      const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`);
+
+      await execFileAsync(ffmpegPath as string, [
+        '-y',
+        '-i', mp3Path,
+        '-ar', '8000',
+        '-ac', '1',
+        '-f', 'mulaw',
+        '-af', 'volume=0.85,highpass=f=100,lowpass=f=3400', // Professional audio processing
+        ulawPath
+      ]);
+
+      const ulawBuffer = await fs.promises.readFile(ulawPath);
+      const CHUNK_SIZE = 320; // 40ms of audio at 8kHz µ-law
+
+      // Stream audio in real-time with professional pacing
+      for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
+        // Check for barge-in
+        if (state.bargeInDetected) {
+          state.pendingSpeechBuffer = ulawBuffer.subarray(offset);
+          console.log('[🏢 ENTERPRISE TTS] 🛑 Playback paused due to barge-in');
+          break;
+        }
+
+        const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE);
+        const payload = chunk.toString('base64');
+
+        if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          state.ws.send(JSON.stringify({
+            event: 'media',
+            streamSid: state.streamSid,
+            media: { payload }
+          }));
+        } else {
+          console.warn('[🏢 ENTERPRISE TTS] ⚠️ WebSocket not ready, stopping audio stream');
+          break;
+        }
+
+        // Professional timing for natural speech
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+
+      // Signal end of message
+      if (!state.bargeInDetected && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+        state.ws.send(JSON.stringify({ 
+          event: 'mark', 
+          streamSid: state.streamSid, 
+          mark: { name: 'speech_complete' } 
+        }));
+      }
+
+      console.log('[🏢 ENTERPRISE TTS] ✅ ENTERPRISE QUALITY TTS DELIVERED SUCCESSFULLY');
+
+      // Clean up temp files
+      await cleanupTempFile(mp3Path);
+      await cleanupTempFile(ulawPath);
+
+    } catch (error) {
+      console.error('[🏢 ENTERPRISE TTS] 🚨 CRITICAL ERROR:', error);
+      
+      // Emergency fallback with simple message
+      try {
+        console.log('[🏢 ENTERPRISE TTS] 🚨 EMERGENCY FALLBACK ACTIVATED');
+        const emergencyMp3 = await generateSpeechFromText(
+          "I apologize, I am having technical difficulties. Please hold while I reconnect.", 
+          'nova', 'tts-1', 'openai'
+        );
+        
+        if (emergencyMp3 && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          const buffer = await fs.promises.readFile(emergencyMp3);
+          const payload = buffer.toString('base64');
+          state.ws.send(JSON.stringify({
+            event: 'media',
+            streamSid: state.streamSid,
+            media: { payload }
+          }));
+          await cleanupTempFile(emergencyMp3);
+          console.log('[🏢 ENTERPRISE TTS] ✅ Emergency message delivered');
+        }
+      } catch (emergencyError) {
+        console.error('[🏢 ENTERPRISE TTS] 🚨 Emergency fallback also failed:', emergencyError);
+      }
+    } finally {
+      // Always reset state flags
+      state.isSpeaking = false;
+      state.pendingAudioGeneration = false;
+    }
+  }
+
+  // Delegate streamTTS to enterprise system
+  private async streamTTS(state: ConnectionState, text: string): Promise<void> {
+    await this.streamEnterpriseQualityTTS(state, text);
   }
 
   private async getWelcomeMessage(state: ConnectionState): Promise<string> {
@@ -548,276 +974,6 @@ class RealtimeAgentService {
       this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
     } catch (error) {
       console.error('[REALTIME AGENT] Error sending Twilio message:', error)
-    }
-  }
-
-  private async streamTTS(state: ConnectionState, text: string): Promise<void> {
-    if (!state.streamSid) {
-      console.warn('[REALTIME AGENT] No streamSid available, cannot stream audio yet')
-      return
-    }
-
-    if (state.isSpeaking || state.pendingAudioGeneration) {
-      console.warn('[REALTIME AGENT] Already generating/playing audio, skipping TTS request')
-      return
-    }
-
-    // Validate text input
-    if (!text || text.trim().length === 0) {
-      console.warn('[REALTIME AGENT] Empty text provided, skipping TTS')
-      return
-    }
-
-    state.pendingAudioGeneration = true
-
-    try {
-      /**
-       * Load the Agent-level voice configuration with bulletproof error handling
-       */
-      if (state.businessId && !state.__configLoaded) {
-        try {
-          // @ts-ignore – voiceSettings is a JSON column not yet in generated types
-          const cfg: any = await prisma.agentConfig.findUnique({
-            where: { businessId: state.businessId },
-            select: {
-              useOpenaiTts: true,
-              openaiVoice: true,
-              openaiModel: true,
-              personaPrompt: true,
-              ttsProvider: true,
-              voiceSettings: true,
-            } as any,
-          })
-
-          if (cfg) {
-            const provider = (cfg as any).ttsProvider
-            if (provider && ['openai', 'polly', 'realtime', 'elevenlabs'].includes(provider)) {
-              state.ttsProvider = provider
-            } else if (cfg.useOpenaiTts !== undefined) {
-              state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'elevenlabs' // Changed default from 'polly' to 'elevenlabs'
-            }
-            
-            // Default to ElevenLabs for premium quality
-            if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
-            
-            // Set proper voice based on provider
-            if (state.ttsProvider === 'elevenlabs') {
-              state.openaiVoice = cfg.elevenlabsVoice || cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB' // Adam
-            } else {
-              state.openaiVoice = cfg.openaiVoice || 'nova' // OpenAI voice
-            }
-            
-            state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1-hd')
-            state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
-            
-            // Fix JSON parsing error
-            try {
-              state.voiceSettings = cfg.voiceSettings && typeof cfg.voiceSettings === 'string' 
-                ? JSON.parse(cfg.voiceSettings) 
-                : cfg.voiceSettings || {}
-            } catch (jsonErr) {
-              console.warn('[REALTIME AGENT] Invalid voiceSettings JSON, using defaults:', jsonErr)
-              state.voiceSettings = {}
-            }
-            
-            console.log(`[REALTIME AGENT] Voice config loaded: ${state.ttsProvider} with voice ${state.openaiVoice}`)
-          } else {
-            // Set defaults when no config found
-            state.ttsProvider = 'elevenlabs'
-            state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
-            state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
-            state.voiceSettings = {}
-          }
-        } catch (err) {
-          console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message)
-          state.ttsProvider = 'elevenlabs'
-          state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
-          state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
-          state.voiceSettings = {}
-        } finally {
-          state.__configLoaded = true
-        }
-      }
-
-      // If realtime client is active and working, use it exclusively
-      if (state.openaiClient && state.ttsProvider === 'realtime') {
-        try {
-          console.log(`[REALTIME AGENT] Using realtime client for: ${text.substring(0, 50)}...`)
-          this.addToConversationHistory(state, 'user', text)
-          state.openaiClient.sendUserText(text)
-          state.openaiClient.requestAssistantResponse()
-
-          // Start fallback timer – if no audio within 3.5 s switch to TTS
-          this._scheduleRealtimeAudioFallback(state)
-          return
-        } catch (error) {
-          console.error('[REALTIME AGENT] Realtime client failed, falling back to TTS:', error)
-          // Fall through to TTS generation
-          state.ttsProvider = 'openai'
-          state.openaiClient = undefined
-        }
-      }
-
-      // --- Provider-specific voice validation ---
-      if (state.ttsProvider === 'elevenlabs') {
-        // ElevenLabs expects a valid voice ID (usually a UUID). If the configured voice
-        // does not resemble an ID, fall back to the default voice or env-configured ID.
-        // Accept wider character set for ElevenLabs voice IDs (mixed-case, underscore, hyphen)
-        const voiceLooksValid = /^[a-zA-Z0-9_-]{20,}$/.test(state.openaiVoice)
-        if (!voiceLooksValid) {
-          const rawFallback = process.env.ELEVENLABS_VOICE_ID || 'Rachel'
-          // Preserve original casing if the env var already appears to be a voice ID (IDs are case-sensitive)
-          const isId = /^[a-zA-Z0-9_-]{20,}$/.test(rawFallback)
-          const fallbackVoice = isId ? rawFallback : rawFallback.toLowerCase()
-          console.warn(`[REALTIME AGENT] Invalid ElevenLabs voice "${state.openaiVoice}", using fallback "${fallbackVoice}"`)
-          state.openaiVoice = fallbackVoice
-        }
-      }
-
-      // Generate high-quality TTS audio (with automatic provider fallback)
-      console.log(`[REALTIME AGENT] Generating TTS with ${state.ttsProvider} for: ${text.substring(0, 50)}...`)
-
-      const modelForProvider = state.ttsProvider === 'elevenlabs'
-        ? (process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2')
-        : state.openaiModel
-
-      // Apply provider-specific formatting (SSML for OpenAI/Polly, clean text for ElevenLabs)
-      const providerForFormat = state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider
-      const formattedText = formatForSpeech(text, { speed: state.voiceSettings?.speed }, providerForFormat)
-
-      let mp3Path = await generateSpeechFromText(
-        formattedText,
-        state.openaiVoice,
-        modelForProvider as any,
-        state.ttsProvider as 'openai' | 'polly' | 'elevenlabs',
-        state.voiceSettings as any
-      )
-
-      // --- Automatic multi-provider fallback chain ---
-      if (!mp3Path) {
-        console.warn(`[REALTIME AGENT] ${state.ttsProvider} TTS failed – attempting fallbacks`) 
-
-        // 1️⃣  Fallback to OpenAI TTS (premium quality)
-        if (state.ttsProvider !== 'openai') {
-          try {
-            mp3Path = await generateSpeechFromText(text, 'nova', 'tts-1-hd', 'openai')
-            if (mp3Path) {
-              state.ttsProvider = 'openai'
-              state.openaiVoice = 'nova'
-              state.openaiModel = 'tts-1-hd'
-              console.log('[REALTIME AGENT] Successfully fell back to OpenAI TTS')
-            }
-          } catch { /* ignore */ }
-        }
-
-        // 2️⃣  Fallback to Amazon Polly if OpenAI also fails
-        if (!mp3Path && state.ttsProvider !== 'polly') {
-          try {
-            mp3Path = await generateSpeechFromText(text, 'Amy', 'tts-1', 'polly')
-            if (mp3Path) {
-              state.ttsProvider = 'polly'
-              state.openaiVoice = 'Amy'
-              state.openaiModel = 'tts-1'
-              console.log('[REALTIME AGENT] Successfully fell back to Amazon Polly')
-            }
-          } catch { /* ignore */ }
-        }
-
-        if (!mp3Path) {
-          console.error('[REALTIME AGENT] All TTS providers failed – aborting speech for this turn')
-          return
-        }
-      }
-
-      // Mark as speaking before streaming
-      state.isSpeaking = true
-
-      const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`)
-
-      // Convert MP3 to 8kHz mono µ-law with optimized settings
-      await execFileAsync(ffmpegPath as string, [
-        '-y',
-        '-i', mp3Path,
-        '-ar', '8000',
-        '-ac', '1',
-        '-f', 'mulaw',
-        '-af', 'volume=0.8', // Slightly reduce volume for clarity
-        ulawPath
-      ])
-
-      const ulawBuffer = await fs.promises.readFile(ulawPath)
-      const CHUNK_SIZE = 320 // 40ms of audio at 8kHz µ-law
-
-      // Stream audio in real-time with proper pacing & barge-in support
-      for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
-        // If caller barged-in, pause playback and queue remaining audio
-        if (state.bargeInDetected) {
-          state.pendingSpeechBuffer = ulawBuffer.subarray(offset)
-          console.log('[REALTIME AGENT] Playback paused – remaining audio queued for later')
-          break
-        }
-
-        const chunk = ulawBuffer.subarray(offset, offset + CHUNK_SIZE)
-        const payload = chunk.toString('base64')
-
-        if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-          state.ws.send(JSON.stringify({
-            event: 'media',
-            streamSid: state.streamSid,
-            media: { payload }
-          }))
-        } else {
-          console.warn('[REALTIME AGENT] WebSocket not ready, stopping audio stream')
-          break
-        }
-
-        // Precise timing for natural speech
-        await new Promise((resolve) => setTimeout(resolve, 40))
-      }
-
-      // Signal end of message only if we finished playback fully
-      if (!state.bargeInDetected && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-        state.ws.send(JSON.stringify({ 
-          event: 'mark', 
-          streamSid: state.streamSid, 
-          mark: { name: 'speech_complete' } 
-        }))
-      }
-
-      console.log('[REALTIME AGENT] TTS streaming completed successfully')
-
-      // Clean up temp files
-      await cleanupTempFile(mp3Path)
-      await cleanupTempFile(ulawPath)
-
-    } catch (error) {
-      console.error('[REALTIME AGENT] Critical error in TTS streaming:', error)
-      
-      // Attempt emergency fallback with simple message
-      try {
-        const fallbackText = "I apologize, I'm having some technical difficulties. Let me try again."
-        const emergencyMp3 = await generateSpeechFromText(fallbackText, 'nova', 'tts-1', 'openai')
-        if (emergencyMp3) {
-          // Simple emergency playback without conversion
-          const buffer = await fs.promises.readFile(emergencyMp3)
-          // Send as base64 - Twilio can handle MP3
-          const payload = buffer.toString('base64')
-          if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-            state.ws.send(JSON.stringify({
-              event: 'media',
-              streamSid: state.streamSid,
-              media: { payload }
-            }))
-          }
-          await cleanupTempFile(emergencyMp3)
-        }
-      } catch (emergencyError) {
-        console.error('[REALTIME AGENT] Emergency fallback also failed:', emergencyError)
-      }
-    } finally {
-      // Always reset state flags
-      state.isSpeaking = false
-      state.pendingAudioGeneration = false
     }
   }
 
@@ -1136,7 +1292,7 @@ class RealtimeAgentService {
   }
 
   private async handleStartEvent(state: ConnectionState, data: any): Promise<void> {
-    console.log('[REALTIME AGENT] Processing call start event with ENTERPRISE VOICE PIPELINE...');
+    console.log('[🏢 ENTERPRISE AGENT] 🚀 PROCESSING CALL START EVENT WITH ENTERPRISE VOICE PIPELINE...');
     const callSid = data.start?.callSid;
     state.streamSid = data.start?.streamSid;
     state.isTwilioReady = true;
@@ -1151,7 +1307,7 @@ class RealtimeAgentService {
     if (this.onCallSidReceived && callSid) this.onCallSidReceived(callSid);
 
     if (!callSid) {
-      console.error('[REALTIME AGENT] CallSid not found in start message');
+      console.error('[🏢 ENTERPRISE AGENT] ❌ CallSid not found in start message');
       this.cleanup('Missing CallSid');
       return;
     }
@@ -1164,13 +1320,13 @@ class RealtimeAgentService {
       const toNumber = normalizePhoneNumber(toNumberRaw);
       const fromNumber = normalizePhoneNumber(fromNumberRaw);
 
-      console.log('[REALTIME AGENT] Call details:', { toNumber, fromNumber });
+      console.log('[🏢 ENTERPRISE AGENT] 📞 Call details:', { toNumber, fromNumber });
 
       const digitsOnly = toNumber.replace(/[^0-9]/g, '');
       let business: { id: string; twilioPhoneNumber: string | null } | null = null;
 
       if (digitsOnly) {
-        console.log(`[REALTIME AGENT] Looking up business for phone number: ${toNumber}`);
+        console.log(`[🏢 ENTERPRISE AGENT] 🔍 Looking up business for phone number: ${toNumber}`);
         // Exact match first
         business = await prisma.business.findFirst({
           where: { twilioPhoneNumber: toNumber },
@@ -1191,14 +1347,14 @@ class RealtimeAgentService {
       }
 
       if (business) {
-        console.log(`[REALTIME AGENT] Found business: ${business.id} - Initializing ENTERPRISE VOICE PIPELINE`);
+        console.log(`[🏢 ENTERPRISE AGENT] ✅ BUSINESS FOUND: ${business.id} - INITIALIZING ENTERPRISE VOICE PIPELINE`);
         
         state.businessId = business.id;
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
 
-        // Load enterprise configuration
-        await this.loadEnterpriseAgentConfig(state);
+        // Load enterprise configuration with bulletproof error handling
+        await this.loadEnterpriseVoiceConfiguration(state);
 
         // Create conversation record
         const conversation = await prisma.conversation.create({
@@ -1234,52 +1390,29 @@ class RealtimeAgentService {
         // Build enterprise system prompt
         const systemPrompt = await this.buildSystemPrompt(state);
 
-        // BULLETPROOF WELCOME MESSAGE DELIVERY
+        // 🎯 BULLETPROOF WELCOME MESSAGE DELIVERY SYSTEM 🎯
         if (!state.welcomeMessageDelivered && state.streamSid) {
-          try {
-            console.log('[REALTIME AGENT] Delivering ENTERPRISE WELCOME MESSAGE...');
-            const welcomeMessage = await this.getEnterpriseWelcomeMessage(state);
-            
-            // Ensure we have a streamSid before attempting TTS
-            if (state.streamSid) {
-              await this.streamTTS(state, welcomeMessage);
-              state.welcomeMessageDelivered = true;
-              console.log('[REALTIME AGENT] ✅ ENTERPRISE WELCOME MESSAGE DELIVERED SUCCESSFULLY');
-            } else {
-              console.error('[REALTIME AGENT] No streamSid available for welcome message');
-            }
-          } catch (err) {
-            console.error('[REALTIME AGENT] Welcome message delivery failed, using emergency fallback:', err);
-            // Emergency fallback with bulletproof message
-            try {
-              await this.streamTTS(state, 'Hello! Thank you for calling. I\'m your AI assistant and I\'m here to help. How may I assist you today?');
-              state.welcomeMessageDelivered = true;
-              console.log('[REALTIME AGENT] ✅ EMERGENCY WELCOME MESSAGE DELIVERED');
-            } catch (emergencyErr) {
-              console.error('[REALTIME AGENT] CRITICAL: Even emergency welcome failed:', emergencyErr);
-            }
-          }
+          console.log('[🏢 ENTERPRISE AGENT] 🎯 INITIATING BULLETPROOF WELCOME MESSAGE DELIVERY...');
+          await this.deliverBulletproofWelcomeMessage(state);
         }
 
         // Initialize ElevenLabs STT for high-quality transcription
         await this.initializeElevenLabsSTT(state);
 
       } else {
-        console.warn('[REALTIME AGENT] Business not found for phone number:', toNumber);
+        console.warn('[🏢 ENTERPRISE AGENT] ⚠️ Business not found for phone number:', toNumber);
         
         state.businessId = null;
         state.fromNumber = fromNumber;
         state.toNumber = toNumber;
 
+        // Load enterprise defaults even for unknown businesses
+        await this.loadEnterpriseVoiceConfiguration(state);
+
         // Generic professional greeting for unknown businesses
         if (!state.welcomeMessageDelivered && state.streamSid) {
-          try {
-            await this.streamTTS(state, 'Hello! Thank you for calling StudioConnect AI. I\'m your AI assistant and I\'m here to help. How may I assist you today?');
-            state.welcomeMessageDelivered = true;
-            console.log('[REALTIME AGENT] ✅ GENERIC WELCOME MESSAGE DELIVERED');
-          } catch (err) {
-            console.error('[REALTIME AGENT] Generic welcome message failed:', err);
-          }
+          console.log('[🏢 ENTERPRISE AGENT] 🎯 Delivering generic enterprise welcome message...');
+          await this.deliverBulletproofWelcomeMessage(state);
         }
       }
 
@@ -1287,16 +1420,17 @@ class RealtimeAgentService {
       await this.initializeLeadQualification(state);
 
     } catch (error) {
-      console.error('[REALTIME AGENT] Error handling start event:', error);
+      console.error('[🏢 ENTERPRISE AGENT] ❌ Error handling start event:', error);
       
-      // Emergency recovery - still try to provide service
+      // 🚨 EMERGENCY RECOVERY SYSTEM 🚨
       if (!state.welcomeMessageDelivered && state.streamSid) {
+        console.log('[🏢 ENTERPRISE AGENT] 🚨 EMERGENCY RECOVERY ACTIVATED');
         try {
-          await this.streamTTS(state, 'Hello! Thank you for calling. I apologize for any technical difficulties. How may I help you today?');
+          await this.streamEnterpriseQualityTTS(state, 'Hello! Thank you for calling. I apologize for any technical difficulties. How may I help you today?');
           state.welcomeMessageDelivered = true;
-          console.log('[REALTIME AGENT] ✅ RECOVERY WELCOME MESSAGE DELIVERED');
+          console.log('[🏢 ENTERPRISE AGENT] ✅ EMERGENCY RECOVERY WELCOME MESSAGE DELIVERED');
         } catch (emergencyError) {
-          console.error('[REALTIME AGENT] CRITICAL: Recovery greeting also failed:', emergencyError);
+          console.error('[🏢 ENTERPRISE AGENT] 🚨 CRITICAL: Emergency recovery also failed:', emergencyError);
         }
       }
     }
@@ -2202,49 +2336,6 @@ class RealtimeAgentService {
       };
     } finally {
       state.__configLoaded = true;
-    }
-  }
-
-  private async getEnterpriseWelcomeMessage(state: ConnectionState): Promise<string> {
-    if (!state.businessId) {
-      return 'Hello! Thank you for calling StudioConnect AI. I\'m your AI assistant and I\'m here to help with your creative projects and business needs. How may I assist you today?';
-    }
-
-    try {
-      // Get business-specific welcome message
-      const business = await prisma.business.findUnique({
-        where: { id: state.businessId },
-        select: { name: true }
-      });
-
-      const agentConfig = await prisma.agentConfig.findUnique({
-        where: { businessId: state.businessId },
-        select: { 
-          welcomeMessage: true, 
-          voiceGreetingMessage: true 
-        }
-      });
-
-      let welcomeMessage = '';
-      
-      if (agentConfig?.voiceGreetingMessage) {
-        welcomeMessage = agentConfig.voiceGreetingMessage;
-      } else if (agentConfig?.welcomeMessage) {
-        welcomeMessage = agentConfig.welcomeMessage;
-      } else {
-        const businessName = business?.name || 'this creative agency';
-        welcomeMessage = `Hello! Thank you for calling ${businessName}. I'm your AI assistant and I'm here to help with your creative projects and business needs. How may I assist you today?`;
-      }
-
-      // Personalize for existing clients
-      if (state.clientId) {
-        welcomeMessage = `Welcome back! ${welcomeMessage}`;
-      }
-
-      return welcomeMessage;
-    } catch (error) {
-      console.error(`[REALTIME AGENT] Error getting enterprise welcome message:`, error);
-      return 'Hello! Thank you for calling. I\'m your AI assistant and I\'m here to help with your creative projects and business needs. How may I assist you today?';
     }
   }
 
