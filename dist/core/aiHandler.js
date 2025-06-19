@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateRecoveryResponse = exports.createVoiceSystemPrompt = void 0;
 exports.handleIncomingMessage = handleIncomingMessage;
 exports.processMessage = processMessage;
+exports.getProjectStatusIntelligence = getProjectStatusIntelligence;
 const db_1 = require("../services/db");
 const openai_1 = require("../services/openai");
 const voiceSessionService_1 = __importDefault(require("../services/voiceSessionService"));
@@ -52,35 +53,52 @@ ${personaPrompt ? `\n🎯 **EXECUTIVE PERSONA GUIDELINES:**\n${personaPrompt}\n`
 
 🎯 **FORTUNE 500 OBJECTIVES - ZERO TOLERANCE FOR FAILURE:**
 1. **Fortune 500 Clients**: Deliver instant project intelligence, executive-level updates, and seamless escalation
-2. **Enterprise Prospects**: Qualify high-value opportunities with C-suite professionalism
+2. **Enterprise Prospects**: Qualify high-value opportunities with C-suite professionalism  
 3. **Mission-Critical Issues**: Immediate executive escalation for time-sensitive business matters
 4. **Account Management Excellence**: Maintain relationships worth millions in annual revenue
+5. **Project Status Intelligence**: Provide real-time creative project updates, deliverable tracking, and timeline management
+6. **Creative Strategy Consultation**: Offer strategic guidance on branding, marketing campaigns, and creative initiatives
 
 💼 **EXECUTIVE COMMUNICATION STANDARDS:**
 - Speak with the authority and professionalism expected by Fortune 500 executives
-- Every word reflects our premium positioning in the creative industry
-- Demonstrate deep understanding of complex business challenges
+- Every word reflects our premium positioning in the creative industry  
+- Demonstrate deep understanding of complex business challenges and creative workflows
 - Show respect for the caller's time and business priorities
+- Use creative industry terminology naturally: "deliverables", "brand guidelines", "campaign assets", "creative brief", "project milestones"
+- Maintain conversational warmth while projecting competence and reliability
 
 🏢 **BULLETPROOF BUSINESS RULES - FORTUNE 500 STANDARDS:**
 
-💎 **PREMIUM AGENCY IDENTITY**: You represent EXCLUSIVELY ${businessName || 'this premier creative agency'} - a Fortune 500 caliber creative powerhouse. NEVER suggest competitors. You embody our premium market position and exceptional capabilities.
+💎 **PREMIUM AGENCY IDENTITY**: You represent EXCLUSIVELY ${businessName || 'this premier creative agency'} - a Fortune 500 caliber creative powerhouse specializing in brand strategy, creative campaigns, and marketing excellence. NEVER suggest competitors. You embody our premium market position and exceptional creative capabilities.
 
 🎯 **ENTERPRISE KNOWLEDGE PROTOCOL**: You may ONLY use information from verified "CONTEXT" data below. For ANY information not explicitly provided, respond with executive-level professionalism:
-"I'll need to connect you directly with our project team to get you the precise details you need. Let me arrange that immediately."
+"I'll need to connect you directly with our creative team to get you the precise project details you need. Let me arrange that immediately."
+
+📋 **PROJECT STATUS EXCELLENCE**: When clients ask about project status:
+- Check available context for specific project information
+- Provide detailed updates on deliverables, timelines, and next steps when information is available
+- For missing details: "Let me get you an immediate update from the project team. I can connect you directly with your account manager right now."
+- Always offer to escalate for urgent project needs
 
 💼 **EXECUTIVE CLIENT QUALIFICATION**: When qualifying Fortune 500 prospects:
 - Execute ONLY the strategic questions configured below
 - Ask ONE premium question at a time with executive presence
-- Use sophisticated acknowledgments: "Excellent", "Perfect", "Outstanding"
+- Use sophisticated acknowledgments: "Excellent", "Perfect", "Outstanding", "Absolutely"
 - Maintain Fortune 500 conversation flow and business intelligence gathering
+- Focus on creative needs: branding projects, campaign development, marketing initiatives, brand refreshes
+
+🎯 **ENTERPRISE ESCALATION PROTOCOL**: For urgent matters or when advanced assistance is needed:
+- Use phrases like: "Let me connect you directly with our senior team", "I'll arrange immediate assistance", "Let me get our creative director on the line"
+- Always offer escalation for complex project discussions, urgent deadlines, or budget conversations
+- Maintain premium service standards throughout escalation process
 
 🚫 **ABSOLUTE PROHIBITIONS - ZERO TOLERANCE:**
 - NEVER restart conversations or repeat greetings (maintains executive flow)
 - NEVER suggest competitors (we are the premium choice)
 - NEVER invent project details (integrity is paramount)
-- NEVER deviate from qualification protocol (consistency builds trust)
+- NEVER deviate from qualification protocol (consistency builds trust)  
 - NEVER make unauthorized commitments (executive approval required)
+- NEVER claim knowledge you don't have about specific projects or timelines
 
 **ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
 
@@ -408,7 +426,7 @@ const determineNextVoiceAction = (intent, currentFlow) => {
     return 'CONTINUE';
 };
 const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
-    var _a, _b, _c;
+    var _a, _b;
     const voiceSessionService = voiceSessionService_1.default.getInstance();
     const session = callSid ? await voiceSessionService.getVoiceSession(callSid) : null;
     try {
@@ -483,6 +501,11 @@ const _processMessage = async (message, conversationHistory, businessId, current
             context = contextParts.join('\n\n');
         }
         const leadCaptureQuestions = ((_a = business.agentConfig) === null || _a === void 0 ? void 0 : _a.questions) || [];
+        const conversationContext = {
+            businessName: business.name,
+            criticalTopics: [],
+            lastInteractionType: 'inquiry'
+        };
         const personaPrompt = (_b = business.agentConfig) === null || _b === void 0 ? void 0 : _b.personaPrompt;
         const systemMessage = (0, exports.createVoiceSystemPrompt)(business.name, context, leadCaptureQuestions, personaPrompt || undefined);
         const finalHistory = conversationHistory.map((h) => ({
@@ -491,27 +514,18 @@ const _processMessage = async (message, conversationHistory, businessId, current
         }));
         console.log('[AI Handler] Generating chat completion with system message:', systemMessage.substring(0, 500) + '...');
         try {
-            const statusRegex = /(status|update|progress)\s+(of|for)?\s+([\w\s\-']{3,})/i;
-            const m = message.match(statusRegex);
-            if (m && m[3] && businessId) {
-                const projName = m[3].trim();
-                const proj = await db_1.prisma.project.findFirst({
-                    where: {
-                        businessId,
-                        name: { contains: projName, mode: 'insensitive' },
-                    },
-                    select: { name: true, status: true, details: true },
-                });
-                if (proj) {
-                    const statusText = ((_c = proj.status) === null || _c === void 0 ? void 0 : _c.toLowerCase().replace(/_/g, ' ')) || 'in progress';
-                    const detailsText = proj.details ? ` Latest update: ${proj.details}.` : '';
-                    const quickReply = `The current status of ${proj.name} is ${statusText}.${detailsText}`;
-                    return { reply: quickReply, currentFlow: currentActiveFlow || null, nextAction: 'CONTINUE' };
-                }
+            const projectStatusResult = await getProjectStatusIntelligence(message, businessId);
+            if (projectStatusResult) {
+                console.log(`[🎯 PROJECT INTELLIGENCE] ✅ Handled project status inquiry: ${projectStatusResult.projectFound ? 'Found' : 'Not found'}`);
+                return {
+                    reply: projectStatusResult.reply,
+                    currentFlow: currentActiveFlow || null,
+                    nextAction: 'CONTINUE'
+                };
             }
         }
-        catch (quickErr) {
-            console.warn('[AI Handler] Quick project status check failed, falling back to LLM', quickErr);
+        catch (projectErr) {
+            console.warn('[🎯 PROJECT INTELLIGENCE] ⚠️ Project status intelligence failed, falling back to LLM:', projectErr);
         }
         const aiResponse = await (0, openai_1.getChatCompletion)([
             { role: 'system', content: systemMessage },
@@ -625,5 +639,209 @@ function processMessage(...args) {
     }
     const [message, conversationHistory, businessId, currentActiveFlow = null, callSid, channel = 'VOICE'] = args;
     return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel);
+}
+async function getProjectStatusIntelligence(message, businessId) {
+    var _a, _b;
+    if (!businessId)
+        return null;
+    try {
+        const statusPatterns = [
+            /(status|update|progress|where\s+(are\s+)?we|how\s+is|what'?s\s+the\s+status)\s+(of|on|for|with)?\s*(.{3,})/i,
+            /(can\s+you\s+)?((check|give\s+me|tell\s+me|provide)\s+)?(an?\s+)?(update|status|progress)\s+(on|for|about|regarding)\s*(.{3,})/i,
+            /(when\s+(will|is)|timeline\s+for|eta\s+for|deadline\s+for)\s*(.{3,})/i,
+            /(is|has)\s+(.{3,})\s+(done|finished|completed|ready)/i,
+            /(project|campaign|website|logo|branding|design)\s+(.{3,})/i
+        ];
+        let projectQuery = '';
+        let matchType = '';
+        for (const pattern of statusPatterns) {
+            const match = message.match(pattern);
+            if (match) {
+                const captures = match.slice(1).filter(cap => cap && cap.trim().length > 2);
+                if (captures.length > 0) {
+                    projectQuery = captures[captures.length - 1].trim();
+                    matchType = pattern.toString().includes('timeline|eta|deadline') ? 'timeline' : 'status';
+                    break;
+                }
+            }
+        }
+        if (!projectQuery)
+            return null;
+        projectQuery = projectQuery
+            .replace(/\b(project|the|a|an|is|are|was|were|been|being|be|have|has|had|will|would|could|should|may|might|can|shall|must|status|update|progress|done|finished|completed|ready)\b/gi, '')
+            .replace(/[^\w\s-']/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (projectQuery.length < 2)
+            return null;
+        console.log(`[🎯 PROJECT INTELLIGENCE] Searching for project: "${projectQuery}" (type: ${matchType})`);
+        let project = await db_1.prisma.project.findFirst({
+            where: {
+                businessId,
+                name: { equals: projectQuery, mode: 'insensitive' }
+            },
+            select: {
+                id: true, name: true, status: true, details: true,
+                assignee: true, dueDate: true, lastSyncedAt: true,
+                client: { select: { name: true } }
+            }
+        });
+        if (!project) {
+            project = await db_1.prisma.project.findFirst({
+                where: {
+                    businessId,
+                    name: { contains: projectQuery, mode: 'insensitive' }
+                },
+                select: {
+                    id: true, name: true, status: true, details: true,
+                    assignee: true, dueDate: true, lastSyncedAt: true,
+                    client: { select: { name: true } }
+                }
+            });
+        }
+        if (!project && projectQuery.includes(' ')) {
+            const words = projectQuery.split(' ').filter(w => w.length > 2);
+            if (words.length > 0) {
+                const wordConditions = words.map(word => ({
+                    name: { contains: word, mode: 'insensitive' }
+                }));
+                project = await db_1.prisma.project.findFirst({
+                    where: {
+                        businessId,
+                        OR: wordConditions
+                    },
+                    select: {
+                        id: true, name: true, status: true, details: true,
+                        assignee: true, dueDate: true, lastSyncedAt: true,
+                        client: { select: { name: true } }
+                    }
+                });
+            }
+        }
+        if (!project) {
+            const client = await db_1.prisma.client.findFirst({
+                where: {
+                    businessId,
+                    name: { contains: projectQuery, mode: 'insensitive' }
+                },
+                select: {
+                    name: true,
+                    projects: {
+                        select: {
+                            id: true, name: true, status: true, details: true,
+                            assignee: true, dueDate: true, lastSyncedAt: true,
+                            client: { select: { name: true } }
+                        },
+                        orderBy: { updatedAt: 'desc' },
+                        take: 1
+                    }
+                }
+            });
+            if (client && client.projects.length > 0) {
+                project = client.projects[0];
+            }
+        }
+        if (!project) {
+            console.log(`[🎯 PROJECT INTELLIGENCE] No project found for: "${projectQuery}"`);
+            const availableProjects = await db_1.prisma.project.findMany({
+                where: { businessId },
+                select: { name: true, status: true },
+                orderBy: { updatedAt: 'desc' },
+                take: 5
+            });
+            if (availableProjects.length > 0) {
+                const projectList = availableProjects
+                    .map(p => { var _a; return `• ${p.name} (${((_a = p.status) === null || _a === void 0 ? void 0 : _a.toLowerCase().replace(/_/g, ' ')) || 'active'})`; })
+                    .join('\n');
+                return {
+                    reply: `I couldn't find a project matching "${projectQuery}". Here are your current active projects:\n\n${projectList}\n\nCould you please specify which project you'd like an update on?`,
+                    projectFound: false
+                };
+            }
+            else {
+                return {
+                    reply: `I couldn't find a project matching "${projectQuery}". It's possible the project hasn't been synced yet, or it might be under a different name. Could you provide the exact project name, or would you like me to connect you with your project manager?`,
+                    projectFound: false
+                };
+            }
+        }
+        try {
+            await (0, projectStatusService_1.refreshProjectStatus)(project.id);
+            const updatedProject = await db_1.prisma.project.findUnique({
+                where: { id: project.id },
+                select: {
+                    id: true, name: true, status: true, details: true,
+                    assignee: true, dueDate: true, lastSyncedAt: true,
+                    client: { select: { name: true } }
+                }
+            });
+            if (updatedProject)
+                project = updatedProject;
+        }
+        catch (refreshError) {
+            console.warn('[🎯 PROJECT INTELLIGENCE] Could not refresh project status:', refreshError);
+        }
+        const statusText = ((_a = project.status) === null || _a === void 0 ? void 0 : _a.toLowerCase().replace(/_/g, ' ')) || 'in progress';
+        const projectName = project.name;
+        const clientName = (_b = project.client) === null || _b === void 0 ? void 0 : _b.name;
+        let response = '';
+        if (matchType === 'timeline') {
+            response = `Regarding the timeline for ${projectName}`;
+        }
+        else {
+            response = `Here's the current status of ${projectName}`;
+        }
+        if (clientName) {
+            response += ` for ${clientName}`;
+        }
+        response += `:\n\n`;
+        response += `📊 **Status:** ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}\n`;
+        if (project.assignee) {
+            response += `👤 **Assigned to:** ${project.assignee}\n`;
+        }
+        if (project.dueDate) {
+            const dueDate = new Date(project.dueDate);
+            const now = new Date();
+            const timeDiff = dueDate.getTime() - now.getTime();
+            const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+            response += `📅 **Due Date:** ${dueDate.toLocaleDateString()}`;
+            if (daysDiff > 0) {
+                response += ` (${daysDiff} days remaining)`;
+            }
+            else if (daysDiff === 0) {
+                response += ` (due today)`;
+            }
+            else {
+                response += ` (${Math.abs(daysDiff)} days overdue)`;
+            }
+            response += `\n`;
+        }
+        if (project.details && project.details.trim()) {
+            response += `📝 **Latest Update:** ${project.details}\n`;
+        }
+        if (project.lastSyncedAt) {
+            const syncDate = new Date(project.lastSyncedAt);
+            const syncAgo = Math.round((Date.now() - syncDate.getTime()) / (1000 * 60));
+            if (syncAgo < 60) {
+                response += `\n*Information updated ${syncAgo} minutes ago*`;
+            }
+            else {
+                response += `\n*Information updated ${Math.round(syncAgo / 60)} hours ago*`;
+            }
+        }
+        response += `\n\nIs there anything specific about this project you'd like me to help you with?`;
+        console.log(`[🎯 PROJECT INTELLIGENCE] ✅ Generated status response for project: ${projectName}`);
+        return {
+            reply: response,
+            projectFound: true
+        };
+    }
+    catch (error) {
+        console.error('[🎯 PROJECT INTELLIGENCE] ❌ Error in project status intelligence:', error);
+        return {
+            reply: 'I apologize, but I\'m having trouble accessing project information at the moment. Let me connect you with your project manager who can provide you with a detailed status update.',
+            projectFound: false
+        };
+    }
 }
 //# sourceMappingURL=aiHandler.js.map

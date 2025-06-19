@@ -65,6 +65,7 @@ const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes")
 const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
 const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
 const cron_1 = require("./services/projectSync/cron");
+const voiceHealthMonitor_1 = require("./monitor/voiceHealthMonitor");
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
 console.log("NODE_ENV from process.env:", process.env.NODE_ENV);
 console.log("PORT from process.env:", process.env.PORT);
@@ -378,6 +379,21 @@ server.listen(PORT, async () => {
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
     await initializeRedis();
+    console.log('🎯 INITIALIZING BULLETPROOF VOICE HEALTH MONITORING...');
+    voiceHealthMonitor_1.voiceHealthMonitor.on('performanceAlert', (alert) => {
+        console.error(`[🚨 PERFORMANCE ALERT] ${alert.type}: ${alert.message}`);
+    });
+    voiceHealthMonitor_1.voiceHealthMonitor.on('callStarted', (event) => {
+        console.log(`[🎯 VOICE MONITOR] Call started: ${event.callSid}`);
+    });
+    voiceHealthMonitor_1.voiceHealthMonitor.on('callEnded', (event) => {
+        console.log(`[🎯 VOICE MONITOR] Call ended: ${event.callSid} - ${event.status}`);
+    });
+    setInterval(() => {
+        const report = voiceHealthMonitor_1.voiceHealthMonitor.generatePerformanceReport();
+        console.log(report);
+    }, 5 * 60 * 1000);
+    console.log('✅ BULLETPROOF VOICE HEALTH MONITORING ACTIVE');
     (0, cron_1.startAsanaCron)();
     try {
         const { startAtlassianPdrCron } = await Promise.resolve().then(() => __importStar(require('./services/projectSync/cron')));

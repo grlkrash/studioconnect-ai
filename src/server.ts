@@ -35,6 +35,7 @@ import leadQuestionRoutes from './api/leadQuestionRoutes'
 import integrationRoutes from './api/integrationRoutes'
 import webhookRoutes from './api/webhookRoutes'
 import { startAsanaCron } from './services/projectSync/cron'
+import { voiceHealthMonitor } from './monitor/voiceHealthMonitor'
 
 // At the very top of src/server.ts, or right after all imports
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>")
@@ -498,6 +499,34 @@ server.listen(PORT, async () => {
   
   // Initialize Redis after server starts
   await initializeRedis()
+
+  // 🎯 INITIALIZE BULLETPROOF VOICE HEALTH MONITORING 🎯
+  console.log('🎯 INITIALIZING BULLETPROOF VOICE HEALTH MONITORING...');
+
+  // Set up real-time performance alerts
+  voiceHealthMonitor.on('performanceAlert', (alert) => {
+    console.error(`[🚨 PERFORMANCE ALERT] ${alert.type}: ${alert.message}`);
+    
+    // TODO: Send alerts to Slack, email, PagerDuty, etc.
+    // Example: await sendSlackAlert(alert);
+  });
+
+  // Set up call tracking events
+  voiceHealthMonitor.on('callStarted', (event) => {
+    console.log(`[🎯 VOICE MONITOR] Call started: ${event.callSid}`);
+  });
+
+  voiceHealthMonitor.on('callEnded', (event) => {
+    console.log(`[🎯 VOICE MONITOR] Call ended: ${event.callSid} - ${event.status}`);
+  });
+
+  // Generate performance report every 5 minutes
+  setInterval(() => {
+    const report = voiceHealthMonitor.generatePerformanceReport();
+    console.log(report);
+  }, 5 * 60 * 1000);
+
+  console.log('✅ BULLETPROOF VOICE HEALTH MONITORING ACTIVE');
 
   // --- Start periodic Asana sync cron ---
   startAsanaCron()

@@ -44,7 +44,7 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
         response_type: 'code',
         redirect_uri: `${appBaseUrl}/api/integrations/asana/oauth-callback`,
         state,
-        scope: 'default',
+        scope: 'read_user read_workspace',
         code_challenge: challenge,
         code_challenge_method: 'S256',
       })
@@ -88,7 +88,7 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
       const params = new URLSearchParams({
         audience: 'api.atlassian.com',
         client_id: clientId,
-        scope: 'offline_access read:jira-work',
+        scope: 'read:jira-work read:jira-user offline_access',
         redirect_uri: `${appBaseUrl}/api/integrations/jira/oauth-callback`,
         response_type: 'code',
         state,
@@ -125,14 +125,16 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
     await redis.getClient().del(`oauth:${state}`)
     const savedObj = JSON.parse(saved) as any
 
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' })
+    // Use businessId from saved state instead of requiring authenticated user
+    const businessId = savedObj.businessId
+    if (!businessId) return res.status(400).send('Missing business ID')
 
     if (provider === 'ASANA') {
       if (!isProviderEnabled('ASANA')) {
         const missing = getMissingKeys('ASANA').join(', ')
         return res.status(500).send(`Asana integration disabled – missing ${missing}`)
       }
-      const { verifier, businessId } = savedObj
+      const { verifier } = savedObj
       const clientId = process.env.ASANA_CLIENT_ID!
       const clientSecret = process.env.ASANA_CLIENT_SECRET!
       const appBaseUrl = getAppBaseUrl()
@@ -177,7 +179,7 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
         const missing = getMissingKeys('MONDAY').join(', ')
         return res.status(500).send(`Monday integration disabled – missing ${missing}`)
       }
-      const { businessId } = savedObj
+      // businessId already extracted above
       const clientId = process.env.MONDAY_CLIENT_ID!
       const clientSecret = process.env.MONDAY_CLIENT_SECRET!
       const appBaseUrl = getAppBaseUrl()
@@ -205,7 +207,7 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
         const missing = getMissingKeys('JIRA').join(', ')
         return res.status(500).send(`Jira integration disabled – missing ${missing}`)
       }
-      const { verifier, businessId } = savedObj
+      const { verifier } = savedObj
       const clientId = process.env.JIRA_CLIENT_ID!
       const clientSecret = process.env.JIRA_CLIENT_SECRET!
       const appBaseUrl = getAppBaseUrl()

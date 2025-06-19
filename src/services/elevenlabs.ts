@@ -118,7 +118,7 @@ export async function generateSpeechWithElevenLabs(
       model_id: modelId,
       voice_settings: {
         stability: voiceSettings?.stability ?? enterpriseDefaults.stability,
-        similarity_boost: voiceSettings?.similarity ?? enterpriseDefaults.similarity,
+        similarity_boost: voiceSettings?.similarity ?? enterpriseDefaults.similarity_boost,
         style: voiceSettings?.style ?? enterpriseDefaults.style,
         use_speaker_boost: voiceSettings?.use_speaker_boost ?? enterpriseDefaults.use_speaker_boost,
       }

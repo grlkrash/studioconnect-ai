@@ -24,6 +24,25 @@ const nextConfig = {
         // prefixing occurs.  By omitting `basePath: false` the rewrite complies
         // with Next.js 14 validation rules.
       },
+      // Additional rewrite to handle admin API calls correctly
+      {
+        source: '/admin/api/:path*',
+        destination: '/admin/api/:path*',
+      },
+    ]
+  },
+  // Add proper API routing configuration
+  async headers() {
+    return [
+      {
+        source: '/admin/api/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, max-age=0',
+          },
+        ],
+      },
     ]
   },
 }

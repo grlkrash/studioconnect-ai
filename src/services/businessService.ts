@@ -15,7 +15,11 @@ export async function getBusinessIdFromPhoneNumber(phoneNumber: string): Promise
 export async function getBusinessWelcomeMessage(businessId: string): Promise<string> {
   const agentConfig = await prisma.agentConfig.findUnique({
     where: { businessId },
-    select: { welcomeMessage: true }
+    select: { 
+      welcomeMessage: true,
+      voiceGreetingMessage: true,
+      agentName: true
+    }
   })
 
   // Fetch business name for dynamic placeholder replacement
@@ -25,11 +29,17 @@ export async function getBusinessWelcomeMessage(businessId: string): Promise<str
   })
 
   const bizName = business?.name || 'our business'
+  const agentName = agentConfig?.agentName || 'AI Account Manager'
 
-  if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim()) {
+  // Prioritize voiceGreetingMessage for voice calls
+  if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 5) {
+    return agentConfig.voiceGreetingMessage.replace(/\{businessName\}/gi, bizName)
+  }
+
+  if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 5) {
     return agentConfig.welcomeMessage.replace(/\{businessName\}/gi, bizName)
   }
 
-  // Improved default welcome
-  return `Hello! Thanks for calling ${bizName}. How can I help you today?`
+  // Enhanced professional default welcome
+  return `Good day! Thank you for calling ${bizName}. I'm ${agentName}, your dedicated creative strategist, here to assist with your brand projects and creative initiatives. How may I help you today?`
 } 
