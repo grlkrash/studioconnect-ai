@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import twilio from 'twilio'
 import OpenAI from 'openai'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 async function quickCheck<T>(fn: () => Promise<T>, timeoutMs = 2500): Promise<boolean> {
   try {
