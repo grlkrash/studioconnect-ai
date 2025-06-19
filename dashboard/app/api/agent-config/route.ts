@@ -40,6 +40,7 @@ export async function PUT(req: NextRequest) {
       'voiceGreetingMessage',
       'ttsProvider',
       'widgetTheme',
+      'voiceSettings',
     ] as const
 
     const data: Record<string, any> = {}
