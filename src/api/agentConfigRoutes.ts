@@ -39,6 +39,10 @@ router.put('/', authMiddleware, async (req, res) => {
       'widgetTheme',
       'ttsProvider',
       'voiceSettings',
+      'elevenlabsVoice',
+      'elevenlabsModel',
+      'colorTheme',
+      'leadCaptureCompletionMessage',
     ] as const
 
     const data: Record<string, unknown> = {}

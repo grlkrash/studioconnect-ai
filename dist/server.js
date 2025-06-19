@@ -257,6 +257,10 @@ nextApp.prepare()
     app.use('/api/integrations', integrationRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
     app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
+    app.post('/api/voice-preview', async (req, res) => {
+        req.url = '/preview';
+        (0, elevenlabsRoutes_1.elevenLabsRouter)(req, res, () => { });
+    });
     const widgetHandler = (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
         console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);

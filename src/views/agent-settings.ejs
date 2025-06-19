@@ -276,34 +276,191 @@
                     <h3 style="color: #333; font-size: 18px; margin-bottom: 15px;">🎵 Voice Technology</h3>
                     
                     <div class="form-group">
-                        <label for="ttsProvider">Voice Mode:</label>
+                        <label for="ttsProvider">Voice Provider:</label>
                         <select 
                             id="ttsProvider" 
                             name="ttsProvider"
                             style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
                         >
-                            <option value="realtime" <%= (agentConfig && agentConfig.ttsProvider === 'realtime') ? 'selected' : '' %>>Realtime Streaming (OpenAI)</option>
-                            <option value="openai" <%= (!agentConfig || agentConfig.ttsProvider === 'openai' || (!agentConfig.ttsProvider && agentConfig.useOpenaiTts !== false)) ? 'selected' : '' %>>OpenAI TTS (Batch)</option>
-                            <option value="polly" <%= (agentConfig && agentConfig.ttsProvider === 'polly') ? 'selected' : '' %>>Amazon Polly Fallback</option>
+                            <option value="elevenlabs" <%= (!agentConfig || agentConfig.ttsProvider === 'elevenlabs' || !agentConfig.ttsProvider) ? 'selected' : '' %>>ElevenLabs (Premium AI Voices) - RECOMMENDED</option>
+                            <option value="realtime" <%= (agentConfig && agentConfig.ttsProvider === 'realtime') ? 'selected' : '' %>>OpenAI Realtime (Streaming)</option>
+                            <option value="openai" <%= (agentConfig && agentConfig.ttsProvider === 'openai') ? 'selected' : '' %>>OpenAI TTS (Standard)</option>
+                            <option value="polly" <%= (agentConfig && agentConfig.ttsProvider === 'polly') ? 'selected' : '' %>>Amazon Polly (Fallback)</option>
                         </select>
                         <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                            "Realtime" uses OpenAI's streaming voice model for the most natural experience. Choose TTS for lower latency scenarios or Polly for compliance reasons.
+                            <strong>ElevenLabs</strong> provides the most natural, human-like voices perfect for Fortune 500 clients. OpenAI Realtime offers low-latency streaming for conversations.
                         </small>
                     </div>
+
+                    <!-- ElevenLabs Configuration -->
+                    <div id="elevenlabsVoiceSection" class="form-group" style="display: block;">
+                        <div style="background: linear-gradient(45deg, #8b5cf6, #06b6d4); color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 16px;">⭐ ElevenLabs Premium Voices</h4>
+                            <p style="margin: 0; font-size: 14px; opacity: 0.9;">Enterprise-grade AI voices trusted by Fortune 500 companies for natural, engaging conversations.</p>
+                        </div>
+                        
+                        <label for="elevenlabsVoice">ElevenLabs Voice:</label>
+                        <select 
+                            id="elevenlabsVoice" 
+                            name="elevenlabsVoice"
+                            style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white; width: 100%;"
+                        >
+                            <optgroup label="🏢 Professional Business Voices">
+                                <option value="pNInz6obpgDQGcFmaJgB" <%= (agentConfig && agentConfig.elevenlabsVoice === 'pNInz6obpgDQGcFmaJgB') ? 'selected' : ((!agentConfig || !agentConfig.elevenlabsVoice) ? 'selected' : '') %>>Adam (Warm, Professional Male) - RECOMMENDED</option>
+                                <option value="EXAVITQu4vr4xnSDxMaL" <%= (agentConfig && agentConfig.elevenlabsVoice === 'EXAVITQu4vr4xnSDxMaL') ? 'selected' : '' %>>Sarah (Clear, Articulate Female)</option>
+                                <option value="VR6AewLTigWG4xSOukaG" <%= (agentConfig && agentConfig.elevenlabsVoice === 'VR6AewLTigWG4xSOukaG') ? 'selected' : '' %>>Arnold (Confident, Authoritative Male)</option>
+                                <option value="ErXwobaYiN019PkySvjV" <%= (agentConfig && agentConfig.elevenlabsVoice === 'ErXwobaYiN019PkySvjV') ? 'selected' : '' %>>Antoni (Friendly, Approachable Male)</option>
+                                <option value="21m00Tcm4TlvDq8ikWAM" <%= (agentConfig && agentConfig.elevenlabsVoice === '21m00Tcm4TlvDq8ikWAM') ? 'selected' : '' %>>Rachel (Professional Female)</option>
+                                <option value="AZnzlk1XvdvUeBnXmlld" <%= (agentConfig && agentConfig.elevenlabsVoice === 'AZnzlk1XvdvUeBnXmlld') ? 'selected' : '' %>>Domi (Energetic Female)</option>
+                                <option value="CYw3kZ02Hs0563khs1Fj" <%= (agentConfig && agentConfig.elevenlabsVoice === 'CYw3kZ02Hs0563khs1Fj') ? 'selected' : '' %>>Dave (Conversational Male)</option>
+                                <option value="FGY2WhTYpPnrIDTdsKH5" <%= (agentConfig && agentConfig.elevenlabsVoice === 'FGY2WhTYpPnrIDTdsKH5') ? 'selected' : '' %>>Laura (Calm, Professional Female)</option>
+                                <option value="IKne3meq5aSn9XLyUdCD" <%= (agentConfig && agentConfig.elevenlabsVoice === 'IKne3meq5aSn9XLyUdCD') ? 'selected' : '' %>>Charlie (Upbeat Male)</option>
+                                <option value="JBFqnCBsd6RMkjVDRZzb" <%= (agentConfig && agentConfig.elevenlabsVoice === 'JBFqnCBsd6RMkjVDRZzb') ? 'selected' : '' %>>George (Mature, Wise Male)</option>
+                                <option value="N2lVS1w4EtoT3dr4eOWO" <%= (agentConfig && agentConfig.elevenlabsVoice === 'N2lVS1w4EtoT3dr4eOWO') ? 'selected' : '' %>>Callum (Strong, Confident Male)</option>
+                                <option value="TX3LPaxmHKxFdv7VOQHJ" <%= (agentConfig && agentConfig.elevenlabsVoice === 'TX3LPaxmHKxFdv7VOQHJ') ? 'selected' : '' %>>Liam (Young, Professional Male)</option>
+                                <option value="ThT5KcBeYPX3keUQqHPh" <%= (agentConfig && agentConfig.elevenlabsVoice === 'ThT5KcBeYPX3keUQqHPh') ? 'selected' : '' %>>Dorothy (Mature, Wise Female)</option>
+                                <option value="XB0fDUnXU5powFXDhCwa" <%= (agentConfig && agentConfig.elevenlabsVoice === 'XB0fDUnXU5powFXDhCwa') ? 'selected' : '' %>>Charlotte (Elegant Female)</option>
+                                <option value="Xb7hH8MSUJpSbSDYk0k2" <%= (agentConfig && agentConfig.elevenlabsVoice === 'Xb7hH8MSUJpSbSDYk0k2') ? 'selected' : '' %>>Alice (Bright, Cheerful Female)</option>
+                                <option value="bIHbv24MWmeRgasZH58o" <%= (agentConfig && agentConfig.elevenlabsVoice === 'bIHbv24MWmeRgasZH58o') ? 'selected' : '' %>>Will (Smooth, Professional Male)</option>
+                                <option value="flq6f7yk4E4fJM5XTYuZ" <%= (agentConfig && agentConfig.elevenlabsVoice === 'flq6f7yk4E4fJM5XTYuZ') ? 'selected' : '' %>>Michael (Deep, Authoritative Male)</option>
+                                <option value="g5CIjZEefAph4nQFvHAz" <%= (agentConfig && agentConfig.elevenlabsVoice === 'g5CIjZEefAph4nQFvHAz') ? 'selected' : '' %>>Ethan (Versatile Male)</option>
+                                <option value="jBpfuIE2acCO8z3wKNLl" <%= (agentConfig && agentConfig.elevenlabsVoice === 'jBpfuIE2acCO8z3wKNLl') ? 'selected' : '' %>>Gigi (Vibrant Female)</option>
+                                <option value="jsCqWAovK2LkecY7zXl4" <%= (agentConfig && agentConfig.elevenlabsVoice === 'jsCqWAovK2LkecY7zXl4') ? 'selected' : '' %>>Freya (Young, Fresh Female)</option>
+                                <option value="nPczCjzI2devNBz1zQrb" <%= (agentConfig && agentConfig.elevenlabsVoice === 'nPczCjzI2devNBz1zQrb') ? 'selected' : '' %>>Brian (Calm, Steady Male)</option>
+                                <option value="oWAxZDx7w5VEj9dCyTzz" <%= (agentConfig && agentConfig.elevenlabsVoice === 'oWAxZDx7w5VEj9dCyTzz') ? 'selected' : '' %>>Grace (Gentle, Professional Female)</option>
+                                <option value="pqHfZKP75CvOlQylNhV4" <%= (agentConfig && agentConfig.elevenlabsVoice === 'pqHfZKP75CvOlQylNhV4') ? 'selected' : '' %>>Bill (Friendly, Reliable Male)</option>
+                                <option value="t0jbNlBVZ17f02VDIeMI" <%= (agentConfig && agentConfig.elevenlabsVoice === 't0jbNlBVZ17f02VDIeMI') ? 'selected' : '' %>>Valentino (Sophisticated Male)</option>
+                                <option value="yoZ06aMxZJJ28mfd3POQ" <%= (agentConfig && agentConfig.elevenlabsVoice === 'yoZ06aMxZJJ28mfd3POQ') ? 'selected' : '' %>>Sam (Neutral, Professional)</option>
+                            </optgroup>
+                            <optgroup label="🆕 Load More Voices">
+                                <option value="load_more_voices">🔄 Load Available Voices from ElevenLabs</option>
+                            </optgroup>
+                        </select>
+                        <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                            Choose the ElevenLabs voice that best represents your brand. Adam is recommended for most business applications.
+                        </small>
+
+                        <!-- Voice Preview Button -->
+                        <div style="margin-top: 10px;">
+                            <button type="button" id="previewVoiceBtn" style="background-color: #8b5cf6; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-right: 10px;">
+                                🎵 Preview Voice
+                            </button>
+                            <button type="button" id="loadVoicesBtn" style="background-color: #06b6d4; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                                🔄 Refresh Voice List
+                            </button>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 15px;">
+                            <label for="elevenlabsModel">ElevenLabs Model:</label>
+                            <select 
+                                id="elevenlabsModel" 
+                                name="elevenlabsModel"
+                                style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
+                            >
+                                <option value="eleven_turbo_v2_5" <%= (!agentConfig || agentConfig.elevenlabsModel === 'eleven_turbo_v2_5' || !agentConfig.elevenlabsModel) ? 'selected' : '' %>>Turbo v2.5 (Fastest, Real-time) - RECOMMENDED</option>
+                                <option value="eleven_multilingual_v2" <%= (agentConfig && agentConfig.elevenlabsModel === 'eleven_multilingual_v2') ? 'selected' : '' %>>Multilingual v2 (High Quality, 32 Languages)</option>
+                                <option value="eleven_flash_v2_5" <%= (agentConfig && agentConfig.elevenlabsModel === 'eleven_flash_v2_5') ? 'selected' : '' %>>Flash v2.5 (Ultra-Fast, Low Latency)</option>
+                                <option value="eleven_monolingual_v1" <%= (agentConfig && agentConfig.elevenlabsModel === 'eleven_monolingual_v1') ? 'selected' : '' %>>Monolingual v1 (English Only, Stable)</option>
+                            </select>
+                            <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
+                                Turbo v2.5 is optimized for real-time voice conversations with minimal latency.
+                            </small>
+                        </div>
+
+                        <!-- Advanced Voice Settings -->
+                        <div style="border: 1px solid #e5e7eb; border-radius: 6px; padding: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 15px 0; font-size: 16px; color: #333;">🎚️ Advanced Voice Settings</h4>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                <div class="form-group">
+                                    <label for="voiceStability">Stability (0.0 - 1.0):</label>
+                                    <input 
+                                        type="range" 
+                                        id="voiceStability" 
+                                        name="voiceStability" 
+                                        min="0" 
+                                        max="1" 
+                                        step="0.1" 
+                                        value="<%= (agentConfig && agentConfig.voiceSettings && agentConfig.voiceSettings.stability !== undefined) ? agentConfig.voiceSettings.stability : '0.5' %>"
+                                        style="width: 100%;"
+                                    >
+                                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+                                        <span>More Expressive</span>
+                                        <span id="stabilityValue">0.5</span>
+                                        <span>More Stable</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="voiceSimilarity">Similarity (0.0 - 1.0):</label>
+                                    <input 
+                                        type="range" 
+                                        id="voiceSimilarity" 
+                                        name="voiceSimilarity" 
+                                        min="0" 
+                                        max="1" 
+                                        step="0.1" 
+                                        value="<%= (agentConfig && agentConfig.voiceSettings && agentConfig.voiceSettings.similarity !== undefined) ? agentConfig.voiceSettings.similarity : '0.8' %>"
+                                        style="width: 100%;"
+                                    >
+                                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+                                        <span>More Creative</span>
+                                        <span id="similarityValue">0.8</span>
+                                        <span>More Accurate</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="voiceStyle">Style (0.0 - 1.0):</label>
+                                    <input 
+                                        type="range" 
+                                        id="voiceStyle" 
+                                        name="voiceStyle" 
+                                        min="0" 
+                                        max="1" 
+                                        step="0.1" 
+                                        value="<%= (agentConfig && agentConfig.voiceSettings && agentConfig.voiceSettings.style !== undefined) ? agentConfig.voiceSettings.style : '0.0' %>"
+                                        style="width: 100%;"
+                                    >
+                                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+                                        <span>Neutral</span>
+                                        <span id="styleValue">0.0</span>
+                                        <span>Emphasized</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>
+                                        <input 
+                                            type="checkbox" 
+                                            id="voiceSpeakerBoost" 
+                                            name="voiceSpeakerBoost" 
+                                            <%= (agentConfig && agentConfig.voiceSettings && agentConfig.voiceSettings.use_speaker_boost !== false) ? 'checked' : 'checked' %>
+                                            style="margin-right: 8px;"
+                                        >
+                                        Speaker Boost (Recommended)
+                                    </label>
+                                    <small style="color: #6b7280; font-size: 12px; display: block; margin-top: 4px;">
+                                        Enhances voice clarity for phone calls
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <div id="openaiVoiceSection" class="form-group">
+                    <div id="openaiVoiceSection" class="form-group" style="display: none;">
                         <label for="openaiVoice">OpenAI Voice:</label>
                         <select 
                             id="openaiVoice" 
                             name="openaiVoice"
                             style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
                         >
-                            <option value="ALLOY" <%= (agentConfig && agentConfig.openaiVoice === 'ALLOY') ? 'selected' : '' %>>Alloy (Professional Male Voice)</option>
-                            <option value="ECHO" <%= (agentConfig && agentConfig.openaiVoice === 'ECHO') ? 'selected' : '' %>>Echo (Dramatic Male Voice)</option>
-                            <option value="FABLE" <%= (agentConfig && agentConfig.openaiVoice === 'FABLE') ? 'selected' : '' %>>Fable (Story-teller Male Voice)</option>
-                            <option value="ONYX" <%= (agentConfig && agentConfig.openaiVoice === 'ONYX') ? 'selected' : '' %>>Onyx (Deep, Professional Male Voice)</option>
-                            <option value="NOVA" <%= (agentConfig && agentConfig.openaiVoice === 'NOVA') ? 'selected' : ((!agentConfig || !agentConfig.openaiVoice) ? 'selected' : '') %>>Nova (Conversational Female Voice) - Default</option>
-                            <option value="SHIMMER" <%= (agentConfig && agentConfig.openaiVoice === 'SHIMMER') ? 'selected' : '' %>>Shimmer (Expressive Female Voice)</option>
+                            <option value="alloy" <%= (agentConfig && agentConfig.openaiVoice === 'alloy') ? 'selected' : '' %>>Alloy (Professional Male Voice)</option>
+                            <option value="echo" <%= (agentConfig && agentConfig.openaiVoice === 'echo') ? 'selected' : '' %>>Echo (Dramatic Male Voice)</option>
+                            <option value="fable" <%= (agentConfig && agentConfig.openaiVoice === 'fable') ? 'selected' : '' %>>Fable (Story-teller Male Voice)</option>
+                            <option value="onyx" <%= (agentConfig && agentConfig.openaiVoice === 'onyx') ? 'selected' : '' %>>Onyx (Deep, Professional Male Voice)</option>
+                            <option value="nova" <%= (agentConfig && agentConfig.openaiVoice === 'nova') ? 'selected' : ((!agentConfig || !agentConfig.openaiVoice) ? 'selected' : '') %>>Nova (Conversational Female Voice) - Default</option>
+                            <option value="shimmer" <%= (agentConfig && agentConfig.openaiVoice === 'shimmer') ? 'selected' : '' %>>Shimmer (Expressive Female Voice)</option>
                         </select>
                         <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
                             Choose the OpenAI voice that best fits your brand personality. Nova is recommended for most business use cases.
@@ -311,115 +468,20 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="openaiModel">OpenAI TTS Model:</label>
+                        <label for="openaiModel">TTS Model:</label>
                         <select 
                             id="openaiModel" 
                             name="openaiModel"
                             style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
                         >
-                            <option value="tts-1" <%= (agentConfig && agentConfig.openaiModel === 'tts-1') ? 'selected' : ((!agentConfig || !agentConfig.openaiModel) ? 'selected' : '') %>>TTS-1 (Standard, Fast)</option>
-                            <option value="tts-1-hd" <%= (agentConfig && agentConfig.openaiModel === 'tts-1-hd') ? 'selected' : '' %>>TTS-1-HD (High Quality, Slower)</option>
+                            <option value="eleven_turbo_v2_5" <%= (agentConfig && agentConfig.openaiModel === 'eleven_turbo_v2_5') ? 'selected' : ((!agentConfig || !agentConfig.openaiModel) ? 'selected' : '') %>>ElevenLabs Turbo v2.5 (Default)</option>
+                            <option value="tts-1" <%= (agentConfig && agentConfig.openaiModel === 'tts-1') ? 'selected' : '' %>>OpenAI TTS-1 (Standard, Fast)</option>
+                            <option value="tts-1-hd" <%= (agentConfig && agentConfig.openaiModel === 'tts-1-hd') ? 'selected' : '' %>>OpenAI TTS-1-HD (High Quality, Slower)</option>
                         </select>
                         <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                            TTS-1 is faster and suitable for real-time applications. TTS-1-HD provides higher quality audio.
+                            Model selection will automatically match your chosen provider.
                         </small>
                     </div>
-                </div>
-                
-                <!-- Fallback Twilio Configuration -->
-                <div id="twilioVoiceSection" style="border-top: 1px solid #e5e7eb; margin-top: 20px; padding-top: 20px;">
-                    <h3 style="color: #333; font-size: 18px; margin-bottom: 15px;">📞 Twilio Fallback Configuration</h3>
-                    <small style="color: #6b7280; font-size: 13px; margin-bottom: 15px; display: block;">
-                        These settings are used when OpenAI TTS is unavailable or disabled.
-                    </small>
-                
-                <div class="form-group">
-                    <label for="twilioVoice">Twilio Voice:</label>
-                    <select 
-                        id="twilioVoice" 
-                        name="twilioVoice"
-                        style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
-                    >
-                        <!-- Standard Voices -->
-                        <optgroup label="🎵 Standard Voices">
-                            <option value="alice" <%= (agentConfig && agentConfig.twilioVoice === 'alice') ? 'selected' : '' %>>Alice (Standard Female)</option>
-                            <option value="man" <%= (agentConfig && agentConfig.twilioVoice === 'man') ? 'selected' : '' %>>Man (Standard Male)</option>
-                            <option value="woman" <%= (agentConfig && agentConfig.twilioVoice === 'woman') ? 'selected' : '' %>>Woman (Standard Female)</option>
-                        </optgroup>
-                        
-                        <!-- Premium Voices (Polly Neural) -->
-                        <optgroup label="⭐ Premium Voices (Neural)">
-                            <option value="Polly.Joanna" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Joanna') ? 'selected' : '' %>>Joanna (Premium Female - US)</option>
-                            <option value="Polly.Matthew" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Matthew') ? 'selected' : '' %>>Matthew (Premium Male - US)</option>
-                            <option value="Polly.Salli" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Salli') ? 'selected' : '' %>>Salli (Premium Female - US)</option>
-                            <option value="Polly.Joey" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Joey') ? 'selected' : '' %>>Joey (Premium Male - US)</option>
-                            <option value="Polly.Kimberly" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Kimberly') ? 'selected' : '' %>>Kimberly (Premium Female - US)</option>
-                            <option value="Polly.Amy" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Amy') ? 'selected' : '' %>>Amy (Premium Female - UK)</option>
-                            <option value="Polly.Brian" <%= (agentConfig && agentConfig.twilioVoice === 'Polly.Brian') ? 'selected' : '' %>>Brian (Premium Male - UK)</option>
-                        </optgroup>
-                        
-                        <!-- Generative Voices - English (US) -->
-                        <optgroup label="🚀 Generative Voices - English (US)">
-                            <!-- Google Chirp3-HD Voices -->
-                            <option value="en-US-Chirp3-HD-Aoede" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Aoede') ? 'selected' : '' %>>Aoede (Generative Female - Google)</option>
-                            <option value="en-US-Chirp3-HD-Charon" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Charon') ? 'selected' : '' %>>Charon (Generative Male - Google)</option>
-                            <option value="en-US-Chirp3-HD-Fenrir" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Fenrir') ? 'selected' : '' %>>Fenrir (Generative Male - Google)</option>
-                            <option value="en-US-Chirp3-HD-Kore" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Kore') ? 'selected' : '' %>>Kore (Generative Female - Google)</option>
-                            <option value="en-US-Chirp3-HD-Leda" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Leda') ? 'selected' : '' %>>Leda (Generative Female - Google)</option>
-                            <option value="en-US-Chirp3-HD-Orus" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Orus') ? 'selected' : '' %>>Orus (Generative Male - Google)</option>
-                            <option value="en-US-Chirp3-HD-Puck" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Puck') ? 'selected' : '' %>>Puck (Generative Male - Google)</option>
-                            <option value="en-US-Chirp3-HD-Zephyr" <%= (agentConfig && agentConfig.twilioVoice === 'en-US-Chirp3-HD-Zephyr') ? 'selected' : '' %>>Zephyr (Generative Female - Google)</option>
-                            <!-- Amazon Polly Generative Voices -->
-                            <option value="Danielle-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Danielle-Generative') ? 'selected' : '' %>>Danielle (Generative Female - Polly)</option>
-                            <option value="Joanna-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Joanna-Generative') ? 'selected' : '' %>>Joanna (Generative Female - Polly)</option>
-                            <option value="Matthew-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Matthew-Generative') ? 'selected' : '' %>>Matthew (Generative Male - Polly)</option>
-                            <option value="Ruth-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Ruth-Generative') ? 'selected' : '' %>>Ruth (Generative Female - Polly)</option>
-                            <option value="Stephen-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Stephen-Generative') ? 'selected' : '' %>>Stephen (Generative Male - Polly)</option>
-                        </optgroup>
-                        
-                        <!-- Generative Voices - Spanish (US) -->
-                        <optgroup label="🚀 Generative Voices - Spanish (US)">
-                            <!-- Google Chirp3-HD Voices -->
-                            <option value="es-US-Chirp3-HD-Aoede" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Aoede') ? 'selected' : '' %>>Aoede (Generative Female - Google)</option>
-                            <option value="es-US-Chirp3-HD-Charon" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Charon') ? 'selected' : '' %>>Charon (Generative Male - Google)</option>
-                            <option value="es-US-Chirp3-HD-Fenrir" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Fenrir') ? 'selected' : '' %>>Fenrir (Generative Male - Google)</option>
-                            <option value="es-US-Chirp3-HD-Kore" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Kore') ? 'selected' : '' %>>Kore (Generative Female - Google)</option>
-                            <option value="es-US-Chirp3-HD-Leda" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Leda') ? 'selected' : '' %>>Leda (Generative Female - Google)</option>
-                            <option value="es-US-Chirp3-HD-Orus" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Orus') ? 'selected' : '' %>>Orus (Generative Male - Google)</option>
-                            <option value="es-US-Chirp3-HD-Puck" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Puck') ? 'selected' : '' %>>Puck (Generative Male - Google)</option>
-                            <option value="es-US-Chirp3-HD-Zephyr" <%= (agentConfig && agentConfig.twilioVoice === 'es-US-Chirp3-HD-Zephyr') ? 'selected' : '' %>>Zephyr (Generative Female - Google)</option>
-                            <!-- Amazon Polly Generative Voices -->
-                            <option value="Lupe-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Lupe-Generative') ? 'selected' : '' %>>Lupe (Generative Female - Polly)</option>
-                            <option value="Pedro-Generative" <%= (agentConfig && agentConfig.twilioVoice === 'Pedro-Generative') ? 'selected' : '' %>>Pedro (Generative Male - Polly)</option>
-                        </optgroup>
-                    </select>
-                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        Select the voice to use for Twilio voice calls when OpenAI TTS is unavailable.
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="twilioLanguage">Twilio Language:</label>
-                    <select 
-                        id="twilioLanguage" 
-                        name="twilioLanguage"
-                        style="padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; font-family: inherit; transition: border-color 0.15s ease-in-out; background-color: white;"
-                    >
-                        <option value="en-US" <%= (agentConfig && agentConfig.twilioLanguage === 'en-US') ? 'selected' : '' %>>English (US)</option>
-                        <option value="en-GB" <%= (agentConfig && agentConfig.twilioLanguage === 'en-GB') ? 'selected' : '' %>>English (UK)</option>
-                        <option value="en-AU" <%= (agentConfig && agentConfig.twilioLanguage === 'en-AU') ? 'selected' : '' %>>English (Australia)</option>
-                        <option value="es-US" <%= (agentConfig && agentConfig.twilioLanguage === 'es-US') ? 'selected' : '' %>>Spanish (US)</option>
-                        <option value="es-ES" <%= (agentConfig && agentConfig.twilioLanguage === 'es-ES') ? 'selected' : '' %>>Spanish (Spain)</option>
-                        <option value="fr-FR" <%= (agentConfig && agentConfig.twilioLanguage === 'fr-FR') ? 'selected' : '' %>>French (France)</option>
-                        <option value="fr-CA" <%= (agentConfig && agentConfig.twilioLanguage === 'fr-CA') ? 'selected' : '' %>>French (Canada)</option>
-                        <option value="de-DE" <%= (agentConfig && agentConfig.twilioLanguage === 'de-DE') ? 'selected' : '' %>>German (Germany)</option>
-                        <option value="it-IT" <%= (agentConfig && agentConfig.twilioLanguage === 'it-IT') ? 'selected' : '' %>>Italian (Italy)</option>
-                        <option value="pt-BR" <%= (agentConfig && agentConfig.twilioLanguage === 'pt-BR') ? 'selected' : '' %>>Portuguese (Brazil)</option>
-                    </select>
-                    <small style="color: #6b7280; font-size: 13px; margin-top: 4px; display: block;">
-                        Select the language and locale for Twilio voice calls.
-                    </small>
-                </div>
                 </div>
             <% } %>
             
@@ -485,10 +547,27 @@
             const voiceEmergencyMessage = document.getElementById('voiceEmergencyMessage')?.value || '';
             const voiceEndCallMessage = document.getElementById('voiceEndCallMessage')?.value || '';
             
-            // Get OpenAI TTS configuration values (if PRO plan)
-            const ttsProvider = document.getElementById('ttsProvider')?.value || 'realtime';
-            const openaiVoice = document.getElementById('openaiVoice')?.value || 'NOVA';
-            const openaiModel = document.getElementById('openaiModel')?.value || 'tts-1';
+            // Get TTS configuration values (if PRO plan)
+            const ttsProvider = document.getElementById('ttsProvider')?.value || 'elevenlabs';
+            const openaiVoice = document.getElementById('openaiVoice')?.value || 'nova';
+            const openaiModel = document.getElementById('openaiModel')?.value || 'eleven_turbo_v2_5';
+            
+            // Get ElevenLabs configuration
+            const elevenlabsVoice = document.getElementById('elevenlabsVoice')?.value || 'pNInz6obpgDQGcFmaJgB';
+            const elevenlabsModel = document.getElementById('elevenlabsModel')?.value || 'eleven_turbo_v2_5';
+            
+            // Get voice settings
+            const voiceStability = parseFloat(document.getElementById('voiceStability')?.value || '0.5');
+            const voiceSimilarity = parseFloat(document.getElementById('voiceSimilarity')?.value || '0.8');
+            const voiceStyle = parseFloat(document.getElementById('voiceStyle')?.value || '0.0');
+            const voiceSpeakerBoost = document.getElementById('voiceSpeakerBoost')?.checked || true;
+            
+            const voiceSettings = {
+                stability: voiceStability,
+                similarity: voiceSimilarity,
+                style: voiceStyle,
+                use_speaker_boost: voiceSpeakerBoost
+            };
             
             // Construct colorTheme object
             const colorTheme = {
@@ -509,7 +588,10 @@
                 voiceEndCallMessage,
                 ttsProvider,
                 openaiVoice,
-                openaiModel
+                openaiModel,
+                elevenlabsVoice,
+                elevenlabsModel,
+                voiceSettings
             };
             
             try {
@@ -549,29 +631,21 @@
             }
         });
         
-        // Handle OpenAI TTS checkbox toggle (if PRO plan)
+        // Handle TTS provider switching (if PRO plan)
         const ttsProviderSelect = document.getElementById('ttsProvider');
+        const elevenlabsVoiceSection = document.getElementById('elevenlabsVoiceSection');
         const openaiVoiceSection = document.getElementById('openaiVoiceSection');
-        const twilioVoiceSection = document.getElementById('twilioVoiceSection');
         
         if (ttsProviderSelect) {
             function toggleVoiceSections() {
                 const ttsProvider = ttsProviderSelect.value;
                 
-                // Show/hide OpenAI voice section
-                if (openaiVoiceSection) {
-                    openaiVoiceSection.style.display = ttsProvider === 'realtime' ? 'flex' : 'none';
+                // Show/hide provider-specific sections
+                if (elevenlabsVoiceSection) {
+                    elevenlabsVoiceSection.style.display = ttsProvider === 'elevenlabs' ? 'block' : 'none';
                 }
-                
-                // Update Twilio section visibility and styling
-                if (twilioVoiceSection) {
-                    if (ttsProvider === 'realtime') {
-                        twilioVoiceSection.style.opacity = '0.6';
-                        twilioVoiceSection.style.pointerEvents = 'none';
-                    } else {
-                        twilioVoiceSection.style.opacity = '1';
-                        twilioVoiceSection.style.pointerEvents = 'auto';
-                    }
+                if (openaiVoiceSection) {
+                    openaiVoiceSection.style.display = (ttsProvider === 'openai' || ttsProvider === 'realtime') ? 'block' : 'none';
                 }
             }
             
@@ -580,6 +654,129 @@
             
             // Handle select changes
             ttsProviderSelect.addEventListener('change', toggleVoiceSections);
+        }
+
+        // Voice settings sliders
+        const stabilitySlider = document.getElementById('voiceStability');
+        const similaritySlider = document.getElementById('voiceSimilarity');
+        const styleSlider = document.getElementById('voiceStyle');
+        const stabilityValue = document.getElementById('stabilityValue');
+        const similarityValue = document.getElementById('similarityValue');
+        const styleValue = document.getElementById('styleValue');
+
+        if (stabilitySlider && stabilityValue) {
+            stabilitySlider.addEventListener('input', function() {
+                stabilityValue.textContent = this.value;
+            });
+            stabilityValue.textContent = stabilitySlider.value;
+        }
+
+        if (similaritySlider && similarityValue) {
+            similaritySlider.addEventListener('input', function() {
+                similarityValue.textContent = this.value;
+            });
+            similarityValue.textContent = similaritySlider.value;
+        }
+
+        if (styleSlider && styleValue) {
+            styleSlider.addEventListener('input', function() {
+                styleValue.textContent = this.value;
+            });
+            styleValue.textContent = styleSlider.value;
+        }
+
+        // Voice preview functionality
+        const previewVoiceBtn = document.getElementById('previewVoiceBtn');
+        const loadVoicesBtn = document.getElementById('loadVoicesBtn');
+        const elevenlabsVoiceSelect = document.getElementById('elevenlabsVoice');
+
+        if (previewVoiceBtn) {
+            previewVoiceBtn.addEventListener('click', async function() {
+                const voiceId = elevenlabsVoiceSelect?.value;
+                if (!voiceId || voiceId === 'load_more_voices') {
+                    alert('Please select a valid voice first.');
+                    return;
+                }
+
+                this.disabled = true;
+                this.textContent = '🎵 Generating Preview...';
+
+                try {
+                    const response = await fetch('/api/voice-preview', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: 'Hello! This is a preview of your selected voice. I\'m your AI assistant, ready to help with your creative projects and business needs.',
+                            voiceId: voiceId,
+                            voiceSettings: {
+                                stability: parseFloat(stabilitySlider?.value || '0.5'),
+                                similarity: parseFloat(similaritySlider?.value || '0.8'),
+                                style: parseFloat(styleSlider?.value || '0.0'),
+                                use_speaker_boost: document.getElementById('voiceSpeakerBoost')?.checked || true
+                            }
+                        })
+                    });
+
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const audio = new Audio(URL.createObjectURL(blob));
+                        audio.play();
+                        this.textContent = '🎵 Preview Voice';
+                    } else {
+                        throw new Error('Failed to generate preview');
+                    }
+                } catch (error) {
+                    console.error('Voice preview error:', error);
+                    alert('Failed to generate voice preview. Please check your ElevenLabs configuration.');
+                    this.textContent = '🎵 Preview Voice';
+                } finally {
+                    this.disabled = false;
+                }
+            });
+        }
+
+        if (loadVoicesBtn) {
+            loadVoicesBtn.addEventListener('click', async function() {
+                this.disabled = true;
+                this.textContent = '🔄 Loading...';
+
+                try {
+                    const response = await fetch('/api/elevenlabs/voices');
+                    if (response.ok) {
+                        const data = await response.json();
+                        const select = elevenlabsVoiceSelect;
+                        
+                        // Clear existing options except the first optgroup
+                        const firstOptgroup = select.querySelector('optgroup');
+                        select.innerHTML = '';
+                        if (firstOptgroup) select.appendChild(firstOptgroup);
+
+                        // Add loaded voices
+                        const loadedGroup = document.createElement('optgroup');
+                        loadedGroup.label = '🔄 Available Voices';
+                        
+                        if (data.voices && Array.isArray(data.voices)) {
+                            data.voices.forEach(voice => {
+                                const option = document.createElement('option');
+                                option.value = voice.voice_id;
+                                option.textContent = `${voice.name} (${voice.category || 'Custom'})`;
+                                loadedGroup.appendChild(option);
+                            });
+                        }
+                        
+                        select.appendChild(loadedGroup);
+                        this.textContent = '🔄 Refresh Voice List';
+                    } else {
+                        throw new Error('Failed to load voices');
+                    }
+                } catch (error) {
+                    console.error('Load voices error:', error);
+                    alert('Failed to load voices. Please check your ElevenLabs API key.');
+                    this.textContent = '🔄 Refresh Voice List';
+                } finally {
+                    this.disabled = false;
+                }
+            });
         }
     </script>
 </body>

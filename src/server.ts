@@ -322,6 +322,13 @@ nextApp.prepare()
     app.use('/api/integrations', integrationRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)
+    
+    // Voice preview route (alias for UI compatibility)
+    app.post('/api/voice-preview', async (req, res) => {
+      // Forward to ElevenLabs preview endpoint
+      req.url = '/preview'
+      elevenLabsRouter(req, res, () => {})
+    })
 
     // 3. Specific file serving routes
     // Serve the public chat widget bundle. Historically the snippet referenced

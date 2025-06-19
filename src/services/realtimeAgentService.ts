@@ -614,12 +614,12 @@ class RealtimeAgentService {
             
             // Set proper voice based on provider
             if (state.ttsProvider === 'elevenlabs') {
-              state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB' // Adam
+              state.openaiVoice = cfg.elevenlabsVoice || cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB' // Adam
             } else {
               state.openaiVoice = cfg.openaiVoice || 'nova' // OpenAI voice
             }
             
-            state.openaiModel = cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1-hd')
+            state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1-hd')
             state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
             
             // Fix JSON parsing error
@@ -1500,12 +1500,12 @@ class RealtimeAgentService {
         
         // Set voice based on provider
         if (state.ttsProvider === 'elevenlabs') {
-          state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+          state.openaiVoice = cfg.elevenlabsVoice || cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
         } else {
           state.openaiVoice = cfg.openaiVoice || 'nova'
         }
         
-        state.openaiModel = cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1')
+        state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1')
         state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
         
         // Fix JSON parsing
