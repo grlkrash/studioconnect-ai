@@ -46,6 +46,32 @@ router.put('/', authMiddleware, async (req, res) => {
       if (key in req.body) data[key] = req.body[key]
     }
 
+    // Normalize and validate openaiVoice against Prisma enum values to avoid invalid enum errors
+    if (typeof data.openaiVoice === 'string') {
+      const voice = (data.openaiVoice as string).toUpperCase()
+      // Supported OpenAI voices as defined in prisma OpenAiVoice enum
+      const VALID_VOICES = [
+        'ALLOY',
+        'ECHO',
+        'FABLE',
+        'ONYX',
+        'NOVA',
+        'SHIMMER',
+        'ASH',
+        'BALLAD',
+        'CORAL',
+        'SAGE',
+        'VERSE',
+      ] as const
+
+      if (VALID_VOICES.includes(voice as (typeof VALID_VOICES)[number])) {
+        data.openaiVoice = voice
+      } else {
+        // Remove invalid value so Prisma does not choke on enum constraint
+        delete data.openaiVoice
+      }
+    }
+
     // Upsert ensures config exists
     const updated = await prisma.agentConfig.upsert({
       where: { businessId: req.user.businessId },

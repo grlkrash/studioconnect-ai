@@ -110,21 +110,27 @@ export default function AgentSettings() {
 
   const handleSave = async () => {
     try {
+      // Build payload – include openaiVoice only when using OpenAI TTS
+      const payload: Record<string, unknown> = {
+        ...settings,
+        ttsProvider: settings.ttsProvider,
+        voiceSettings: {
+          stability: settings.voiceStability,
+          similarity_boost: settings.voiceSimilarity,
+          style: settings.voiceStyle,
+          use_speaker_boost: true,
+        },
+      }
+
+      if (settings.ttsProvider === 'openai' && settings.openaiVoice) {
+        payload.openaiVoice = settings.openaiVoice.toUpperCase()
+      }
+
       const res = await fetch(`/api/agent-config${businessId ? `?businessId=${businessId}` : ''}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...settings,
-          openaiVoice: settings.openaiVoice,
-          ttsProvider: settings.ttsProvider,
-          voiceSettings: {
-            stability: settings.voiceStability,
-            similarity_boost: settings.voiceSimilarity,
-            style: settings.voiceStyle,
-            use_speaker_boost: true,
-          },
-        }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast({ title: "Saved", description: "Agent settings updated." })
