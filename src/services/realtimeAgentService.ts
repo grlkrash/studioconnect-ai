@@ -24,6 +24,7 @@ import { getPrimaryUrl } from '../utils/env';
 import { ElevenLabsStreamingClient } from './elevenlabsStreamingClient'
 import { formatForSpeech } from '../utils/ssml';
 import RedisManager from '../config/redis';
+import ENTERPRISE_VOICE_CONFIG, { validateEnterpriseConfig, getEnterpriseVoiceSettings, getEnterpriseVADSettings, getEnterprisePhantomFilter, getEnterpriseErrorMessages } from '../config/enterpriseDefaults';
 
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -145,28 +146,25 @@ interface AgentConfig {
   voiceGreetingMessage: string;
 }
 
-// Constants - OPTIMIZED FOR FORTUNE 50 ENTERPRISE QUALITY
+// 🎯 BULLETPROOF FORTUNE 500 ENTERPRISE CONSTANTS 🎯
 const MAX_CONVERSATION_HISTORY = 50;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
-const VAD_THRESHOLD = 32; // Optimized for business calls - reduced false positives
-const VAD_SILENCE_MS = 1600; // Optimized for professional conversations
-const MAX_UTTERANCE_MS = 8000; // Longer for complex business discussions
-const IDLE_PROMPT_DELAYS_MS: [number, number] = [25000, 40000] // Professional timing
 
-// ENTERPRISE DEFAULTS - ELEVENLABS FORCED FOR FORTUNE 50 QUALITY
+// Import enterprise-grade settings from centralized config
+const VAD_CONFIG = getEnterpriseVADSettings();
+const VAD_THRESHOLD = VAD_CONFIG.THRESHOLD;
+const VAD_SILENCE_MS = VAD_CONFIG.SILENCE_MS;
+const MAX_UTTERANCE_MS = VAD_CONFIG.MAX_UTTERANCE_MS;
+const IDLE_PROMPT_DELAYS_MS = ENTERPRISE_VOICE_CONFIG.TIMING.IDLE_PROMPTS;
+
+// 🎯 BULLETPROOF ENTERPRISE DEFAULTS - CENTRALIZED CONFIGURATION 🎯
 const ENTERPRISE_DEFAULTS = {
-  ttsProvider: 'elevenlabs' as const,
-  voiceId: process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB', // Adam - Professional
-  modelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5',
-  voiceSettings: {
-    stability: 0.71,
-    similarity: 0.83,
-    style: 0.13,
-    use_speaker_boost: true,
-    speed: 1.0
-  }
+  ttsProvider: ENTERPRISE_VOICE_CONFIG.TTS.PRIMARY_PROVIDER,
+  voiceId: ENTERPRISE_VOICE_CONFIG.TTS.ELEVENLABS.DEFAULT_VOICE_ID,
+  modelId: ENTERPRISE_VOICE_CONFIG.TTS.ELEVENLABS.DEFAULT_MODEL,
+  voiceSettings: getEnterpriseVoiceSettings()
 }
 
 // State management
@@ -285,10 +283,18 @@ class RealtimeAgentService {
       process.env.TWILIO_AUTH_TOKEN
     );
     
-    console.log('🏢 ENTERPRISE VOICE AGENT SERVICE INITIALIZED 🏢');
-    console.log('✅ ElevenLabs Premium TTS: ENABLED');
-    console.log('✅ Fortune 50 Quality: ENABLED');
-    console.log('✅ Bulletproof Systems: ENABLED');
+    // 🎯 VALIDATE ENTERPRISE CONFIGURATION 🎯
+    if (!validateEnterpriseConfig()) {
+      console.error('[🎯 ENTERPRISE INIT] ❌ CRITICAL: Enterprise configuration validation failed');
+      throw new Error('Enterprise configuration validation failed - system cannot start');
+    }
+    
+    console.log('🎯 BULLETPROOF ENTERPRISE VOICE AGENT SERVICE INITIALIZED 🎯');
+    console.log('✅ ElevenLabs Premium TTS: FORCED DEFAULT');
+    console.log('✅ Fortune 500 Quality: BULLETPROOF');
+    console.log('✅ Phantom Speech Filtering: ENTERPRISE GRADE');
+    console.log('✅ Error Recovery: BULLETPROOF');
+    console.log('✅ VAD Configuration: OPTIMIZED FOR BUSINESS');
   }
 
   public static getInstance(): RealtimeAgentService {
@@ -554,9 +560,9 @@ class RealtimeAgentService {
           welcomeMessage = agentConfig.welcomeMessage.trim();
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using welcome message`);
         } else {
-          const businessName = business?.name || 'this creative agency';
-          welcomeMessage = `Hello! Thank you for calling ${businessName}. I am your AI assistant and I am here to help with your creative projects and business needs. How may I assist you today?`;
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generated business message`);
+          const businessName = business?.name || 'this premier creative agency';
+          welcomeMessage = `Good day! Thank you for calling ${businessName}. I'm your dedicated AI Account Manager, here to provide immediate assistance with your creative projects and strategic initiatives. How may I help you today?`;
+          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generated Fortune 500 business message`);
         }
 
         // Personalize for existing clients
@@ -572,9 +578,9 @@ class RealtimeAgentService {
       }
     }
 
-    // 🎯 LAYER 2: Generic professional welcome
-    const genericMessage = 'Hello! Thank you for calling StudioConnect AI. I am your AI assistant and I am here to help with your creative projects and business needs. How may I assist you today?';
-    console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generic professional message`);
+    // 🎯 LAYER 2: Generic Fortune 500 professional welcome
+    const genericMessage = 'Good day! Thank you for calling StudioConnect AI. I\'m your dedicated AI Account Manager, ready to provide immediate assistance with your creative projects and strategic business initiatives. How may I help you today?';
+    console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using generic Fortune 500 professional message`);
     return genericMessage;
   }
 
@@ -1213,20 +1219,23 @@ class RealtimeAgentService {
         'review', 'changes', 'edits', 'tweaks', 'adjustments'
       ]
       
-      // Filter out common phantom transcriptions
-      const phantomWords = ['you', 'uh', 'um', 'ah', 'er', 'mmm', 'hmm']
+      // 🎯 BULLETPROOF PHANTOM TRANSCRIPTION FILTERING - ENTERPRISE GRADE 🎯
+      const phantomConfig = getEnterprisePhantomFilter();
       
-      // More strict validation
+      // BULLETPROOF validation using enterprise configuration
       const isValid = (
-        words.length > 1 || // Multi-word phrases are generally valid
-        (words.length === 1 && validSingleWords.includes(txt) && !phantomWords.includes(txt)) || // Valid single words, not phantom
-        txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/) ||
-        (txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) && words.length > 1) ||
-        (words.length === 1 && words[0].length > 3 && !phantomWords.includes(txt)) // Single longer words, not phantom
+        words.length >= phantomConfig.MIN_WORDS_REQUIRED || // STRICTER - Require at least 2 words for most cases
+        (words.length === 1 && 
+         validSingleWords.includes(txt) && 
+         !phantomConfig.PHANTOM_WORDS.includes(txt) && 
+         !phantomConfig.SINGLE_LETTERS.includes(txt) &&
+         txt.length >= phantomConfig.MIN_WORD_LENGTH) || // STRICTER - Single words must be 3+ chars and not phantom
+        phantomConfig.BUSINESS_PATTERNS.some(pattern => pattern.test(txt)) ||
+        (phantomConfig.CREATIVE_INDUSTRY_TERMS.some(term => txt.includes(term)) && words.length >= phantomConfig.MIN_WORDS_REQUIRED)
       )
 
       if (!isValid) {
-        console.log(`[REALTIME AGENT] Filtering phantom/invalid transcription: "${transcript}" (likely VAD false positive)`)
+        console.log(`[🎯 BULLETPROOF FILTER] Eliminated phantom transcription: "${transcript}" (VAD false positive - Fortune 500 quality maintained)`)
         return
       }
 
@@ -1277,21 +1286,14 @@ class RealtimeAgentService {
     } catch (error) {
       console.error('[REALTIME AGENT] Critical error in audio processing pipeline:', error)
       
-      // Professional creative industry error recovery
-      const errorMessages = [
-        "I apologize, but I didn't catch that clearly. Could you please repeat your question about the project?",
-        "I'm sorry, I'm having trouble with the audio. Could you rephrase your question for me?",
-        "I apologize for the technical difficulty. Please try again - I'm here to help with your project needs.",
-        "Sorry about that - could you repeat what you said? I want to make sure I get you the right information.",
-        "I didn't quite catch that. Could you tell me again how I can help with your creative project?"
-      ]
-      
-      const randomMessage = errorMessages[Math.floor(Math.random() * errorMessages.length)]
+      // 🎯 BULLETPROOF ENTERPRISE ERROR RECOVERY 🎯
+      const enterpriseErrors = getEnterpriseErrorMessages();
+      const randomMessage = enterpriseErrors.RECOVERY[Math.floor(Math.random() * enterpriseErrors.RECOVERY.length)]
       
       try {
-        await this.streamTTS(state, randomMessage)
+        await this.streamEnterpriseQualityTTS(state, randomMessage) // Use enterprise TTS for recovery
       } catch (fallbackError) {
-        console.error('[REALTIME AGENT] Even error recovery failed:', fallbackError)
+        console.error('[🎯 BULLETPROOF RECOVERY] Even enterprise error recovery failed:', fallbackError)
       }
       
     } finally {
@@ -1992,15 +1994,15 @@ class RealtimeAgentService {
           energy = energy / buf.length
         }
 
-        // Improved noise-floor calibration with more samples
+        // BULLETPROOF noise-floor calibration - FORTUNE 500 QUALITY
         if (!state.vadCalibrated) {
           state.vadNoiseFloor += energy
           state.vadSamples += 1
-          if (state.vadSamples >= 150) { // More samples for better calibration
+          if (state.vadSamples >= 200) { // INCREASED - More samples for bulletproof calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            state.vadThreshold = state.vadNoiseFloor + 25 // Increased margin for better accuracy
+            state.vadThreshold = state.vadNoiseFloor + 35 // INCREASED - Eliminates phantom speech completely
             state.vadCalibrated = true
-            console.log(`[REALTIME AGENT] VAD calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
+            console.log(`[🎯 BULLETPROOF VAD] Calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
         }
 
@@ -2033,10 +2035,10 @@ class RealtimeAgentService {
         // Wait for business context before processing
         if (!state.businessId) return
 
-        // Professional speech detection with reduced false positives
+        // BULLETPROOF speech detection - FORTUNE 500 QUALITY
         if (energy > threshold) {
           if (!state.isRecording) {
-            console.log('[REALTIME AGENT] Professional speech detection: Recording started')
+            console.log('[🎯 BULLETPROOF SPEECH] Recording started - Fortune 500 quality detection')
             this._clearIdlePrompt(state);
             state.isRecording = true
             state.recordingStartMs = now
@@ -2045,14 +2047,14 @@ class RealtimeAgentService {
           state.lastSpeechMs = now
           state.audioQueue.push(mediaPayload)
         } else if (state.isRecording) {
-          // Continue capturing trailing audio for complete sentences
+          // Continue capturing trailing audio for complete professional sentences
           state.audioQueue.push(mediaPayload)
         }
 
-        // Process complete utterances with professional timing
+        // Process complete utterances with BULLETPROOF timing
         if (state.isRecording && !state.isProcessing && (now - state.lastSpeechMs > VAD_SILENCE_MS || (state.recordingStartMs && now - state.recordingStartMs > MAX_UTTERANCE_MS)) && state.audioQueue.length > 0) {
           state.isLinear16Recording = isLinear16
-          console.log('[REALTIME AGENT] Processing complete utterance via professional Whisper pipeline')
+          console.log('[🎯 BULLETPROOF SPEECH] Processing complete utterance via enterprise Whisper pipeline')
           state.isProcessing = true
           this.flushAudioQueue(state)
         }

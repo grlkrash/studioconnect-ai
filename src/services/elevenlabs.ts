@@ -3,14 +3,16 @@ import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
 import axios from 'axios'
+import { getEnterpriseVoiceSettings } from '../config/enterpriseDefaults'
 
 /**
- * Generates an MP3 speech file using ElevenLabs TTS.
- * Caches identical requests on disk under os.tmpdir()/scai_tts_cache.
+ * 🎯 BULLETPROOF ENTERPRISE ELEVENLABS TTS GENERATOR 🎯
+ * Generates Fortune 500 quality MP3 speech files using ElevenLabs premium TTS
+ * Features enterprise-grade caching, error handling, and voice optimization
  *
  * Environment variables required:
- *  - ELEVENLABS_API_KEY
- *  - ELEVENLABS_VOICE_ID (optional – defaults to Adam voice)
+ *  - ELEVENLABS_API_KEY (CRITICAL for Fortune 500 quality)
+ *  - ELEVENLABS_VOICE_ID (optional – defaults to premium Adam voice)
  *  - ELEVENLABS_MODEL_ID (optional – defaults to "eleven_turbo_v2_5")
  */
 export async function generateSpeechWithElevenLabs(
@@ -109,24 +111,27 @@ export async function generateSpeechWithElevenLabs(
   try {
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceIdForRequest)}`
 
-    // Prepare request body with proper ElevenLabs format
+    // 🎯 BULLETPROOF REQUEST BODY WITH ENTERPRISE DEFAULTS 🎯
+    const enterpriseDefaults = getEnterpriseVoiceSettings();
     const requestBody = {
       text: cleanText,
       model_id: modelId,
       voice_settings: {
-        stability: voiceSettings?.stability ?? 0.5,
-        similarity_boost: voiceSettings?.similarity ?? 0.8,
-        style: voiceSettings?.style ?? 0.0,
-        use_speaker_boost: voiceSettings?.use_speaker_boost ?? true,
+        stability: voiceSettings?.stability ?? enterpriseDefaults.stability,
+        similarity_boost: voiceSettings?.similarity ?? enterpriseDefaults.similarity,
+        style: voiceSettings?.style ?? enterpriseDefaults.style,
+        use_speaker_boost: voiceSettings?.use_speaker_boost ?? enterpriseDefaults.use_speaker_boost,
       }
     }
 
-    // Add speed if provided (only for certain models)
+    // Add enterprise-optimized speed
     if (voiceSettings?.speed !== undefined) {
       (requestBody.voice_settings as any).speed = voiceSettings.speed
+    } else if (enterpriseDefaults.speed !== undefined) {
+      (requestBody.voice_settings as any).speed = enterpriseDefaults.speed
     }
 
-    console.log(`[ElevenLabs] Generating TTS with voice ${voiceIdForRequest} and model ${modelId}`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 🚀 Generating Fortune 500 quality TTS with voice ${voiceIdForRequest} and model ${modelId}`)
 
     const response = await axios.post(url, requestBody, {
       headers: {
