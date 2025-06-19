@@ -614,19 +614,66 @@ class RealtimeAgentService {
         }
       }
 
-      // Generate high-quality TTS audio
+      // --- Provider-specific voice validation ---
+      if (state.ttsProvider === 'elevenlabs') {
+        // ElevenLabs expects a valid voice ID (usually a UUID). If the configured voice
+        // does not resemble an ID, fall back to the default voice or env-configured ID.
+        const voiceLooksValid = /^[a-f0-9]{20,}$/i.test(state.openaiVoice)
+        if (!voiceLooksValid) {
+          const fallbackVoice = (process.env.ELEVENLABS_VOICE_ID || 'Rachel').toLowerCase()
+          console.warn(`[REALTIME AGENT] Invalid ElevenLabs voice "${state.openaiVoice}", using fallback "${fallbackVoice}"`)
+          state.openaiVoice = fallbackVoice
+        }
+      }
+
+      // Generate high-quality TTS audio (with automatic provider fallback)
       console.log(`[REALTIME AGENT] Generating TTS with ${state.ttsProvider} for: ${text.substring(0, 50)}...`)
-      
-      const mp3Path = await generateSpeechFromText(
+
+      const modelForProvider = state.ttsProvider === 'elevenlabs'
+        ? (process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2')
+        : state.openaiModel
+
+      let mp3Path = await generateSpeechFromText(
         text,
         state.openaiVoice,
-        state.openaiModel as any,
+        modelForProvider as any,
         state.ttsProvider as 'openai' | 'polly' | 'elevenlabs'
       )
-      
+
+      // --- Automatic multi-provider fallback chain ---
       if (!mp3Path) {
-        console.error('[REALTIME AGENT] Failed to generate TTS audio')
-        return
+        console.warn(`[REALTIME AGENT] ${state.ttsProvider} TTS failed – attempting fallbacks`) 
+
+        // 1️⃣  Fallback to OpenAI TTS (premium quality)
+        if (state.ttsProvider !== 'openai') {
+          try {
+            mp3Path = await generateSpeechFromText(text, 'nova', 'tts-1-hd', 'openai')
+            if (mp3Path) {
+              state.ttsProvider = 'openai'
+              state.openaiVoice = 'nova'
+              state.openaiModel = 'tts-1-hd'
+              console.log('[REALTIME AGENT] Successfully fell back to OpenAI TTS')
+            }
+          } catch { /* ignore */ }
+        }
+
+        // 2️⃣  Fallback to Amazon Polly if OpenAI also fails
+        if (!mp3Path && state.ttsProvider !== 'polly') {
+          try {
+            mp3Path = await generateSpeechFromText(text, 'Amy', 'tts-1', 'polly')
+            if (mp3Path) {
+              state.ttsProvider = 'polly'
+              state.openaiVoice = 'Amy'
+              state.openaiModel = 'tts-1'
+              console.log('[REALTIME AGENT] Successfully fell back to Amazon Polly')
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!mp3Path) {
+          console.error('[REALTIME AGENT] All TTS providers failed – aborting speech for this turn')
+          return
+        }
       }
 
       // Mark as speaking before streaming
