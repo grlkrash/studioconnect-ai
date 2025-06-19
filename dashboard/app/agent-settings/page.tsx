@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Settings, Save, RotateCcw, Play } from "lucide-react"
+import { Settings, Save, RotateCcw, Play, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useBusiness } from "@/context/business-context"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 export default function AgentSettings() {
   const { toast } = useToast()
@@ -290,19 +291,55 @@ export default function AgentSettings() {
 
                 <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>Stability</Label>
+                    <Label className="flex items-center gap-1">
+                      Stability
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="w-3 h-3 text-slate-500 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Controls how strictly the voice matches existing recordings
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </Label>
                     <input type="range" min="0" max="1" step="0.05" value={settings.voiceStability}
                       onChange={(e)=>setSettings({...settings, voiceStability: parseFloat(e.target.value)})} />
                     <p className="text-xs text-slate-500">{settings.voiceStability}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Similarity Boost</Label>
+                    <Label className="flex items-center gap-1">
+                      Similarity&nbsp;Boost
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="w-3 h-3 text-slate-500 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Controls how strictly the voice matches existing recordings
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </Label>
                     <input type="range" min="0" max="1" step="0.05" value={settings.voiceSimilarity}
                       onChange={(e)=>setSettings({...settings, voiceSimilarity: parseFloat(e.target.value)})} />
                     <p className="text-xs text-slate-500">{settings.voiceSimilarity}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Style</Label>
+                    <Label className="flex items-center gap-1">
+                      Style
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="w-3 h-3 text-slate-500 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Controls how strictly the voice matches existing recordings
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </Label>
                     <input type="range" min="0" max="1" step="0.05" value={settings.voiceStyle}
                       onChange={(e)=>setSettings({...settings, voiceStyle: parseFloat(e.target.value)})} />
                     <p className="text-xs text-slate-500">{settings.voiceStyle}</p>
@@ -530,9 +567,16 @@ export default function AgentSettings() {
                 <StatusMetrics />
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-slate-600">Voice Engine</span>
-                  <Badge className={settings.ttsProvider === 'realtime' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}>
-                    {settings.ttsProvider === 'realtime' ? 'Realtime ✅' : 'Fallback'}
-                  </Badge>
+                  {(() => {
+                    const map: Record<string, { label: string; style: string }> = {
+                      realtime: { label: 'Realtime ✅', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                      openai: { label: 'OpenAI', style: 'bg-blue-50 text-blue-700 border-blue-200' },
+                      elevenlabs: { label: 'ElevenLabs', style: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                      polly: { label: 'AWS Polly', style: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+                    }
+                    const info = map[settings.ttsProvider] || { label: 'Fallback', style: 'bg-slate-50 text-slate-700 border-slate-200' }
+                    return <Badge className={info.style}>{info.label}</Badge>
+                  })()}
                 </div>
               </CardContent>
             </Card>

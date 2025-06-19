@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -14,6 +47,7 @@ const https_1 = __importDefault(require("https"));
 const openai_1 = __importDefault(require("openai"));
 const next_1 = __importDefault(require("next"));
 const widgetConfigRoutes_1 = __importDefault(require("./api/widgetConfigRoutes"));
+const elevenlabsRoutes_1 = require("./api/elevenlabsRoutes");
 dotenv_1.default.config();
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
@@ -222,6 +256,7 @@ nextApp.prepare()
     app.use('/api/lead-questions', leadQuestionRoutes_1.default);
     app.use('/api/integrations', integrationRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
+    app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
     const widgetHandler = (req, res) => {
         const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
         console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
@@ -336,6 +371,13 @@ server.listen(PORT, async () => {
     console.log(`✅ Admin routes mounted at: http://localhost:${PORT}/admin`);
     await initializeRedis();
     (0, cron_1.startAsanaCron)();
+    try {
+        const { startAtlassianPdrCron } = await Promise.resolve().then(() => __importStar(require('./services/projectSync/cron')));
+        startAtlassianPdrCron();
+    }
+    catch (err) {
+        console.error('[Server] Failed to start PDR cron', err);
+    }
 });
 process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');

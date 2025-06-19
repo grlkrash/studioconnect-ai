@@ -64,6 +64,8 @@ interface ConnectionState {
   vadSamples: number;
   vadNoiseFloor: number;
   vadThreshold: number;
+  /** Indicates we have received at least one non-empty user transcript this turn */
+  hasUserTranscript: boolean;
   /** Indicates that we are currently recording an utterance */
   isRecording: boolean;
   isProcessing: boolean;
@@ -316,7 +318,8 @@ class RealtimeAgentService {
       pendingAudioGeneration: false,
       idlePromptCount: 0,
       idlePromptTimer: null,
-      callStartTime: Date.now()
+      callStartTime: Date.now(),
+      hasUserTranscript: false
     };
 
     // Try to identify client if phone number is available
@@ -1121,10 +1124,7 @@ class RealtimeAgentService {
         // Deliver professional greeting
         if (!state.welcomeMessageDelivered) {
           try {
-            if (state.openaiClient && state.ttsProvider === 'realtime') {
-              console.log('[REALTIME AGENT] Requesting professional greeting via realtime client')
-              state.openaiClient.requestAssistantResponse()
-            } else {
+            if (!(state.openaiClient && state.ttsProvider === 'realtime')) {
               console.log('[REALTIME AGENT] Delivering professional greeting via TTS')
               const welcome = await this.getWelcomeMessage(state)
               await this.streamTTS(state, welcome)
@@ -1429,36 +1429,43 @@ class RealtimeAgentService {
         console.log(`[REALTIME AGENT] Assistant response: ${text.substring(0, 100)}...`);
       });
 
-              // Enhanced error handling - bulletproof fallback system
-        client.on('error', async (error) => {
-          console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
-          
-          // Detect invalid model explicitly so we can mark failure cache
-          if (error.message?.includes('invalid_model')) {
-            if (state.businessId) markRealtimeFailure(state.businessId)
-          }
+      // Capture user transcripts to decide when to trigger assistant replies
+      client.on('userTranscript', (text) => {
+        state.hasUserTranscript = true
+        this.addToConversationHistory(state, 'user', text)
+        console.log(`[REALTIME AGENT] User transcript received (${text.length} chars)`)
+      })
 
-          // Graceful degradation to high-quality TTS fallback
-          console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
-          state.openaiClient = undefined
-          state.ttsProvider = 'openai' // Use high-quality OpenAI TTS
-          state.openaiVoice = 'nova' // Premium voice
-          state.openaiModel = 'tts-1-hd' // HD quality
+      // Enhanced error handling - bulletproof fallback system
+      client.on('error', async (error) => {
+        console.error('[REALTIME AGENT] OpenAI Realtime Client Error:', error.message)
+        
+        // Detect invalid model explicitly so we can mark failure cache
+        if (error.message?.includes('invalid_model')) {
+          if (state.businessId) markRealtimeFailure(state.businessId)
+        }
 
-          if (!state.welcomeMessageDelivered) {
-            try {
-              const fallbackGreeting = await this.getWelcomeMessage(state)
-              await this.streamTTS(state, fallbackGreeting)
-              state.welcomeMessageDelivered = true
-              console.log('[REALTIME AGENT] Successfully delivered greeting via TTS fallback')
-            } catch (fallbackErr) {
-              console.error('[REALTIME AGENT] Critical error in fallback system:', fallbackErr)
-              // Emergency simple greeting
-              await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
-              state.welcomeMessageDelivered = true
-            }
+        // Graceful degradation to high-quality TTS fallback
+        console.log('[REALTIME AGENT] Switching to bulletproof TTS fallback for reliability')
+        state.openaiClient = undefined
+        state.ttsProvider = 'openai' // Use high-quality OpenAI TTS
+        state.openaiVoice = 'nova' // Premium voice
+        state.openaiModel = 'tts-1-hd' // HD quality
+
+        if (!state.welcomeMessageDelivered) {
+          try {
+            const fallbackGreeting = await this.getWelcomeMessage(state)
+            await this.streamTTS(state, fallbackGreeting)
+            state.welcomeMessageDelivered = true
+            console.log('[REALTIME AGENT] Successfully delivered greeting via TTS fallback')
+          } catch (fallbackErr) {
+            console.error('[REALTIME AGENT] Critical error in fallback system:', fallbackErr)
+            // Emergency simple greeting
+            await this.streamTTS(state, 'Hello! Thank you for calling. How may I assist you today?')
+            state.welcomeMessageDelivered = true
           }
-        });
+        }
+      });
 
       // Dedicated invalidModel event emitted by client – mark cache immediately
       client.on('invalidModel', (err: Error) => {
@@ -1491,9 +1498,15 @@ class RealtimeAgentService {
         // Give the user a short grace period before assistant replies to avoid overlap
         setTimeout(() => {
           if (state.openaiClient && state.ttsProvider === 'realtime') {
-            try {
-              state.openaiClient.requestAssistantResponse()
-            } catch { /* ignore */ }
+            if (state.hasUserTranscript) {
+              try {
+                state.openaiClient.requestAssistantResponse()
+              } catch { /* ignore */ }
+              // Reset flag to wait for next user turn
+              state.hasUserTranscript = false
+            } else {
+              console.log('[REALTIME AGENT] Skipping assistant response – no user transcript yet')
+            }
           }
         }, 500)
         this._scheduleIdlePrompt(state)

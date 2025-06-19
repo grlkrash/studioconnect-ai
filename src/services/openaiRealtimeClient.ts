@@ -293,13 +293,14 @@ export class OpenAIRealtimeClient extends EventEmitter {
           input_audio_format: 'g711_ulaw',
           output_audio_format: 'g711_ulaw',
           input_audio_transcription: {
-            model: 'whisper-1'
+            model: 'whisper-1',
+            model_confidence_min: 0.6,
           },
           turn_detection: {
             type: 'server_vad',
-            threshold: 0.3, // More sensitive for better conversation flow
-            prefix_padding_ms: 300, // Extra padding to avoid clipping caller
-            silence_duration_ms: 1500 // Allow longer pauses before the agent speaks
+            threshold: 0.45,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 1500,
           },
           tool_choice: 'auto',
           temperature: 0.7, // Slightly reduced for more consistent responses
@@ -373,6 +374,12 @@ export class OpenAIRealtimeClient extends EventEmitter {
             const textContent = msg.item.content.find((c: any) => c.type === 'text')
             if (textContent?.text && textContent.text.trim()) {
               this.emit('assistantMessage', textContent.text.trim())
+            }
+          }
+          if (msg.item?.role === 'user' && msg.item?.content) {
+            const userText = msg.item.content.find((c: any) => c.type === 'text' || c.type === 'input_text')
+            if (userText?.text && userText.text.trim()) {
+              this.emit('userTranscript', userText.text.trim())
             }
           }
           break
