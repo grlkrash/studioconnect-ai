@@ -56,6 +56,9 @@ export async function GET(req: NextRequest) {
       : null
     const avgDuration = avgDurationSec ? `${avgDurationSec}s` : '—'
 
+    // Fetch Twilio voice number if configured
+    const bizRow = await prisma.business.findUnique({ where: { id: biz.id }, select: { twilioPhoneNumber: true } })
+
     return NextResponse.json({
       businessId: biz.id,
       agentStatus: 'Online',
@@ -63,6 +66,7 @@ export async function GET(req: NextRequest) {
       avgResponse,
       avgDuration,
       successRate,
+      twilioPhoneNumber: bizRow?.twilioPhoneNumber || null,
     })
   } catch (err) {
     console.error('[DASH_STATUS]', err)

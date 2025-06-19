@@ -16,6 +16,8 @@ import {
 import Link from "next/link"
 
 import { getDashboardCounts } from "@/lib/dashboard-stats"
+import { prisma } from "@/lib/prisma"
+import { getBusiness } from "@/lib/getBusiness"
 
 const getStatusIcon = (status: string) => {
   switch (status) {
@@ -69,7 +71,45 @@ const getStatusBadge = (status: string) => {
 }
 
 export async function DashboardCards() {
-  const counts = await getDashboardCounts()
+  const business = await getBusiness()
+
+  // Fall back gracefully if no business could be resolved
+  const businessId = business?.id
+
+  const counts = await getDashboardCounts(businessId)
+
+  // --- additional live stats ---
+  const [knowledgeStats, questionsCount, agentCfg, notificationsMeta] = await Promise.all([
+    (async () => {
+      if (!businessId) return { total: 0, lastUpdated: null as Date | null }
+      const [total, last] = await Promise.all([
+        prisma.knowledgeBase.count({ where: { businessId } }),
+        prisma.knowledgeBase.findFirst({
+          where: { businessId },
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+        }),
+      ])
+      return { total, lastUpdated: last?.updatedAt ?? null }
+    })(),
+    businessId ? prisma.leadCaptureQuestion.count({ where: { config: { businessId } } }) : 0,
+    businessId
+      ? prisma.agentConfig.findUnique({
+          where: { businessId },
+          select: { openaiVoice: true },
+        })
+      : null,
+    businessId
+      ? prisma.business.findUnique({ where: { id: businessId }, select: { notificationEmails: true, notificationPhoneNumber: true } })
+      : null,
+  ])
+
+  const knowledgeStatsStr = knowledgeStats.total === 0
+    ? "No articles yet"
+    : `${knowledgeStats.total} articles${knowledgeStats.lastUpdated ? ` • ${Math.round((Date.now() - knowledgeStats.lastUpdated.getTime())/86400000)}d ago` : ""}`
+
+  const notificationEmailsCount = notificationsMeta?.notificationEmails?.length ?? 0
+  const hasSms = Boolean(notificationsMeta?.notificationPhoneNumber)
 
   const dashboardCards = [
     {
@@ -77,34 +117,34 @@ export async function DashboardCards() {
       description: "Fine-tune your AI agent's persona and voice.",
       icon: Settings,
       href: "/agent-settings",
-      status: "configured",
+      status: agentCfg ? "configured" : "needs-attention",
       color: "from-blue-500 to-blue-600",
-      stats: "Voice: Professional | English",
+      stats: agentCfg ? `Voice: ${agentCfg.openaiVoice ?? "—"}` : "Not configured",
     },
     {
       title: "Client Intake Questions",
       description: "Edit the lead-capture flow.",
       icon: MessageSquare,
       href: "/intake-questions",
-      status: "needs-attention",
+      status: questionsCount > 0 ? "configured" : "needs-attention",
       color: "from-red-500 to-red-600",
-      stats: "7 questions configured",
+      stats: `${questionsCount} question${questionsCount === 1 ? "" : "s"} configured`,
     },
     {
       title: "Knowledge Base",
       description: "Manage canned answers & FAQs.",
       icon: BookOpen,
       href: "/knowledge-base",
-      status: "configured",
+      status: knowledgeStats.total > 0 ? "configured" : "needs-attention",
       color: "from-green-500 to-green-600",
-      stats: "24 articles | 2 days ago",
+      stats: knowledgeStatsStr,
     },
     {
       title: "Clients & Requests",
       description: "All captured clients at a glance.",
       icon: Users,
       href: "/clients",
-      status: "active",
+      status: counts.clientsTotal > 0 ? "active" : "needs-attention",
       color: "from-purple-500 to-purple-600",
       stats: `${counts.clientsTotal} clients • ${counts.leadsTotal} requests`,
     },
@@ -113,16 +153,21 @@ export async function DashboardCards() {
       description: "Emails, SMS & Slack alerts.",
       icon: Bell,
       href: "/notifications",
-      status: "configured",
+      status: notificationEmailsCount > 0 || hasSms ? "configured" : "needs-attention",
       color: "from-yellow-500 to-yellow-600",
-      stats: "Email & SMS enabled",
+      stats:
+        notificationEmailsCount > 0
+          ? `${notificationEmailsCount} email${notificationEmailsCount === 1 ? '' : 's'}${hasSms ? ' • SMS enabled' : ''}`
+          : hasSms
+            ? 'SMS enabled'
+            : 'No channels configured',
     },
     {
       title: "Projects",
       description: "Synced from your PM tool.",
       icon: FolderOpen,
-      href: "/projects",
-      status: "synced",
+      href: "#", // Hidden / disabled for now
+      status: "hidden",
       color: "from-indigo-500 to-indigo-600",
       stats: `${counts.projectsTotal} projects | ${counts.projectsActive} active`,
     },
@@ -133,9 +178,9 @@ export async function DashboardCards() {
       href: "/integrations",
       status: "partial",
       color: "from-teal-500 to-teal-600",
-      stats: "Asana connected | Slack pending",
+      stats: `Manage integrations`,
     },
-  ]
+  ].filter((c) => c.status !== "hidden") // hide Projects card as requested
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

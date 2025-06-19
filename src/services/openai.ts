@@ -140,7 +140,7 @@ export const generateSpeechFromText = async (
   textToSpeak: string,
   voice: string = 'nova',
   model: 'tts-1' | 'tts-1-hd' = 'tts-1',
-  provider: 'openai' | 'polly' = 'openai'
+  provider: 'openai' | 'polly' | 'elevenlabs' = 'elevenlabs'
 ): Promise<string | null> => {
   if (!textToSpeak || textToSpeak.trim().length === 0) {
     console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
@@ -181,9 +181,12 @@ export const generateSpeechFromText = async (
       const targetPath = cachedPath || path.join(os.tmpdir(), `openai_speech_${Date.now()}.mp3`)
       await fs.promises.writeFile(targetPath, buffer)
       return targetPath
+    } else if (provider === 'elevenlabs') {
+      const { generateSpeechWithElevenLabs } = await import('./elevenlabs')
+      return generateSpeechWithElevenLabs(textToSpeak, voice, model)
     }
 
-    // Polly fallback
+    // Polly fallback (default)
     const polly = new PollyClient({ region: process.env.AWS_REGION || 'us-east-1' })
     const synth = new SynthesizeSpeechCommand({
       Text: textToSpeak,

@@ -323,15 +323,15 @@ export default function IntegrationsPage() {
                     <>
                       {integration.provider === "MONDAY" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : integration.provider === "JIRA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : integration.provider === "ASANA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : null}
                     </>
@@ -340,15 +340,15 @@ export default function IntegrationsPage() {
                     <>
                       {integration.provider === "MONDAY" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectMondayOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : integration.provider === "JIRA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectJiraOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : integration.provider === "ASANA" ? (
                         <Button size="sm" className="w-full" onClick={handleConnectAsanaOAuth}>
-                          Connect via OAuth
+                          Connect
                         </Button>
                       ) : null}
                     </>

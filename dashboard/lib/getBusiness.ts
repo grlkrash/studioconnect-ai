@@ -66,9 +66,23 @@ export async function getBusiness(req?: NextRequest) {
   }
 
   // 7. Last-ditch demo fallback – first row (only in demo env)
-  if (process.env.NODE_ENV === 'demo') {
-    return prisma.business.findFirst({ select: { id: true } })
+  // In single-tenant deployments we still want pages to load even if the business
+  // identifier cannot be inferred from the request context. When there is **only
+  // one** Business row in the database we will return that row as a sensible
+  // default. This keeps production environments with a single business running
+  // smoothly without extra query-string or cookie plumbing.
+
+  try {
+    const count = await prisma.business.count()
+    if (count === 1) {
+      return prisma.business.findFirst({ select: { id: true } })
+    }
+  } catch {
+    // ignore – fall through to null
   }
+
+  // Retain the original behaviour for truly multi-tenant installations where
+  // the business could not be determined.
 
   return null
 }

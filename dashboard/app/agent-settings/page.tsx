@@ -22,7 +22,7 @@ export default function AgentSettings() {
     personaPrompt: string
     openaiVoice: string
     openaiModel: string
-    ttsProvider: 'openai' | 'polly' | 'realtime'
+    ttsProvider: 'openai' | 'polly' | 'realtime' | 'elevenlabs'
     useOpenaiTts: boolean
     voiceGreetingMessage: string
     widgetTheme?: {
@@ -42,7 +42,7 @@ export default function AgentSettings() {
     welcomeMessage: "Hello! How can I help you today?",
     openaiVoice: "nova",
     openaiModel: "tts-1",
-    ttsProvider: 'realtime',
+    ttsProvider: 'elevenlabs',
     useOpenaiTts: false,
     voiceGreetingMessage: "Hello! I'm your AI assistant. How can I help you today?",
     widgetTheme: {
@@ -151,6 +151,10 @@ export default function AgentSettings() {
           <span className="text-sm text-slate-600">Success Rate</span>
           <span className="text-sm font-medium">{status?.successRate ?? '—'}</span>
         </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-slate-600">Twilio Number</span>
+          <span className="text-sm font-medium">{status?.twilioPhoneNumber ?? '—'}</span>
+        </div>
       </>
     )
   }
@@ -206,6 +210,7 @@ export default function AgentSettings() {
                         </SelectItem>
                         <SelectItem value="openai">OpenAI Standard TTS</SelectItem>
                         <SelectItem value="polly">Amazon Polly (Twilio fallback)</SelectItem>
+                        <SelectItem value="elevenlabs">ElevenLabs Premium TTS</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -17,6 +17,7 @@ export class OpenAIRealtimeClient extends EventEmitter {
   private connectionHealthCheck: NodeJS.Timeout | null = null
   private isConnecting = false
   private lastFailureWasInvalidModel = false
+  private responseInProgress = false
 
   /**
    * Realtime-compatible model snapshots.
@@ -221,8 +222,14 @@ export class OpenAIRealtimeClient extends EventEmitter {
       return
     }
 
+    if (this.responseInProgress) {
+      console.log('[OpenAIRealtimeClient] Response already in progress – skipping duplicate request')
+      return
+    }
+
     try {
       this.ws!.send(JSON.stringify({ type: 'response.create' }))
+      this.responseInProgress = true
       console.log('[OpenAIRealtimeClient] Requested assistant response')
     } catch (error) {
       console.error('[OpenAIRealtimeClient] Error requesting response:', error)
@@ -379,6 +386,7 @@ export class OpenAIRealtimeClient extends EventEmitter {
           break
 
         case 'response.done':
+          this.responseInProgress = false
           this.emit('responseComplete', msg.response)
           break
 
@@ -394,7 +402,11 @@ export class OpenAIRealtimeClient extends EventEmitter {
             return
           }
           // Existing logic
-          if (errorCode.startsWith('invalid_request_error')) {
+          if (errorCode === 'conversation_already_has_active_response') {
+            // Don't treat as fatal – just wait until in-progress response finishes
+            console.log('[OpenAIRealtimeClient] Active response in progress – will wait for completion')
+            return
+          } else if (errorCode.startsWith('invalid_request_error')) {
             if (errorCode === 'invalid_request_error.missing_model') {
               // Missing model is unrecoverable – propagate to parent so it can switch pipelines
               this.emit('error', new Error(`API Error: ${errorMsg}`))

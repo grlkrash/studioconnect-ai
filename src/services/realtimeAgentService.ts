@@ -54,7 +54,7 @@ interface ConnectionState {
   toNumber: string | null;
   clientId?: string;
   currentFlow: string | null;
-  ttsProvider: 'openai' | 'polly' | 'realtime';
+  ttsProvider: 'openai' | 'polly' | 'realtime' | 'elevenlabs';
   openaiVoice: string;
   openaiModel: string;
   personaPrompt?: string;
@@ -145,7 +145,7 @@ let cleanupInterval: NodeJS.Timeout;
 //  Voice-config cache (per business)
 // -----------------------------------
 type VoiceConfigCacheEntry = {
-  ttsProvider: 'openai' | 'polly' | 'realtime'
+  ttsProvider: 'openai' | 'polly' | 'realtime' | 'elevenlabs'
   openaiVoice: string
   openaiModel: string
   personaPrompt?: string
@@ -296,8 +296,8 @@ class RealtimeAgentService {
       isCleaningUp: false,
       lastActivity: Date.now(),
       toNumber: null,
-      ttsProvider: 'realtime',
-      openaiVoice: 'nova',
+      ttsProvider: 'elevenlabs',
+      openaiVoice: (process.env.ELEVENLABS_VOICE_ID || 'josh').toLowerCase(),
       openaiModel: 'tts-1',
       personaPrompt: undefined,
       lastSpeechMs: Date.now(),
@@ -568,14 +568,14 @@ class RealtimeAgentService {
 
           if (cfg) {
             const provider = (cfg as any).ttsProvider
-            if (provider && ['openai', 'polly', 'realtime'].includes(provider)) {
+            if (provider && ['openai', 'polly', 'realtime', 'elevenlabs'].includes(provider)) {
               state.ttsProvider = provider
             } else if (cfg.useOpenaiTts !== undefined) {
               state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
             }
             
-            // Default to OpenAI for better quality if realtime fails
-            if (!state.ttsProvider) state.ttsProvider = 'openai'
+            // Default to ElevenLabs for premium quality
+            if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
             
             state.openaiVoice = (cfg.openaiVoice || 'NOVA').toLowerCase()
             state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
@@ -613,10 +613,10 @@ class RealtimeAgentService {
       console.log(`[REALTIME AGENT] Generating TTS with ${state.ttsProvider} for: ${text.substring(0, 50)}...`)
       
       const mp3Path = await generateSpeechFromText(
-        text, 
-        state.openaiVoice, 
-        state.openaiModel as any, 
-        state.ttsProvider as 'openai' | 'polly'
+        text,
+        state.openaiVoice,
+        state.openaiModel as any,
+        state.ttsProvider as 'openai' | 'polly' | 'elevenlabs'
       )
       
       if (!mp3Path) {
@@ -1302,8 +1302,8 @@ class RealtimeAgentService {
     if (!state.businessId || state.__configLoaded) return
 
     // --- Global override for ops ---
-    const forcedProvider = process.env.AGENT_FORCE_TTS?.toLowerCase() as 'openai' | 'polly' | 'realtime' | undefined
-    if (forcedProvider && ['openai', 'polly', 'realtime'].includes(forcedProvider)) {
+    const forcedProvider = process.env.AGENT_FORCE_TTS?.toLowerCase() as 'openai' | 'polly' | 'realtime' | 'elevenlabs' | undefined
+    if (forcedProvider && ['openai', 'polly', 'realtime', 'elevenlabs'].includes(forcedProvider)) {
       state.ttsProvider = forcedProvider
       state.__configLoaded = true
       console.log(`[RealtimeAgent] AGENT_FORCE_TTS override → ${forcedProvider}`)
@@ -1342,7 +1342,7 @@ class RealtimeAgentService {
         } else if (cfg.useOpenaiTts !== undefined) {
           state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
         }
-        if (!state.ttsProvider) state.ttsProvider = 'realtime'
+        if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
         state.openaiVoice = (cfg.openaiVoice || 'nova').toLowerCase()
         state.openaiModel = cfg.openaiModel || 'tts-1'
         state.personaPrompt = cfg.personaPrompt
