@@ -1400,8 +1400,8 @@ class RealtimeAgentService {
         console.log(`[🎯 AI PROCESSING] 🗣️ Delivering AI response via TTS: "${response.reply.substring(0, 100)}..."`)
         await this.streamTTS(state, response.reply)
       } else {
-        console.warn(`[🎯 AI PROCESSING] ⚠️ No reply generated from AI - sending fallback response`)
-        await this.streamTTS(state, "I understand. How else can I help you with your creative projects today?")
+        console.warn(`[🎯 AI PROCESSING] ⚠️ No reply generated from AI - sending professional recovery response`)
+        await this.streamTTS(state, "I'm here to help. Could you tell me more about what you need assistance with?")
       }
 
       // Handle escalation request (warm transfer)

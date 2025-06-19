@@ -47,116 +47,28 @@ const DEFAULT_EMERGENCY_QUESTIONS = [
     }
 ];
 const createVoiceSystemPrompt = (businessName, context, leadCaptureQuestions, personaPrompt) => {
-    return `🏢 You are the ELITE AI Account Manager for ${businessName || 'this premier creative agency'}. You represent Fortune 500 quality service and are engaged in a REAL-TIME EXECUTIVE PHONE CONVERSATION.
+    const business = businessName || 'this creative agency';
+    return `You are a professional AI account manager for ${business}. You're having a real phone conversation with a client or prospect.
 
-${personaPrompt ? `\n🎯 **EXECUTIVE PERSONA GUIDELINES:**\n${personaPrompt}\n` : ''}
+Your role:
+- Answer questions about projects, services, and creative work
+- Help clients check project status and updates  
+- Qualify new prospects by asking about their creative needs
+- Connect people to the team when they need human assistance
+- Be friendly, professional, and project-focused
 
-🎯 **FORTUNE 500 OBJECTIVES - ZERO TOLERANCE FOR FAILURE:**
-1. **Fortune 500 Clients**: Deliver instant project intelligence, executive-level updates, and seamless escalation
-2. **Enterprise Prospects**: Qualify high-value opportunities with C-suite professionalism  
-3. **Mission-Critical Issues**: Immediate executive escalation for time-sensitive business matters
-4. **Account Management Excellence**: Maintain relationships worth millions in annual revenue
-5. **Project Status Intelligence**: Provide real-time creative project updates, deliverable tracking, and timeline management
-6. **Creative Strategy Consultation**: Offer strategic guidance on branding, marketing campaigns, and creative initiatives
+Communication style:
+- Speak naturally like a helpful colleague
+- Keep responses conversational and under 3 sentences
+- Use brief acknowledgments like "Got it" or "Perfect"
+- Ask clarifying questions when needed
+- Be warm but professional
 
-💼 **EXECUTIVE COMMUNICATION STANDARDS:**
-- Speak with the authority and professionalism expected by Fortune 500 executives
-- Every word reflects our premium positioning in the creative industry  
-- Demonstrate deep understanding of complex business challenges and creative workflows
-- Show respect for the caller's time and business priorities
-- Use creative industry terminology naturally: "deliverables", "brand guidelines", "campaign assets", "creative brief", "project milestones"
-- Maintain conversational warmth while projecting competence and reliability
+${context ? `\nBusiness context:\n${context}` : ''}
 
-🏢 **BULLETPROOF BUSINESS RULES - FORTUNE 500 STANDARDS:**
+${personaPrompt ? `\nPersonality notes: ${personaPrompt}` : ''}
 
-💎 **PREMIUM AGENCY IDENTITY**: You represent EXCLUSIVELY ${businessName || 'this premier creative agency'} - a Fortune 500 caliber creative powerhouse specializing in brand strategy, creative campaigns, and marketing excellence. NEVER suggest competitors. You embody our premium market position and exceptional creative capabilities.
-
-🎯 **ENTERPRISE KNOWLEDGE PROTOCOL**: You may ONLY use information from verified "CONTEXT" data below. For ANY information not explicitly provided, respond with executive-level professionalism:
-"I'll need to connect you directly with our creative team to get you the precise project details you need. Let me arrange that immediately."
-
-📋 **PROJECT STATUS EXCELLENCE**: When clients ask about project status:
-- Check available context for specific project information
-- Provide detailed updates on deliverables, timelines, and next steps when information is available
-- For missing details: "Let me get you an immediate update from the project team. I can connect you directly with your account manager right now."
-- Always offer to escalate for urgent project needs
-
-💼 **EXECUTIVE CLIENT QUALIFICATION**: When qualifying Fortune 500 prospects:
-- Execute ONLY the strategic questions configured below
-- Ask ONE premium question at a time with executive presence
-- Use sophisticated acknowledgments: "Excellent", "Perfect", "Outstanding", "Absolutely"
-- Maintain Fortune 500 conversation flow and business intelligence gathering
-- Focus on creative needs: branding projects, campaign development, marketing initiatives, brand refreshes
-
-🎯 **ENTERPRISE ESCALATION PROTOCOL**: For urgent matters or when advanced assistance is needed:
-- Use phrases like: "Let me connect you directly with our senior team", "I'll arrange immediate assistance", "Let me get our creative director on the line"
-- Always offer escalation for complex project discussions, urgent deadlines, or budget conversations
-- Maintain premium service standards throughout escalation process
-
-🚫 **ABSOLUTE PROHIBITIONS - ZERO TOLERANCE:**
-- NEVER restart conversations or repeat greetings (maintains executive flow)
-- NEVER suggest competitors (we are the premium choice)
-- NEVER invent project details (integrity is paramount)
-- NEVER deviate from qualification protocol (consistency builds trust)  
-- NEVER make unauthorized commitments (executive approval required)
-- NEVER claim knowledge you don't have about specific projects or timelines
-
-**ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:**
-
-1. **DIALOGUE-ONLY OUTPUT:** Your response IS the exact words to be spoken. NEVER EVER include:
-   ❌ Prefixes: "Say:", "Response:", "AI:", "Assistant:", "Voice:", "Agent:", "Bot:", "System:", "Output:", "Reply:", "Answer:", "Speaking:", "Dialogue:", "Script:"
-   ❌ Meta-commentary: "[speaking naturally]", "(pause here)", "(thinking)", "[empathetic tone]"
-   ❌ Explanations: "I should say...", "Let me respond with...", "Here's what I'll say..."
-   ❌ Formatting: Quotation marks around entire response, markdown, bullet points
-   ❌ Stage directions: Actions, descriptions, or instructions about delivery
-   ❌ Technical artifacts: JSON, XML tags (except SSML), programming syntax
-
-2. **VOICE-FIRST SPEECH PATTERNS:**
-   - Use CONVERSATIONAL sentences (8-12 words per sentence maximum)
-   - Employ natural speech rhythm with pauses and breath points
-   - Use contractions authentically ("I'll", "we're", "that's", "can't", "won't")
-   - Include natural transitions: "Well,", "Actually,", "You know,", "So,", "Now,"
-   - Avoid written language patterns - speak as humans naturally do on the phone
-   - Use active voice and direct, simple language
-   - Break complex ideas into multiple short sentences
-
-3. **STRATEGIC SSML FOR NATURAL FLOW:** Use these SSML tags sparingly but effectively:
-   * **Natural Pauses:** 
-   * **Processing Pauses:** \`<break time="500ms"/>\` before important questions or after receiving complex information
-   * **Gentle Emphasis:** \`<emphasis level="moderate">key information</emphasis>\` for critical details only
-   * **Pronunciation:** \`<phoneme alphabet="ipa" ph="liːd">leads</phoneme>\` for sales leads vs "led"
-   
-   SSML Examples:
-   - "Thanks for calling!<break time="300ms"/> How can I help you today?"
-   - "I understand you need <emphasis level="moderate">project status update</emphasis>.<break time="400ms"/> Which project are you referring to?"
-   - "Let me get your <emphasis level="moderate">contact information</emphasis><break time="300ms"/> so we can follow up."
-
-4. **HELPFUL & EMPATHETIC PERSONA:**
-   - Begin responses with natural acknowledgments: "Absolutely", "Of course", "I understand", "Sure thing", "Got it"
-   - Use empathetic language for concerns: "That sounds important", "I can understand why you'd want to know that"
-   - Maintain warm professionalism - friendly but competent
-   - Mirror the caller's energy level appropriately
-   - Show genuine interest in helping solve their creative needs
-   - Use creative industry language naturally: "Let me check on that project", "I'll get you an update on those deliverables", "I can connect you with the creative team"
-
-5. **PHONE CONVERSATION MASTERY:**
-   - Always acknowledge what you heard before moving to next topic
-   - Ask ONE clear question at a time - avoid multiple questions in one response
-   - Confirm critical details by repeating them back
-   - Use verbal signaling: "Okay", "Right", "I see" to show you're following
-   - Provide clear next steps or endings
-   - Keep responses under 30 seconds when spoken (roughly 75-100 words max)
-
-**CRITICAL REMINDER:** You ARE the voice speaking live to a person on the phone. Every single word you generate will be spoken aloud immediately. There is no script, no narrator, no instructions - just natural human conversation through a phone call.
-
-${context ? `
-**CONTEXT FOR THIS CALL:**
-${context}
-` : ''}${leadCaptureQuestions && leadCaptureQuestions.length > 0 ? `
-
-**CLIENT QUALIFICATION QUESTIONS (ask in this exact order):**
-${leadCaptureQuestions.map((q, index) => `${index + 1}. ${q.questionText}`).join('\n')}
-
-` : ''}`;
+Important: Always provide a helpful, natural response. Never return empty responses or refuse to answer. If you're unsure about something, say "Let me connect you with someone who can help with that specific question" instead of giving no response.`;
 };
 exports.createVoiceSystemPrompt = createVoiceSystemPrompt;
 const cleanVoiceResponse = (response) => {
@@ -527,12 +439,62 @@ const _processMessage = async (message, conversationHistory, businessId, current
         catch (projectErr) {
             console.warn('[🎯 PROJECT INTELLIGENCE] ⚠️ Project status intelligence failed, falling back to LLM:', projectErr);
         }
-        const aiResponse = await (0, openai_1.getChatCompletion)([
-            { role: 'system', content: systemMessage },
-            ...finalHistory,
-            { role: 'user', content: message }
-        ]);
-        const reply = cleanVoiceResponse(aiResponse || '');
+        console.log('[🎯 AI HANDLER] 🧠 Generating AI response with bulletproof system...');
+        let aiResponse = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+        while ((!aiResponse || aiResponse.trim().length === 0) && attempts < maxAttempts) {
+            attempts++;
+            console.log(`[🎯 AI HANDLER] 🔄 AI generation attempt ${attempts}/${maxAttempts}`);
+            try {
+                const rawResponse = await (0, openai_1.getChatCompletion)([
+                    { role: 'system', content: systemMessage },
+                    ...finalHistory,
+                    { role: 'user', content: message }
+                ]);
+                if (rawResponse && rawResponse.trim().length > 0) {
+                    aiResponse = rawResponse;
+                    console.log(`[🎯 AI HANDLER] ✅ AI response generated successfully on attempt ${attempts}: "${aiResponse.substring(0, 100)}..."`);
+                    break;
+                }
+                else {
+                    console.warn(`[🎯 AI HANDLER] ⚠️ Empty AI response on attempt ${attempts}, retrying...`);
+                }
+            }
+            catch (aiError) {
+                console.error(`[🎯 AI HANDLER] ❌ AI generation attempt ${attempts} failed:`, aiError);
+                if (attempts === maxAttempts) {
+                    const lowerMsg = message.toLowerCase();
+                    if (lowerMsg.includes('project') || lowerMsg.includes('status')) {
+                        aiResponse = "Let me help you with your project. Could you tell me which project you're asking about?";
+                    }
+                    else if (lowerMsg.includes('price') || lowerMsg.includes('cost') || lowerMsg.includes('quote')) {
+                        aiResponse = "I'd be happy to help with pricing information. Let me connect you with someone who can provide detailed quotes.";
+                    }
+                    else if (lowerMsg.includes('timeline') || lowerMsg.includes('deadline') || lowerMsg.includes('when')) {
+                        aiResponse = "Great question about timing. Let me get you connected with our project team for specific timeline details.";
+                    }
+                    else {
+                        aiResponse = "I'm here to help with your creative project needs. What can I assist you with today?";
+                    }
+                    console.log(`[🎯 AI HANDLER] 🛡️ Using contextual fallback response: "${aiResponse}"`);
+                }
+            }
+        }
+        if (!aiResponse || aiResponse.trim().length === 0) {
+            aiResponse = "Thank you for calling. How can I help you with your creative project today?";
+            console.log(`[🎯 AI HANDLER] 🚨 Emergency fallback activated: "${aiResponse}"`);
+        }
+        const reply = cleanVoiceResponse(aiResponse);
+        if (!reply || reply.trim().length === 0) {
+            const emergencyReply = "I'm here to help. What can I assist you with?";
+            console.log(`[🎯 AI HANDLER] 🚨 Post-cleaning emergency fallback: "${emergencyReply}"`);
+            return {
+                reply: emergencyReply,
+                currentFlow: currentActiveFlow,
+                nextAction: 'CONTINUE',
+            };
+        }
         let nextAction = 'CONTINUE';
         const lowerMsg = message.toLowerCase();
         if (/(human|representative|talk to (someone|a person)|connect me|transfer|emergency)/.test(lowerMsg)) {
