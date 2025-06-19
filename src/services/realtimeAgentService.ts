@@ -712,25 +712,34 @@ class RealtimeAgentService {
     console.log(`[🏢 ENTERPRISE TTS] 🚀 GENERATING ENTERPRISE QUALITY TTS: "${text.substring(0, 50)}..."`);
 
     try {
-      // Ensure enterprise configuration is loaded
-      if (!state.__configLoaded) {
+      // 🎯 CRITICAL: ENSURE CONFIGURATION IS LOADED AND VALID 🎯
+      if (!state.__configLoaded || !state.businessId) {
+        console.log(`[🏢 ENTERPRISE TTS] 🔧 Loading enterprise configuration...`);
         await this.loadEnterpriseVoiceConfiguration(state);
+        state.__configLoaded = true;
       }
 
-      // 🎯 FORCE ELEVENLABS FOR ENTERPRISE QUALITY 🎯
-      if (state.ttsProvider !== 'elevenlabs') {
-        console.log(`[🏢 ENTERPRISE TTS] 🎯 FORCING ELEVENLABS FOR ENTERPRISE QUALITY (was: ${state.ttsProvider})`);
-        state.ttsProvider = 'elevenlabs';
+      // 🎯 FORCE ELEVENLABS FOR ENTERPRISE QUALITY - NO EXCEPTIONS 🎯
+      console.log(`[🏢 ENTERPRISE TTS] 🔍 Current TTS provider: ${state.ttsProvider}`);
+      console.log(`[🏢 ENTERPRISE TTS] 🔍 Current voice: ${state.openaiVoice}`);
+      console.log(`[🏢 ENTERPRISE TTS] 🔍 Current model: ${state.openaiModel}`);
+      
+      // Force ElevenLabs with proper configuration
+      state.ttsProvider = 'elevenlabs';
+      
+      // Validate and set voice configuration
+      const voiceIdPattern = /^[a-zA-Z0-9_-]{15,}$/;
+      if (!state.openaiVoice || !voiceIdPattern.test(state.openaiVoice)) {
+        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ Invalid/missing ElevenLabs voice ID "${state.openaiVoice}", using enterprise default`);
         state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
+      }
+      
+      if (!state.openaiModel || state.openaiModel.length < 5) {
+        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ Invalid/missing ElevenLabs model "${state.openaiModel}", using enterprise default`);
         state.openaiModel = ENTERPRISE_DEFAULTS.modelId;
       }
 
-      // Validate ElevenLabs voice ID
-      const voiceIdPattern = /^[a-zA-Z0-9_-]{20,}$/;
-      if (!voiceIdPattern.test(state.openaiVoice)) {
-        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ Invalid ElevenLabs voice ID "${state.openaiVoice}", using enterprise default`);
-        state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
-      }
+      console.log(`[🏢 ENTERPRISE TTS] ✅ FINAL CONFIG: Provider=${state.ttsProvider}, Voice=${state.openaiVoice}, Model=${state.openaiModel}`);
 
       // Format text for ElevenLabs (clean text, no SSML)
       const cleanText = text.replace(/<[^>]*>/g, '').trim();
@@ -1636,29 +1645,47 @@ class RealtimeAgentService {
             wsReady: state.ws.readyState === 1
           });
           
-          // CRITICAL FIX: Immediate delivery with retries for reliability
-          setTimeout(async () => {
-            if (!state.welcomeMessageDelivered && state.streamSid && state.ws.readyState === 1) {
-              console.log('[🏢 ENTERPRISE AGENT] 🚀 DELIVERING WELCOME MESSAGE NOW');
+          // 🎯 CRITICAL FIX: IMMEDIATE WELCOME MESSAGE DELIVERY WITH BULLETPROOF RETRIES
+          const deliverWelcome = async (attempt: number = 1): Promise<void> => {
+            console.log(`[🏢 ENTERPRISE AGENT] 🎯 WELCOME DELIVERY ATTEMPT ${attempt}/3`);
+            
+            if (state.welcomeMessageDelivered) {
+              console.log('[🏢 ENTERPRISE AGENT] ✅ Welcome already delivered, skipping');
+              return;
+            }
+
+            if (!state.streamSid) {
+              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ No streamSid available for delivery');
+              if (attempt < 3) {
+                setTimeout(() => deliverWelcome(attempt + 1), 500);
+              }
+              return;
+            }
+
+            if (state.ws.readyState !== 1) {
+              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ WebSocket not ready for delivery');
+              if (attempt < 3) {
+                setTimeout(() => deliverWelcome(attempt + 1), 500);
+              }
+              return;
+            }
+
+            try {
+              console.log(`[🏢 ENTERPRISE AGENT] 🚀 DELIVERING WELCOME MESSAGE NOW (Attempt ${attempt})`);
               await this.deliverBulletproofWelcomeMessage(state);
-            } else {
-              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ Stream not ready or welcome already delivered', {
-                welcomeDelivered: state.welcomeMessageDelivered,
-                streamSid: !!state.streamSid,
-                wsReady: state.ws.readyState === 1
-              });
-              
-              // Retry after additional delay if stream not ready
-              if (!state.welcomeMessageDelivered && state.streamSid) {
-                setTimeout(async () => {
-                  if (!state.welcomeMessageDelivered) {
-                    console.log('[🏢 ENTERPRISE AGENT] 🔄 RETRY: Delivering welcome message');
-                    await this.deliverBulletproofWelcomeMessage(state);
-                  }
-                }, 1000);
+              console.log(`[🏢 ENTERPRISE AGENT] ✅ WELCOME MESSAGE DELIVERED SUCCESSFULLY ON ATTEMPT ${attempt}`);
+            } catch (error) {
+              console.error(`[🏢 ENTERPRISE AGENT] ❌ Welcome delivery attempt ${attempt} failed:`, error);
+              if (attempt < 3) {
+                setTimeout(() => deliverWelcome(attempt + 1), 1000);
+              } else {
+                console.error('[🏢 ENTERPRISE AGENT] 🚨 ALL WELCOME DELIVERY ATTEMPTS FAILED');
               }
             }
-          }, 800); // OPTIMIZED: 800ms for immediate but stable delivery
+          };
+
+          // Start delivery with appropriate delay for stream stability
+          setTimeout(() => deliverWelcome(1), 1200); // OPTIMIZED: 1.2s for bulletproof stability
         }
 
         // Initialize ElevenLabs STT for high-quality transcription

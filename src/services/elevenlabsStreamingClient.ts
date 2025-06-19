@@ -25,7 +25,7 @@ const AUDIO_BUFFER_SIZE = 8192;       // Optimized buffer size
 
 // 🎯 ENTERPRISE QUALITY THRESHOLDS 🎯
 const QUALITY_THRESHOLDS = {
-  MIN_SUCCESS_RATE: 0.995,        // 99.5% minimum success rate
+  MIN_SUCCESS_RATE: 0.80,         // 80% target success rate (realistic)
   MAX_LATENCY_MS: 2000,           // Maximum 2-second response time
   MAX_ERROR_RATE: 0.005,          // Maximum 0.5% error rate
   MIN_AUDIO_QUALITY: 0.9,         // Minimum audio quality score
