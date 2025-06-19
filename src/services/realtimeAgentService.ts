@@ -150,9 +150,9 @@ const MAX_CONVERSATION_HISTORY = 50;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_USAGE_MB = 1536; // 75% of 2GB RAM
-const VAD_THRESHOLD = 25; // Increased µ-law sample energy threshold
+const VAD_THRESHOLD = 35; // Increased threshold to prevent false positives
 // Reduce required silence before processing an utterance to improve responsiveness
-const VAD_SILENCE_MS = 1200; // flush after ~1.2 s of silence for natural pauses
+const VAD_SILENCE_MS = 1800; // Increased from 1200ms to 1800ms for better detection
 // Hard cap on a single caller utterance – flush even if still talking after 6 seconds
 const MAX_UTTERANCE_MS = 6000;
 const IDLE_PROMPT_DELAYS_MS: [number, number] = [20000, 35000]
@@ -319,10 +319,10 @@ class RealtimeAgentService {
       isCleaningUp: false,
       lastActivity: Date.now(),
       toNumber: null,
-      ttsProvider: 'elevenlabs',
-      // Preserve exact casing for ElevenLabs voice IDs; fallback to "Josh" if not provided.
-      openaiVoice: process.env.ELEVENLABS_VOICE_ID || 'Josh',
-      openaiModel: 'tts-1',
+      ttsProvider: 'elevenlabs', // Default to ElevenLabs
+      // Use proper ElevenLabs voice ID or default to a known good one
+      openaiVoice: process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB', // Adam voice
+      openaiModel: process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5',
       personaPrompt: undefined,
       lastSpeechMs: Date.now(),
       vadCalibrated: false,
@@ -606,24 +606,46 @@ class RealtimeAgentService {
             if (provider && ['openai', 'polly', 'realtime', 'elevenlabs'].includes(provider)) {
               state.ttsProvider = provider
             } else if (cfg.useOpenaiTts !== undefined) {
-              state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
+              state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'elevenlabs' // Changed default from 'polly' to 'elevenlabs'
             }
             
             // Default to ElevenLabs for premium quality
             if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
             
-            state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
-            state.openaiModel = cfg.openaiModel || 'tts-1-hd' // Use HD model for better quality
+            // Set proper voice based on provider
+            if (state.ttsProvider === 'elevenlabs') {
+              state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB' // Adam
+            } else {
+              state.openaiVoice = cfg.openaiVoice || 'nova' // OpenAI voice
+            }
+            
+            state.openaiModel = cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1-hd')
             state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
-            state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
+            
+            // Fix JSON parsing error
+            try {
+              state.voiceSettings = cfg.voiceSettings && typeof cfg.voiceSettings === 'string' 
+                ? JSON.parse(cfg.voiceSettings) 
+                : cfg.voiceSettings || {}
+            } catch (jsonErr) {
+              console.warn('[REALTIME AGENT] Invalid voiceSettings JSON, using defaults:', jsonErr)
+              state.voiceSettings = {}
+            }
             
             console.log(`[REALTIME AGENT] Voice config loaded: ${state.ttsProvider} with voice ${state.openaiVoice}`)
+          } else {
+            // Set defaults when no config found
+            state.ttsProvider = 'elevenlabs'
+            state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+            state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
+            state.voiceSettings = {}
           }
         } catch (err) {
           console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message)
-          state.ttsProvider = 'openai'
-          state.openaiVoice = 'nova'
-          state.openaiModel = 'tts-1-hd'
+          state.ttsProvider = 'elevenlabs'
+          state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+          state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
+          state.voiceSettings = {}
         } finally {
           state.__configLoaded = true
         }
@@ -671,11 +693,12 @@ class RealtimeAgentService {
         ? (process.env.ELEVENLABS_MODEL_ID || 'eleven_monolingual_v2')
         : state.openaiModel
 
-      // Apply global SSML formatting for more natural speech (pauses, speed)
-      const ssml = formatForSpeech(text, { speed: state.voiceSettings?.speed })
+      // Apply provider-specific formatting (SSML for OpenAI/Polly, clean text for ElevenLabs)
+      const providerForFormat = state.ttsProvider === 'realtime' ? 'openai' : state.ttsProvider
+      const formattedText = formatForSpeech(text, { speed: state.voiceSettings?.speed }, providerForFormat)
 
       let mp3Path = await generateSpeechFromText(
-        ssml,
+        formattedText,
         state.openaiVoice,
         modelForProvider as any,
         state.ttsProvider as 'openai' | 'polly' | 'elevenlabs',
@@ -990,10 +1013,10 @@ class RealtimeAgentService {
       const txt = transcript.toLowerCase().trim()
       const words = txt.split(/\s+/).filter(w => w.length > 0)
       
-      // Creative agency & professional business conversation patterns
+      // More strict validation to prevent processing garbage/phantom speech
       const validSingleWords = [
         // Basic responses
-        'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'hello', 'hi', 
+        'yes', 'no', 'ok', 'okay', 'sure', 'thanks', 'hello', 'hi', 'hey',
         'great', 'perfect', 'correct', 'right', 'help', 'urgent', 'rush',
         // Business terms
         'project', 'status', 'update', 'billing', 'invoice', 'payment',
@@ -1013,17 +1036,20 @@ class RealtimeAgentService {
         'review', 'changes', 'edits', 'tweaks', 'adjustments'
       ]
       
-      const validPhrases = txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/)
+      // Filter out common phantom transcriptions
+      const phantomWords = ['you', 'uh', 'um', 'ah', 'er', 'mmm', 'hmm']
       
-      // Creative industry & business-focused validation
-      const isValid = words.length > 1 || 
-                     validSingleWords.includes(txt) || 
-                     validPhrases ||
-                     txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) ||
-                     (words.length === 1 && words[0].length > 2 && !/^(um|uh|ah|er|mmm|hmm|like|just|well|you|know)$/.test(txt))
+      // More strict validation
+      const isValid = (
+        words.length > 1 || // Multi-word phrases are generally valid
+        (words.length === 1 && validSingleWords.includes(txt) && !phantomWords.includes(txt)) || // Valid single words, not phantom
+        txt.match(/\b(thank you|go ahead|not yet|right now|of course|sounds good|that works|makes sense|got it|i see|no problem|sounds great|kickoff call|project status|design review|final approval|first round|second round|third round|next phase|brand identity|motion graphics|print ready|web ready|high res|low res|vector file|raster file|pdf proof|color proof|press ready)\b/) ||
+        (txt.match(/\b(brand|creative|design|digital|web|print|logo|identity|package|motion|video|graphics|illustration|photo|shoot|campaign|strategy|social|media|content|copy|script|storyboard|wireframe|mockup|prototype|concept|pitch|presentation|deliverable|asset|file|format|resolution|color|font|typography|layout|composition)\b/) && words.length > 1) ||
+        (words.length === 1 && words[0].length > 3 && !phantomWords.includes(txt)) // Single longer words, not phantom
+      )
 
       if (!isValid) {
-        console.log(`[REALTIME AGENT] Transcription not suitable for creative business processing: "${transcript}"`)
+        console.log(`[REALTIME AGENT] Filtering phantom/invalid transcription: "${transcript}" (likely VAD false positive)`)
         return
       }
 
@@ -1468,13 +1494,29 @@ class RealtimeAgentService {
         if (provider) {
           state.ttsProvider = provider
         } else if (cfg.useOpenaiTts !== undefined) {
-          state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'polly'
+          state.ttsProvider = cfg.useOpenaiTts ? 'openai' : 'elevenlabs' // Changed default
         }
         if (!state.ttsProvider) state.ttsProvider = 'elevenlabs'
-        state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'Josh'
-        state.openaiModel = cfg.openaiModel || 'tts-1'
+        
+        // Set voice based on provider
+        if (state.ttsProvider === 'elevenlabs') {
+          state.openaiVoice = cfg.openaiVoice || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+        } else {
+          state.openaiVoice = cfg.openaiVoice || 'nova'
+        }
+        
+        state.openaiModel = cfg.openaiModel || (state.ttsProvider === 'elevenlabs' ? 'eleven_turbo_v2_5' : 'tts-1')
         state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS
-        state.voiceSettings = cfg.voiceSettings ? JSON.parse(cfg.voiceSettings as any) : undefined
+        
+        // Fix JSON parsing
+        try {
+          state.voiceSettings = cfg.voiceSettings && typeof cfg.voiceSettings === 'string' 
+            ? JSON.parse(cfg.voiceSettings) 
+            : cfg.voiceSettings || {}
+        } catch (jsonErr) {
+          console.warn('[RealtimeAgent] Invalid voiceSettings JSON, using defaults')
+          state.voiceSettings = {}
+        }
 
         // Persist persona prompt to Redis cache for 1 hour
         try {
@@ -1497,9 +1539,19 @@ class RealtimeAgentService {
         })
 
         console.log(`[RealtimeAgent] Voice config loaded & cached for business ${state.businessId}`)
+      } else {
+        // Set defaults when no config found
+        state.ttsProvider = 'elevenlabs'
+        state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+        state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
+        state.voiceSettings = {}
       }
     } catch (err) {
       console.error('[REALTIME AGENT] Failed to load agentConfig – using high-quality defaults:', (err as Error).message)
+      state.ttsProvider = 'elevenlabs'
+      state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'
+      state.openaiModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_turbo_v2_5'
+      state.voiceSettings = {}
     } finally {
       state.__configLoaded = true
     }
@@ -1839,9 +1891,9 @@ class RealtimeAgentService {
         if (!state.vadCalibrated) {
           state.vadNoiseFloor += energy
           state.vadSamples += 1
-          if (state.vadSamples >= 100) { // More samples for better calibration
+          if (state.vadSamples >= 150) { // More samples for better calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            state.vadThreshold = state.vadNoiseFloor + 15 // Increased margin for better accuracy
+            state.vadThreshold = state.vadNoiseFloor + 25 // Increased margin for better accuracy
             state.vadCalibrated = true
             console.log(`[REALTIME AGENT] VAD calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }

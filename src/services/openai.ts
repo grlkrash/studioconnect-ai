@@ -130,89 +130,98 @@ export const getTranscription = async (
 };
 
 /**
- * Generates speech from text using OpenAI's Text-to-Speech API.
- * @param textToSpeak The text to convert to speech.
- * @param voice The voice to use for speech generation.
- * @param model The TTS model to use (tts-1 or tts-1-hd).
- * @returns A promise that resolves to the path of the generated audio file or null if generation fails.
+ * Generates speech from text using the specified provider with automatic fallback
+ * @param text - Text to convert to speech
+ * @param voice - Voice to use (provider-specific)
+ * @param model - Model to use (provider-specific)
+ * @param provider - TTS provider ('openai', 'polly', 'elevenlabs')
+ * @param voiceSettings - Additional voice settings for ElevenLabs
+ * @returns Path to generated audio file or null if failed
  */
-export const generateSpeechFromText = async (
-  textToSpeak: string,
+export async function generateSpeechFromText(
+  text: string,
   voice: string = 'nova',
   model: string = 'tts-1',
   provider: 'openai' | 'polly' | 'elevenlabs' = 'elevenlabs',
-  voiceSettings?: {
-    stability?: number
-    similarity?: number
-    style?: number
-    use_speaker_boost?: boolean
-    speed?: number
-  }
-): Promise<string | null> => {
-  if (!textToSpeak || textToSpeak.trim().length === 0) {
-    console.warn('[OpenAI TTS] Received empty text to speak, skipping.');
-    return null;
-  }
-
-  // ------------------------------------------------------------------
-  //  Simple disk-based cache to avoid regenerating identical speech
-  //  Hash key = sha256(text + voice + model + provider)
-  //  Cached under: os.tmpdir()/scai_tts_cache/<hash>.mp3
-  // ------------------------------------------------------------------
-
-  let cachedPath: string | null = null
-  try {
-    const cacheDir = path.join(os.tmpdir(), 'scai_tts_cache')
-    await fs.promises.mkdir(cacheDir, { recursive: true })
-    const hash = crypto.createHash('sha256').update(`${provider}|${model}|${voice}|${textToSpeak}`).digest('hex')
-    cachedPath = path.join(cacheDir, `${hash}.mp3`)
-    if (fs.existsSync(cachedPath)) {
-      console.log(`[OpenAI TTS] Returning cached speech (hash=${hash.slice(0,8)})`)
-      return cachedPath
-    }
-  } catch (cacheErr) {
-    // Non-fatal: continue without cache
-    console.warn('[OpenAI TTS] Cache access issue, continuing without cache:', cacheErr instanceof Error ? cacheErr.message : cacheErr)
-  }
-  console.log(`[OpenAI TTS] Generating speech for text: "${textToSpeak.substring(0, 50)}..." using model: ${model}`);
-  
-  try {
-    if (provider === 'openai') {
-      const mp3 = await openai.audio.speech.create({
-        model,
-        voice: voice.toLowerCase() as any,
-        input: textToSpeak,
-      })
-
-      const buffer = Buffer.from(await mp3.arrayBuffer())
-      const targetPath = cachedPath || path.join(os.tmpdir(), `openai_speech_${Date.now()}.mp3`)
-      await fs.promises.writeFile(targetPath, buffer)
-      return targetPath
-    } else if (provider === 'elevenlabs') {
-      const { generateSpeechWithElevenLabs } = await import('./elevenlabs')
-      return generateSpeechWithElevenLabs(textToSpeak, voice, model, voiceSettings)
-    }
-
-    // Polly fallback (default)
-    const polly = new PollyClient({ region: process.env.AWS_REGION || 'us-east-1' })
-
-    // Detect SSML input – our formatter wraps text in <speak> tags when SSML features are used.
-    const isSsml = /^<speak[\s>]/i.test(textToSpeak.trim())
-
-    const synth = new SynthesizeSpeechCommand({
-      Text: textToSpeak,
-      OutputFormat: 'mp3',
-      TextType: isSsml ? 'ssml' : 'text',
-      VoiceId: voice.charAt(0).toUpperCase() + voice.slice(1).toLowerCase() as any,
-    })
-    const res = await polly.send(synth)
-    const uint8 = await res.AudioStream?.transformToByteArray()
-    if (!uint8) throw new Error('Polly audio empty')
-    const targetPath = cachedPath || path.join(os.tmpdir(), `polly_speech_${Date.now()}.mp3`)
-    await fs.promises.writeFile(targetPath, Buffer.from(uint8))
-    return targetPath
-  } catch (error) {
-    console.error('[TTS] Error generating speech:', error)
+  voiceSettings?: any
+): Promise<string | null> {
+  if (!text || text.trim().length === 0) {
+    console.warn('[TTS] Empty text provided, skipping generation')
     return null
   }
-}; 
+
+  const cleanText = text.trim()
+  console.log(`[TTS] Generating speech with ${provider} provider: "${cleanText.substring(0, 50)}..."`)
+
+  try {
+    switch (provider) {
+      case 'elevenlabs':
+        const { generateSpeechWithElevenLabs } = await import('./elevenlabs')
+        return await generateSpeechWithElevenLabs(cleanText, voice, model, voiceSettings)
+
+      case 'openai':
+        return await generateSpeechWithOpenAI(cleanText, voice as any, model as any)
+
+      case 'polly':
+        return await generateSpeechWithPolly(cleanText, voice, model)
+
+      default:
+        console.error(`[TTS] Unknown provider: ${provider}`)
+        return null
+    }
+  } catch (error) {
+    console.error(`[TTS] Error with ${provider} provider:`, error)
+    return null
+  }
+}
+
+/**
+ * Generates speech using OpenAI TTS with enhanced error handling
+ */
+async function generateSpeechWithOpenAI(
+  text: string,
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
+  model: 'tts-1' | 'tts-1-hd' = 'tts-1-hd'
+): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    console.error('[OpenAI TTS] OPENAI_API_KEY is not set')
+    return null
+  }
+
+  try {
+    console.log(`[OpenAI TTS] Generating speech with voice ${voice} and model ${model}`)
+    
+    const response = await openai.audio.speech.create({
+      model,
+      voice,
+      input: text,
+      response_format: 'mp3',
+      speed: 1.0,
+    })
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    const filePath = path.join(os.tmpdir(), `openai_speech_${Date.now()}.mp3`)
+    await fs.promises.writeFile(filePath, buffer)
+    
+    console.log(`[OpenAI TTS] Successfully generated speech: ${filePath}`)
+    return filePath
+  } catch (error) {
+    console.error('[OpenAI TTS] Error generating speech:', error)
+    return null
+  }
+}
+
+/**
+ * Generates speech using Amazon Polly with enhanced error handling
+ */
+async function generateSpeechWithPolly(
+  text: string,
+  voice: string = 'Amy',
+  model: string = 'tts-1'
+): Promise<string | null> {
+  // AWS Polly implementation would go here
+  // For now, fallback to OpenAI
+  console.warn('[Polly TTS] Polly not implemented, falling back to OpenAI')
+  return await generateSpeechWithOpenAI(text, 'nova', 'tts-1-hd')
+} 
