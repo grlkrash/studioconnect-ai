@@ -70,20 +70,32 @@ interface UiIntegration {
   error?: boolean
 }
 
-const getStatusBadge = (status: string) => {
-  const statusConfig = {
-    connected: { label: "Connected", className: "bg-green-50 text-green-700 border-green-200", icon: CheckCircle },
-    pending: { label: "Pending", className: "bg-yellow-50 text-yellow-700 border-yellow-200", icon: AlertCircle },
-    available: { label: "Available", className: "bg-slate-50 text-slate-700 border-slate-200", icon: Plug },
+const getStatusBadge = (integration: UiIntegration) => {
+  let label = "Available"
+  let className = "bg-slate-50 text-slate-700 border-slate-200"
+  let IconComponent: any = Plug
+
+  if (integration.status === "connected") {
+    label = "Connected"
+    IconComponent = CheckCircle
+
+    if (integration.error || integration.diffHrs >= 48) {
+      className = "bg-red-50 text-red-700 border-red-200"
+    } else if (integration.diffHrs >= 12) {
+      className = "bg-yellow-50 text-yellow-700 border-yellow-200"
+    } else {
+      className = "bg-green-50 text-green-700 border-green-200"
+    }
+  } else if (integration.status === "pending") {
+    label = "Pending"
+    IconComponent = AlertCircle
+    className = "bg-yellow-50 text-yellow-700 border-yellow-200"
   }
 
-  const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.available
-  const IconComponent = config.icon
-
   return (
-    <Badge variant="secondary" className={config.className}>
+    <Badge variant="secondary" className={className}>
       <IconComponent className="w-3 h-3 mr-1" />
-      {config.label}
+      {label}
     </Badge>
   )
 }
@@ -308,7 +320,7 @@ export default function IntegrationsPage() {
                         <CardDescription className="text-sm">{integration.category}</CardDescription>
                       </div>
                     </div>
-                    {getStatusBadge(integration.status)}
+                    {getStatusBadge(integration)}
                   </div>
                   <p className="text-sm text-slate-600 mt-2">{integration.description}</p>
                 </CardHeader>
