@@ -17,10 +17,12 @@ const nextConfig = {
       // /api/dashboard-status when the application is deployed under /admin.
       {
         source: '/api/:path*',
-        destination: '/api/:path*', // `/admin` is automatically prefixed after build
-        // Disable basePath matching for the incoming request so that a request
-        // to `/api/*` (without the base path) is matched.
-        basePath: false,
+        // Destination must live within the configured `basePath`.
+        // We manually include `/admin` to comply with Next.js 14 rewrite rules.
+        destination: '/admin/api/:path*',
+        // We intentionally include the base path in the destination so no automatic
+        // prefixing occurs.  By omitting `basePath: false` the rewrite complies
+        // with Next.js 14 validation rules.
       },
     ]
   },
