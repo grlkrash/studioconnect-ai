@@ -79,6 +79,8 @@ model AgentConfig {
   ttsProvider                  String                @default("openai")
   voiceSettings                Json?
   widgetTheme                  Json?                 @default("{}")
+  elevenlabsVoice              String?               @default("pNInz6obpgDQGcFmaJgB")
+  elevenlabsModel              String?               @default("eleven_turbo_v2_5")
   business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   questions                    LeadCaptureQuestion[]
 

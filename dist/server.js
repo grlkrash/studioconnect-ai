@@ -48,6 +48,7 @@ const openai_1 = __importDefault(require("openai"));
 const next_1 = __importDefault(require("next"));
 const widgetConfigRoutes_1 = __importDefault(require("./api/widgetConfigRoutes"));
 const elevenlabsRoutes_1 = require("./api/elevenlabsRoutes");
+const healthzRoutes_1 = require("./api/healthzRoutes");
 dotenv_1.default.config();
 const redis_1 = __importDefault(require("./config/redis"));
 const voiceSessionService_1 = __importDefault(require("./services/voiceSessionService"));
@@ -257,6 +258,9 @@ nextApp.prepare()
     app.use('/api/integrations', integrationRoutes_1.default);
     app.use('/api/widget-config', widgetConfigRoutes_1.default);
     app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
+    app.use('/api/healthz', healthzRoutes_1.healthzRouter);
+    app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+    app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
     app.post('/api/voice-preview', async (req, res) => {
         req.url = '/preview';
         (0, elevenlabsRoutes_1.elevenLabsRouter)(req, res, () => { });
@@ -383,33 +387,81 @@ server.listen(PORT, async () => {
         console.error('[Server] Failed to start PDR cron', err);
     }
 });
-process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully');
+let isShuttingDown = false;
+async function performGracefulShutdown(signal) {
+    if (isShuttingDown) {
+        console.log(`${signal} received again, forcing immediate shutdown...`);
+        process.exit(1);
+    }
+    isShuttingDown = true;
+    console.log(`🛑 ${signal} received, initiating bulletproof graceful shutdown...`);
+    const shutdownTimeout = setTimeout(() => {
+        console.error('🚨 Graceful shutdown timeout reached, forcing exit');
+        process.exit(1);
+    }, 30000);
     try {
-        const redisManager = redis_1.default.getInstance();
-        await redisManager.disconnect();
-        console.log('✅ Redis disconnected');
+        console.log('🔒 Stopping server from accepting new connections...');
+        server.close();
+        console.log('📞 Gracefully closing active voice calls...');
+        try {
+            const { realtimeAgentService } = await Promise.resolve().then(() => __importStar(require('./services/realtimeAgentService')));
+            const agentService = realtimeAgentService;
+            const activeConnections = agentService.getActiveConnections();
+            if (activeConnections > 0) {
+                console.log(`📞 Found ${activeConnections} active voice calls, notifying callers...`);
+                await agentService.cleanup('🔄 System maintenance in progress. Please call back in a few moments. Thank you for your patience.');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                console.log('✅ All voice calls gracefully closed');
+            }
+            else {
+                console.log('✅ No active voice calls to close');
+            }
+        }
+        catch (voiceError) {
+            console.error('❌ Error during voice call cleanup:', voiceError);
+        }
+        console.log('🔌 Disconnecting from Redis...');
+        try {
+            const redisManager = redis_1.default.getInstance();
+            await redisManager.disconnect();
+            console.log('✅ Redis disconnected successfully');
+        }
+        catch (redisError) {
+            console.error('❌ Error disconnecting Redis:', redisError);
+        }
+        console.log('🗃️ Closing database connections...');
+        try {
+            const { prisma } = await Promise.resolve().then(() => __importStar(require('./services/db')));
+            await prisma.$disconnect();
+            console.log('✅ Database connections closed');
+        }
+        catch (dbError) {
+            console.error('❌ Error closing database connections:', dbError);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        clearTimeout(shutdownTimeout);
+        console.log('✅ Graceful shutdown completed successfully');
+        process.exit(0);
     }
     catch (error) {
-        console.error('Error during graceful shutdown:', error);
+        console.error('❌ Error during graceful shutdown:', error);
+        clearTimeout(shutdownTimeout);
+        process.exit(1);
     }
-    server.close(() => {
-        console.log('Process terminated');
-    });
+}
+process.on('SIGTERM', () => performGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => performGracefulShutdown('SIGINT'));
+process.on('uncaughtException', (error) => {
+    console.error('🚨 Uncaught Exception:', error);
+    if (!isShuttingDown) {
+        performGracefulShutdown('UNCAUGHT_EXCEPTION');
+    }
 });
-process.on('SIGINT', async () => {
-    console.log('SIGINT received, shutting down gracefully');
-    try {
-        const redisManager = redis_1.default.getInstance();
-        await redisManager.disconnect();
-        console.log('✅ Redis disconnected');
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+    if (!isShuttingDown) {
+        performGracefulShutdown('UNHANDLED_REJECTION');
     }
-    catch (error) {
-        console.error('Error during graceful shutdown:', error);
-    }
-    server.close(() => {
-        console.log('Process terminated');
-    });
 });
 exports.default = app;
 //# sourceMappingURL=server.js.map

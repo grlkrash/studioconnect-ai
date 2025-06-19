@@ -1030,15 +1030,48 @@ class RealtimeAgentService {
       ])
 
       console.log('[REALTIME AGENT] Starting professional transcription...')
-      const transcriptRaw = await getTranscription(wavPath)
+      
+      // 🎯 BULLETPROOF TRANSCRIPTION WITH MULTIPLE FALLBACKS 🎯
+      let transcriptRaw: string | null = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (!transcriptRaw && attempts < maxAttempts) {
+        attempts++;
+        console.log(`[REALTIME AGENT] Transcription attempt ${attempts}/${maxAttempts}`);
+        
+        try {
+          transcriptRaw = await getTranscription(wavPath);
+          if (transcriptRaw && transcriptRaw.trim()) {
+            console.log(`[REALTIME AGENT] ✅ Transcription SUCCESS on attempt ${attempts}`);
+            break;
+          }
+        } catch (transcriptError) {
+          console.error(`[REALTIME AGENT] ❌ Transcription attempt ${attempts} failed:`, transcriptError);
+          
+          if (attempts === maxAttempts) {
+            console.error(`[REALTIME AGENT] 🚨 ALL TRANSCRIPTION ATTEMPTS FAILED`);
+            // Send recovery message instead of failing silently
+            try {
+              await this.streamEnterpriseQualityTTS(state, "I'm sorry, I didn't catch that. Could you please repeat what you said?");
+            } catch (recoveryError) {
+              console.error('[REALTIME AGENT] Recovery message also failed:', recoveryError);
+            }
+            return;
+          }
+          
+          // Wait briefly before retry
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
 
       if (!transcriptRaw || transcriptRaw.trim().length === 0) {
-        console.log('[REALTIME AGENT] No transcription received')
+        console.log('[REALTIME AGENT] No transcription received after all attempts')
         return
       }
 
       const transcript = transcriptRaw.trim()
-      console.log(`[REALTIME AGENT] Transcription: "${transcript}"`)
+      console.log(`[REALTIME AGENT] ✅ FINAL TRANSCRIPT: "${transcript}"`)
 
       // -------------------- Deterministic Lead Qualification --------------------
       if (state.leadQualifier) {
@@ -2155,26 +2188,88 @@ class RealtimeAgentService {
     }
   }
 
+  /**
+   * 🎯 BULLETPROOF ELEVENLABS STT INITIALIZATION 🎯 
+   * Handles 403 errors and API key issues gracefully with automatic fallback
+   */
   private async initializeElevenLabsSTT(state: ConnectionState): Promise<void> {
-    if (state.sttClient || !process.env.ELEVENLABS_API_KEY) return
+    if (state.sttClient) {
+      console.log('[🎯 BULLETPROOF STT] ElevenLabs STT already initialized');
+      return;
+    }
+
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey || apiKey.trim() === '') {
+      console.warn('[🎯 BULLETPROOF STT] ⚠️ ELEVENLABS_API_KEY not configured - STT disabled');
+      console.warn('[🎯 BULLETPROOF STT] ✅ Continuing with Whisper-only transcription (this is fine)');
+      return;
+    }
+
+    console.log('[🎯 BULLETPROOF STT] 🚀 Initializing ElevenLabs Streaming STT...');
 
     try {
-      const client = new ElevenLabsStreamingClient({ apiKey: process.env.ELEVENLABS_API_KEY })
-      await client.connect()
+      const client = new ElevenLabsStreamingClient({ 
+        apiKey: apiKey.trim(),
+        modelId: 'eleven_multilingual_v2'
+      });
+      
+      // Add timeout for connection attempt
+      const connectionTimeout = setTimeout(() => {
+        console.warn('[🎯 BULLETPROOF STT] ⚠️ ElevenLabs STT connection timeout (10s)');
+        try {
+          client.close();
+        } catch (closeErr) {
+          // Ignore close errors
+        }
+      }, 10000);
+
+      await client.connect();
+      clearTimeout(connectionTimeout);
+
       client.on('transcript', async (text: string) => {
         try {
-          await this._handleTranscript(state, text)
+          console.log('[🎯 BULLETPROOF STT] 📝 ElevenLabs transcript:', text);
+          await this._handleTranscript(state, text);
         } catch (err) {
-          console.error('[REALTIME AGENT] Error handling ElevenLabs transcript:', err)
+          console.error('[🎯 BULLETPROOF STT] ❌ Error handling ElevenLabs transcript:', err);
         }
-      })
+      });
+
       client.on('close', () => {
-        state.sttClient = undefined
-      })
-      state.sttClient = client
-      console.log('[REALTIME AGENT] ElevenLabs Streaming STT client connected')
-    } catch (err) {
-      console.error('[REALTIME AGENT] Failed to initialise ElevenLabs STT client:', err)
+        console.log('[🎯 BULLETPROOF STT] 📴 ElevenLabs STT connection closed');
+        state.sttClient = undefined;
+      });
+
+      client.on('error', (error: any) => {
+        console.error('[🎯 BULLETPROOF STT] ❌ ElevenLabs STT error:', error);
+        state.sttClient = undefined;
+      });
+
+      state.sttClient = client;
+      console.log('[🎯 BULLETPROOF STT] ✅ ElevenLabs Streaming STT connected successfully');
+
+    } catch (err: any) {
+      console.error('[🎯 BULLETPROOF STT] ❌ ElevenLabs STT initialization failed:', err.message);
+      
+      // Specific error handling for common issues
+      if (err.message?.includes('403') || err.message?.includes('Unauthorized')) {
+        console.error('[🎯 BULLETPROOF STT] 🚨 ELEVENLABS API KEY INVALID OR EXPIRED');
+        console.error('[🎯 BULLETPROOF STT] 💡 Please check your ElevenLabs API key in environment variables');
+        console.error('[🎯 BULLETPROOF STT] ✅ Falling back to Whisper-only transcription');
+      } else if (err.message?.includes('429') || err.message?.includes('rate limit')) {
+        console.error('[🎯 BULLETPROOF STT] 🚨 ELEVENLABS RATE LIMIT EXCEEDED');
+        console.error('[🎯 BULLETPROOF STT] ✅ Falling back to Whisper-only transcription');
+      } else if (err.message?.includes('timeout')) {
+        console.error('[🎯 BULLETPROOF STT] 🚨 ELEVENLABS CONNECTION TIMEOUT');
+        console.error('[🎯 BULLETPROOF STT] ✅ Falling back to Whisper-only transcription');
+      } else {
+        console.error('[🎯 BULLETPROOF STT] 🚨 UNKNOWN ELEVENLABS ERROR:', err);
+        console.error('[🎯 BULLETPROOF STT] ✅ Falling back to Whisper-only transcription');
+      }
+
+      // Graceful fallback - the system continues with Whisper transcription
+      state.sttClient = undefined;
+      console.log('[🎯 BULLETPROOF STT] ✅ System will continue with professional Whisper transcription');
     }
   }
 

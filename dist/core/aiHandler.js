@@ -540,23 +540,81 @@ const _processMessage = async (message, conversationHistory, businessId, current
         };
     }
     catch (error) {
-        console.error('[AI Handler] Error processing message:', error);
+        console.error('[🎯 BULLETPROOF AI HANDLER] ❌ Critical error processing message:', error);
+        let recoveryMessage = '';
+        let nextAction = 'CONTINUE';
+        if (error instanceof Error) {
+            const errorMessage = error.message.toLowerCase();
+            if (errorMessage.includes('timeout') || errorMessage.includes('network')) {
+                recoveryMessage = (0, exports.generateRecoveryResponse)('network');
+                console.error('[🎯 BULLETPROOF AI HANDLER] 🌐 Network/timeout error detected');
+            }
+            else if (errorMessage.includes('database') || errorMessage.includes('prisma')) {
+                recoveryMessage = (0, exports.generateRecoveryResponse)('database');
+                console.error('[🎯 BULLETPROOF AI HANDLER] 🗃️ Database error detected');
+            }
+            else if (errorMessage.includes('openai') || errorMessage.includes('api')) {
+                recoveryMessage = (0, exports.generateRecoveryResponse)('ai processing');
+                console.error('[🎯 BULLETPROOF AI HANDLER] 🤖 AI API error detected');
+            }
+            else {
+                recoveryMessage = (0, exports.generateRecoveryResponse)('generic');
+                console.error('[🎯 BULLETPROOF AI HANDLER] ⚠️ Unknown error type detected');
+            }
+        }
+        else {
+            recoveryMessage = (0, exports.generateRecoveryResponse)('generic');
+            console.error('[🎯 BULLETPROOF AI HANDLER] ⚠️ Non-Error object thrown');
+        }
+        console.error('[🎯 BULLETPROOF AI HANDLER] 📊 Error details for monitoring:', {
+            businessId,
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            stackTrace: error instanceof Error ? error.stack : 'No stack trace available',
+            messageLength: message.length,
+            conversationHistoryLength: conversationHistory.length,
+            timestamp: new Date().toISOString()
+        });
         return {
-            reply: 'I seem to be having some technical difficulties. Please try your call again shortly.',
-            currentFlow: 'ERROR',
-            nextAction: 'HANGUP',
+            reply: recoveryMessage,
+            currentFlow: currentActiveFlow,
+            nextAction,
         };
     }
 };
-const generateRecoveryResponse = () => {
-    const recoveryMessages = [
-        "I do apologize, it seems I'm experiencing a technical issue with my connection right now. I can still take a message for the team if you'd like.",
+const generateRecoveryResponse = (errorContext) => {
+    const genericRecoveryMessages = [
+        "I do apologize, it seems I'm experiencing a brief technical issue with my connection right now. I can still take a message for the team if you'd like.",
         "I'm sorry, I seem to be having some technical difficulties at the moment. Would you like to leave a message for someone to call you back?",
         "My apologies - I'm experiencing a brief technical issue. I can take down your information so our team can reach out to you directly.",
         "I'm sorry about that, I seem to be having a connection problem right now. I can still help by taking your details for a callback if that would be helpful."
     ];
-    const randomIndex = Math.floor(Math.random() * recoveryMessages.length);
-    return recoveryMessages[randomIndex];
+    const transcriptionRecoveryMessages = [
+        "I'm sorry, I didn't quite catch what you said. Could you please repeat that for me?",
+        "I apologize, but I didn't hear that clearly. Could you please say that again?",
+        "I'm having trouble hearing you clearly. Could you please repeat what you just said?",
+        "Sorry, I missed that. Could you please repeat your message?"
+    ];
+    const aiProcessingRecoveryMessages = [
+        "I'm experiencing a brief processing delay. Let me try to help you another way - what can I assist you with today?",
+        "I apologize for the delay. How can I help you with your creative project or business needs today?",
+        "Sorry about that brief pause. I'm here to help - what brings you to our agency today?",
+        "My apologies for the technical hiccup. How may I assist you with your project today?"
+    ];
+    let selectedMessages = genericRecoveryMessages;
+    if (errorContext) {
+        const context = errorContext.toLowerCase();
+        if (context.includes('transcription') || context.includes('speech') || context.includes('whisper')) {
+            selectedMessages = transcriptionRecoveryMessages;
+        }
+        else if (context.includes('ai') || context.includes('processing') || context.includes('completion')) {
+            selectedMessages = aiProcessingRecoveryMessages;
+        }
+    }
+    const randomIndex = Math.floor(Math.random() * selectedMessages.length);
+    const selectedMessage = selectedMessages[randomIndex];
+    console.log('[🎯 RECOVERY SYSTEM] Generated recovery response:', selectedMessage.substring(0, 50) + '...');
+    return selectedMessage;
 };
 exports.generateRecoveryResponse = generateRecoveryResponse;
 async function handleIncomingMessage(message, sessionId, businessId) {

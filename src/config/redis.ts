@@ -84,6 +84,29 @@ class RedisManager {
   isClientConnected(): boolean {
     return this.isConnected && this.client !== null
   }
+
+  async healthCheck(): Promise<{
+    connected: boolean
+    latency?: number
+    error?: string
+  }> {
+    try {
+      if (!this.isClientConnected()) {
+        return { connected: false, error: 'Client not connected' }
+      }
+
+      const start = Date.now()
+      await this.client!.ping()
+      const latency = Date.now() - start
+
+      return { connected: true, latency }
+    } catch (error) {
+      return { 
+        connected: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      }
+    }
+  }
 }
 
 export default RedisManager 

@@ -11,6 +11,7 @@ import { UserPayload } from './api/authMiddleware'
 import next from 'next'
 import widgetConfigRoutes from './api/widgetConfigRoutes'
 import { elevenLabsRouter } from './api/elevenlabsRoutes'
+import { healthzRouter } from './api/healthzRoutes'
 
 // Load environment variables
 dotenv.config()
@@ -322,6 +323,11 @@ nextApp.prepare()
     app.use('/api/integrations', integrationRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)
+    app.use('/api/healthz', healthzRouter)
+    
+    // Legacy health check endpoints
+    app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
+    app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
     
     // Voice preview route (alias for UI compatibility)
     app.post('/api/voice-preview', async (req, res) => {
@@ -507,37 +513,104 @@ server.listen(PORT, async () => {
   // --- Websocket server etc.
 })
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully')
-  
-  try {
-    const redisManager = RedisManager.getInstance()
-    await redisManager.disconnect()
-    console.log('✅ Redis disconnected')
-  } catch (error) {
-    console.error('Error during graceful shutdown:', error)
-  }
-  
-  server.close(() => {
-    console.log('Process terminated')
-  })
-})
+// 🎯 BULLETPROOF GRACEFUL SHUTDOWN FOR PRODUCTION VOICE CALLS 🎯
+let isShuttingDown = false;
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully')
-  
-  try {
-    const redisManager = RedisManager.getInstance()
-    await redisManager.disconnect()
-    console.log('✅ Redis disconnected')
-  } catch (error) {
-    console.error('Error during graceful shutdown:', error)
+async function performGracefulShutdown(signal: string): Promise<void> {
+  if (isShuttingDown) {
+    console.log(`${signal} received again, forcing immediate shutdown...`);
+    process.exit(1);
   }
   
-  server.close(() => {
-    console.log('Process terminated')
-  })
-})
+  isShuttingDown = true;
+  console.log(`🛑 ${signal} received, initiating bulletproof graceful shutdown...`);
+  
+  // Set a maximum shutdown time to prevent hanging
+  const shutdownTimeout = setTimeout(() => {
+    console.error('🚨 Graceful shutdown timeout reached, forcing exit');
+    process.exit(1);
+  }, 30000); // 30 seconds max shutdown time
+
+  try {
+    // 1. Stop accepting new connections immediately
+    console.log('🔒 Stopping server from accepting new connections...');
+    server.close();
+
+    // 2. Gracefully close all active voice calls with proper notification
+    console.log('📞 Gracefully closing active voice calls...');
+    try {
+      const { realtimeAgentService } = await import('./services/realtimeAgentService');
+      const agentService = realtimeAgentService;
+      
+      const activeConnections = agentService.getActiveConnections();
+      if (activeConnections > 0) {
+        console.log(`📞 Found ${activeConnections} active voice calls, notifying callers...`);
+        
+        // Give callers a graceful message before hanging up
+        await agentService.cleanup('🔄 System maintenance in progress. Please call back in a few moments. Thank you for your patience.');
+        
+        // Wait a moment for the message to be delivered
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        console.log('✅ All voice calls gracefully closed');
+      } else {
+        console.log('✅ No active voice calls to close');
+      }
+    } catch (voiceError) {
+      console.error('❌ Error during voice call cleanup:', voiceError);
+      // Continue with shutdown even if voice cleanup fails
+    }
+
+    // 3. Close Redis connection
+    console.log('🔌 Disconnecting from Redis...');
+    try {
+      const redisManager = RedisManager.getInstance();
+      await redisManager.disconnect();
+      console.log('✅ Redis disconnected successfully');
+    } catch (redisError) {
+      console.error('❌ Error disconnecting Redis:', redisError);
+    }
+
+    // 4. Close any remaining database connections
+    console.log('🗃️ Closing database connections...');
+    try {
+      const { prisma } = await import('./services/db');
+      await prisma.$disconnect();
+      console.log('✅ Database connections closed');
+    } catch (dbError) {
+      console.error('❌ Error closing database connections:', dbError);
+    }
+
+    // 5. Wait a moment for any final cleanup
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    clearTimeout(shutdownTimeout);
+    console.log('✅ Graceful shutdown completed successfully');
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('❌ Error during graceful shutdown:', error);
+    clearTimeout(shutdownTimeout);
+    process.exit(1);
+  }
+}
+
+// Enhanced graceful shutdown handlers
+process.on('SIGTERM', () => performGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => performGracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions and promise rejections gracefully
+process.on('uncaughtException', (error) => {
+  console.error('🚨 Uncaught Exception:', error);
+  if (!isShuttingDown) {
+    performGracefulShutdown('UNCAUGHT_EXCEPTION');
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+  if (!isShuttingDown) {
+    performGracefulShutdown('UNHANDLED_REJECTION');
+  }
+});
 
 export default app
