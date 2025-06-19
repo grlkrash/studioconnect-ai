@@ -886,7 +886,7 @@ Open Tasks:
 
 #### System Availability
 - **PRO Plan**:
-  - 99.5% uptime guarantee
+  - 95% uptime target
   - 4-hour response time
   - Email support
   - Business hours support

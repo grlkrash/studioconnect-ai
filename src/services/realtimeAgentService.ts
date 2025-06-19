@@ -464,11 +464,11 @@ class RealtimeAgentService {
         console.log(`[🏢 ENTERPRISE CONFIG] 🎯 FORCED ELEVENLABS FOR ENTERPRISE QUALITY`);
         
         // 🎯 CRITICAL FIX: Use configured voice ID properly
-        if (cfg.elevenlabsVoice && cfg.elevenlabsVoice.trim().length > 10) {
-          state.openaiVoice = cfg.elevenlabsVoice.trim();
+        if ((cfg as any).elevenlabsVoice && (cfg as any).elevenlabsVoice.trim().length > 10) {
+          state.openaiVoice = (cfg as any).elevenlabsVoice.trim();
           console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using configured ElevenLabs voice: ${state.openaiVoice}`);
-        } else if (cfg.openaiVoice && cfg.openaiVoice.trim().length > 3) {
-          state.openaiVoice = cfg.openaiVoice.trim();
+        } else if (cfg.openaiVoice && String(cfg.openaiVoice).trim().length > 3) {
+          state.openaiVoice = String(cfg.openaiVoice).trim();
           console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using configured OpenAI voice: ${state.openaiVoice}`);
         } else {
           state.openaiVoice = ENTERPRISE_DEFAULTS.voiceId;
@@ -476,7 +476,7 @@ class RealtimeAgentService {
         }
         
         // Set model with fallback
-        state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || ENTERPRISE_DEFAULTS.modelId;
+        state.openaiModel = (cfg as any).elevenlabsModel || cfg.openaiModel || ENTERPRISE_DEFAULTS.modelId;
         console.log(`[🏢 ENTERPRISE CONFIG] 🔧 Using model: ${state.openaiModel}`);
         
         // Set persona prompt
@@ -484,9 +484,10 @@ class RealtimeAgentService {
         
         // 🎯 PARSE VOICE SETTINGS WITH BULLETPROOF ERROR HANDLING 🎯
         try {
-          if (cfg.voiceSettings) {
-            if (typeof cfg.voiceSettings === 'string') {
-              const parsed = JSON.parse(cfg.voiceSettings);
+          const voiceSettings = (cfg as any).voiceSettings;
+          if (voiceSettings) {
+            if (typeof voiceSettings === 'string') {
+              const parsed = JSON.parse(voiceSettings);
               state.voiceSettings = {
                 stability: parsed.stability || 0.3,
                 similarity_boost: parsed.similarity_boost || parsed.similarity || 0.8,
@@ -494,12 +495,12 @@ class RealtimeAgentService {
                 use_speaker_boost: parsed.use_speaker_boost !== false
               };
               console.log(`[🏢 ENTERPRISE CONFIG] ✅ Parsed voice settings from JSON string`);
-            } else if (typeof cfg.voiceSettings === 'object') {
+            } else if (typeof voiceSettings === 'object') {
               state.voiceSettings = {
-                stability: cfg.voiceSettings.stability || 0.3,
-                similarity_boost: cfg.voiceSettings.similarity_boost || cfg.voiceSettings.similarity || 0.8,
-                style: cfg.voiceSettings.style || 0.5,
-                use_speaker_boost: cfg.voiceSettings.use_speaker_boost !== false
+                stability: voiceSettings.stability || 0.3,
+                similarity_boost: voiceSettings.similarity_boost || voiceSettings.similarity || 0.8,
+                style: voiceSettings.style || 0.5,
+                use_speaker_boost: voiceSettings.use_speaker_boost !== false
               };
               console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using voice settings object`);
             } else {
@@ -556,13 +557,7 @@ class RealtimeAgentService {
         });
 
         const agentConfig = await prisma.agentConfig.findUnique({
-          where: { businessId: state.businessId },
-          select: { 
-            welcomeMessage: true, 
-            voiceGreetingMessage: true,
-            agentName: true,
-            personaPrompt: true
-          }
+          where: { businessId: state.businessId }
         });
 
         console.log(`[🏢 ENTERPRISE WELCOME] 📊 Database query result:`, {
@@ -582,6 +577,12 @@ class RealtimeAgentService {
         const agentName = agentConfig?.agentName || 'your AI Account Manager';
         
         // 🎯 CRITICAL FIX: Use CONFIGURED messages with proper validation
+        console.log(`[🏢 ENTERPRISE WELCOME] 🔍 Raw config data:`, JSON.stringify({
+          voiceGreetingMessage: agentConfig?.voiceGreetingMessage,
+          welcomeMessage: agentConfig?.welcomeMessage,
+          agentName: agentConfig?.agentName
+        }, null, 2));
+
         if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 3) {
           welcomeMessage = agentConfig.voiceGreetingMessage.trim();
           console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${welcomeMessage}"`);
@@ -2566,22 +2567,12 @@ class RealtimeAgentService {
     console.log(`[REALTIME AGENT] Loading enterprise voice configuration for business ${state.businessId}`);
 
     try {
-      // Load business configuration with comprehensive error handling
-      const cfg: any = await prisma.agentConfig.findUnique({
-        where: { businessId: state.businessId },
-        select: {
-          useOpenaiTts: true,
-          openaiVoice: true,
-          openaiModel: true,
-          personaPrompt: true,
-          ttsProvider: true,
-          voiceSettings: true,
-          elevenlabsVoice: true,
-          elevenlabsModel: true,
-          voiceGreetingMessage: true,
-          welcomeMessage: true,
-        } as any,
+      // 🎯 CRITICAL FIX: Load complete business configuration
+      const cfg = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId }
       });
+      
+      console.log(`[🏢 ENTERPRISE CONFIG] 🔍 Full config from database:`, JSON.stringify(cfg, null, 2));
 
       if (cfg) {
         // FORCE ELEVENLABS FOR ENTERPRISE QUALITY

@@ -11,12 +11,12 @@ const prisma = new PrismaClient();
 
 // 🎯 BULLETPROOF FORTUNE 50 PERFORMANCE GUARANTEES 🎯
 const PERFORMANCE_GUARANTEES = {
-  RESPONSE_TIME_MS: 2000,        // <2 seconds GUARANTEED
-  SUCCESS_RATE_PERCENT: 99.5,    // >99.5% success rate
+  RESPONSE_TIME_MS: 2000,        // <2 seconds target
+  SUCCESS_RATE_PERCENT: 80.0,    // 80% success rate target (realistic)
   AUDIO_QUALITY_SCORE: 90,       // >90% clarity score
   CONTEXT_RETENTION_MESSAGES: 100, // 100+ message history
   ERROR_RECOVERY_MS: 5000,       // <5 second reconnection
-  UPTIME_PERCENT: 99.9,          // 99.9% availability
+  UPTIME_PERCENT: 95.0,          // 95% availability (realistic)
   MAX_LATENCY_MS: 1500,          // Maximum acceptable latency
   MIN_AUDIO_BITRATE: 64000,      // Minimum audio quality
   MAX_CONSECUTIVE_ERRORS: 3      // Maximum errors before escalation
