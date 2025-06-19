@@ -792,13 +792,20 @@ class RealtimeAgentService {
       const ulawBuffer = await fs.promises.readFile(ulawPath);
       const CHUNK_SIZE = 320; // 40ms of audio at 8kHz µ-law
 
-      // Stream audio in real-time with professional pacing
+      // 🎯 STREAM AUDIO WITH BULLETPROOF DELIVERY GUARANTEE 🎯
       let streamingComplete = false;
+      const totalChunks = Math.ceil(ulawBuffer.length / CHUNK_SIZE);
+      let chunksStreamed = 0;
+      
+      console.log(`[🏢 ENTERPRISE TTS] 🚀 Starting audio stream: ${totalChunks} chunks, ${ulawBuffer.length} bytes`);
+      
       for (let offset = 0; offset < ulawBuffer.length; offset += CHUNK_SIZE) {
-        // Check for barge-in (but not during welcome message)
+        chunksStreamed++;
+        
+        // Check for barge-in (but NEVER during welcome message)
         if (state.bargeInDetected && state.welcomeMessageDelivered) {
           state.pendingSpeechBuffer = ulawBuffer.subarray(offset);
-          console.log('[🏢 ENTERPRISE TTS] 🛑 Playback paused due to barge-in');
+          console.log(`[🏢 ENTERPRISE TTS] 🛑 Playback paused at chunk ${chunksStreamed}/${totalChunks} due to barge-in`);
           break;
         }
 
@@ -811,31 +818,48 @@ class RealtimeAgentService {
             streamSid: state.streamSid,
             media: { payload }
           }));
+          
+          // Log progress for welcome message only
+          if (!state.welcomeMessageDelivered && chunksStreamed % 20 === 0) {
+            console.log(`[🏢 ENTERPRISE TTS] 📊 Welcome message progress: ${chunksStreamed}/${totalChunks} chunks (${Math.round(chunksStreamed/totalChunks*100)}%)`);
+          }
         } else {
-          console.warn('[🏢 ENTERPRISE TTS] ⚠️ WebSocket not ready, stopping audio stream');
+          console.warn(`[🏢 ENTERPRISE TTS] ⚠️ WebSocket not ready at chunk ${chunksStreamed}, stopping stream`);
           break;
         }
 
-        // CRITICAL FIX: Slightly faster timing for more natural speech
-        await new Promise((resolve) => setTimeout(resolve, 35));
+        // CRITICAL FIX: Optimized timing for professional quality without cutoff
+        await new Promise((resolve) => setTimeout(resolve, 38)); // 38ms = smooth professional pace
         
         // Check if we've reached the end
         if (offset + CHUNK_SIZE >= ulawBuffer.length) {
           streamingComplete = true;
+          console.log(`[🏢 ENTERPRISE TTS] ✅ Audio streaming completed successfully (${chunksStreamed}/${totalChunks} chunks)`);
         }
       }
 
-      // CRITICAL FIX: Add small delay before marking complete
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // 🎯 CRITICAL: ENSURE COMPLETE AUDIO DELIVERY 🎯
+      if (streamingComplete) {
+        // Add proper delay to ensure all audio is processed by Twilio
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Signal end of message only if streaming completed successfully
-      if (streamingComplete && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-        state.ws.send(JSON.stringify({ 
-          event: 'mark', 
-          streamSid: state.streamSid, 
-          mark: { name: 'speech_complete' } 
-        }));
-        console.log('[🏢 ENTERPRISE TTS] ✅ Audio streaming completed successfully');
+        // Signal end of message only if streaming completed successfully
+        if (state.ws.readyState === WebSocket.OPEN && state.streamSid) {
+          state.ws.send(JSON.stringify({ 
+            event: 'mark', 
+            streamSid: state.streamSid, 
+            mark: { name: 'speech_complete' } 
+          }));
+          console.log('[🏢 ENTERPRISE TTS] ✅ Audio streaming completed with end marker');
+          
+          // Mark welcome message as delivered if this was the welcome
+          if (!state.welcomeMessageDelivered) {
+            state.welcomeMessageDelivered = true;
+            console.log('[🏢 ENTERPRISE TTS] 🎉 WELCOME MESSAGE SUCCESSFULLY DELIVERED');
+          }
+        }
+      } else {
+        console.warn('[🏢 ENTERPRISE TTS] ⚠️ Audio streaming was interrupted');
       }
 
       console.log('[🏢 ENTERPRISE TTS] ✅ ENTERPRISE QUALITY TTS DELIVERED SUCCESSFULLY');
@@ -1605,15 +1629,36 @@ class RealtimeAgentService {
         // 🎯 BULLETPROOF WELCOME MESSAGE DELIVERY SYSTEM 🎯
         if (!state.welcomeMessageDelivered && state.streamSid) {
           console.log('[🏢 ENTERPRISE AGENT] 🎯 INITIATING BULLETPROOF WELCOME MESSAGE DELIVERY...');
-          // CRITICAL FIX: Longer delay to ensure Twilio stream is fully ready
+          console.log('[🏢 ENTERPRISE AGENT] 🔍 Current state:', {
+            streamSid: state.streamSid,
+            businessId: state.businessId,
+            welcomeDelivered: state.welcomeMessageDelivered,
+            wsReady: state.ws.readyState === 1
+          });
+          
+          // CRITICAL FIX: Immediate delivery with retries for reliability
           setTimeout(async () => {
-            if (!state.welcomeMessageDelivered && state.streamSid) {
-              console.log('[🏢 ENTERPRISE AGENT] 🎯 Stream ready - delivering welcome message now');
+            if (!state.welcomeMessageDelivered && state.streamSid && state.ws.readyState === 1) {
+              console.log('[🏢 ENTERPRISE AGENT] 🚀 DELIVERING WELCOME MESSAGE NOW');
               await this.deliverBulletproofWelcomeMessage(state);
             } else {
-              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ Stream not ready or welcome already delivered');
+              console.warn('[🏢 ENTERPRISE AGENT] ⚠️ Stream not ready or welcome already delivered', {
+                welcomeDelivered: state.welcomeMessageDelivered,
+                streamSid: !!state.streamSid,
+                wsReady: state.ws.readyState === 1
+              });
+              
+              // Retry after additional delay if stream not ready
+              if (!state.welcomeMessageDelivered && state.streamSid) {
+                setTimeout(async () => {
+                  if (!state.welcomeMessageDelivered) {
+                    console.log('[🏢 ENTERPRISE AGENT] 🔄 RETRY: Delivering welcome message');
+                    await this.deliverBulletproofWelcomeMessage(state);
+                  }
+                }, 1000);
+              }
             }
-          }, 1500); // FIXED: 1.5s delay for proper stream stability
+          }, 800); // OPTIMIZED: 800ms for immediate but stable delivery
         }
 
         // Initialize ElevenLabs STT for high-quality transcription
@@ -2578,38 +2623,80 @@ class RealtimeAgentService {
         // FORCE ELEVENLABS FOR ENTERPRISE QUALITY
         state.ttsProvider = 'elevenlabs';
         
-        // Set premium voice configuration
-        if (cfg.elevenlabsVoice) {
-          state.openaiVoice = cfg.elevenlabsVoice;
-        } else if (cfg.openaiVoice) {
-          state.openaiVoice = cfg.openaiVoice;
+        // 🎯 CRITICAL FIX: Use proper type casting for voice configuration
+        const elevenlabsVoice = (cfg as any).elevenlabsVoice;
+        const elevenlabsModel = (cfg as any).elevenlabsModel;
+        const voiceSettings = (cfg as any).voiceSettings;
+        
+        console.log(`[🏢 ENTERPRISE CONFIG] 🔍 Voice config fields:`, {
+          elevenlabsVoice,
+          elevenlabsModel,
+          voiceSettings: typeof voiceSettings,
+          openaiVoice: cfg.openaiVoice,
+          openaiModel: cfg.openaiModel
+        });
+
+        // Set premium voice configuration with bulletproof fallbacks
+        if (elevenlabsVoice && elevenlabsVoice.trim().length > 10) {
+          state.openaiVoice = elevenlabsVoice.trim();
+          console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using ElevenLabs voice: ${state.openaiVoice}`);
+        } else if (cfg.openaiVoice && String(cfg.openaiVoice).trim().length > 3) {
+          state.openaiVoice = String(cfg.openaiVoice).trim().toLowerCase();
+          console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using OpenAI voice: ${state.openaiVoice}`);
         } else {
           // Default to Rachel (professional female voice)
-          state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+          state.openaiVoice = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB';
+          console.log(`[🏢 ENTERPRISE CONFIG] ⚠️ Using default voice: ${state.openaiVoice}`);
         }
         
-        state.openaiModel = cfg.elevenlabsModel || cfg.openaiModel || 'eleven_turbo_v2_5';
+        state.openaiModel = elevenlabsModel || cfg.openaiModel || 'eleven_turbo_v2_5';
         state.personaPrompt = (cfg.personaPrompt || '') + FILLER_INSTRUCTIONS;
         
-        // Parse voice settings with error handling
+        // 🎯 PARSE VOICE SETTINGS WITH BULLETPROOF ERROR HANDLING
         try {
-          if (cfg.voiceSettings) {
-            if (typeof cfg.voiceSettings === 'string') {
-              state.voiceSettings = JSON.parse(cfg.voiceSettings);
+          if (voiceSettings) {
+            if (typeof voiceSettings === 'string') {
+              const parsed = JSON.parse(voiceSettings);
+              state.voiceSettings = {
+                stability: parsed.stability || 0.7,
+                similarity_boost: parsed.similarity_boost || parsed.similarity || 0.85,
+                style: parsed.style || 0.2,
+                use_speaker_boost: parsed.use_speaker_boost !== false,
+                speed: parsed.speed || 1.0
+              };
+              console.log(`[🏢 ENTERPRISE CONFIG] ✅ Parsed voice settings from JSON`);
+            } else if (typeof voiceSettings === 'object') {
+              state.voiceSettings = {
+                stability: voiceSettings.stability || 0.7,
+                similarity_boost: voiceSettings.similarity_boost || voiceSettings.similarity || 0.85,
+                style: voiceSettings.style || 0.2,
+                use_speaker_boost: voiceSettings.use_speaker_boost !== false,
+                speed: voiceSettings.speed || 1.0
+              };
+              console.log(`[🏢 ENTERPRISE CONFIG] ✅ Using voice settings object`);
             } else {
-              state.voiceSettings = cfg.voiceSettings;
+              throw new Error('Invalid voice settings format');
             }
+          } else {
+            throw new Error('No voice settings found');
           }
         } catch (jsonErr) {
-          console.warn('[REALTIME AGENT] Invalid voiceSettings JSON, using enterprise defaults');
+          console.warn('[🏢 ENTERPRISE CONFIG] ⚠️ Invalid voiceSettings, using enterprise defaults:', jsonErr);
           state.voiceSettings = {
-            stability: 0.65,
-            similarity: 0.85,
-            style: 0.15,
+            stability: 0.7,
+            similarity_boost: 0.85,
+            style: 0.2,
             use_speaker_boost: true,
             speed: 1.0
           };
         }
+        
+        console.log(`[🏢 ENTERPRISE CONFIG] ✅ FINAL VOICE CONFIG:`, {
+          ttsProvider: state.ttsProvider,
+          voice: state.openaiVoice,
+          model: state.openaiModel,
+          settings: state.voiceSettings
+        });
         
         console.log(`[REALTIME AGENT] Enterprise voice config loaded: ElevenLabs with voice ${state.openaiVoice}`);
       } else {
