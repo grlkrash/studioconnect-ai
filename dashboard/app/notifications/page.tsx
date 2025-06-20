@@ -101,31 +101,44 @@ export default function NotificationsPage() {
   const [phoneNumber, setPhoneNumber] = useState<string>("")
   const [phoneError, setPhoneError] = useState<string | null>(null)
 
-  // Fetch existing emails on mount
+  // Fetch existing emails and phone on mount, and sync with channels
   useEffect(() => {
     ;(async () => {
       try {
-        const res = await fetch("/api/business/notification-emails", {
-          credentials: "include",
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (Array.isArray(data.notificationEmails)) setEmails(data.notificationEmails)
+        const [emailRes, phoneRes] = await Promise.all([
+          fetch("/api/business/notification-emails", { credentials: "include" }),
+          fetch("/api/business/notification-phone", { credentials: "include" })
+        ])
+        
+        if (emailRes.ok) {
+          const emailData = await emailRes.json()
+          if (Array.isArray(emailData.notificationEmails)) {
+            setEmails(emailData.notificationEmails)
+            // Update email channel with the first email
+            if (emailData.notificationEmails.length > 0) {
+              setChannels(prev => prev.map(channel => 
+                channel.id === 'email' 
+                  ? { ...channel, settings: { ...channel.settings, address: emailData.notificationEmails[0] } }
+                  : channel
+              ))
+            }
+          }
+        }
+        
+        if (phoneRes.ok) {
+          const phoneData = await phoneRes.json()
+          if (phoneData.notificationPhoneNumber) {
+            setPhoneNumber(phoneData.notificationPhoneNumber)
+            // Update SMS channel with the phone number
+            setChannels(prev => prev.map(channel => 
+              channel.id === 'sms' 
+                ? { ...channel, settings: { ...channel.settings, phone: phoneData.notificationPhoneNumber } }
+                : channel
+            ))
+          }
         }
       } catch (err) {
-        console.error("Failed to load notification emails", err)
-      }
-    })()
-
-    ;(async () => {
-      try {
-        const res = await fetch("/api/business/notification-phone", { credentials: "include" })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.notificationPhoneNumber) setPhoneNumber(data.notificationPhoneNumber)
-        }
-      } catch (err) {
-        console.error("Failed to load notification phone", err)
+        console.error("Failed to load notification settings", err)
       }
     })()
   }, [])
@@ -468,12 +481,16 @@ export default function NotificationsPage() {
                             <Input
                               id={`${channel.id}-phone`}
                               value={channel.settings.phone}
+                              onChange={(e) => handleChannelSettingChange(channel.id, 'phone', e.target.value)}
                               placeholder="+1 (555) 123-4567"
                             />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor={`${channel.id}-frequency`}>Frequency</Label>
-                            <Select value={channel.settings.frequency}>
+                            <Select 
+                              value={channel.settings.frequency}
+                              onValueChange={(value) => handleChannelSettingChange(channel.id, 'frequency', value)}
+                            >
                               <SelectTrigger>
                                 <SelectValue />
                               </SelectTrigger>
@@ -483,6 +500,15 @@ export default function NotificationsPage() {
                               </SelectContent>
                             </Select>
                           </div>
+                          <div className="col-span-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleSaveChannelSettings(channel.id)}
+                              disabled={!channel.settings.phone}
+                            >
+                              Save SMS Settings
+                            </Button>
+                          </div>
                         </>
                       )}
 
@@ -490,12 +516,26 @@ export default function NotificationsPage() {
                         <>
                           <div className="space-y-2">
                             <Label htmlFor={`${channel.id}-channel`}>Slack Channel</Label>
-                            <Input id={`${channel.id}-channel`} value={channel.settings.channel} placeholder="#leads" />
+                            <Input 
+                              id={`${channel.id}-channel`} 
+                              value={channel.settings.channel} 
+                              onChange={(e) => handleChannelSettingChange(channel.id, 'channel', e.target.value)}
+                              placeholder="#leads" 
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label>Status</Label>
                             <Button variant="outline" size="sm">
                               Connect Slack
+                            </Button>
+                          </div>
+                          <div className="col-span-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleSaveChannelSettings(channel.id)}
+                              disabled={!channel.settings.channel}
+                            >
+                              Save Slack Settings
                             </Button>
                           </div>
                         </>
@@ -508,6 +548,7 @@ export default function NotificationsPage() {
                             <Input
                               id={`${channel.id}-url`}
                               value={channel.settings.url}
+                              onChange={(e) => handleChannelSettingChange(channel.id, 'url', e.target.value)}
                               placeholder="https://your-app.com/webhook"
                             />
                           </div>
@@ -515,6 +556,15 @@ export default function NotificationsPage() {
                             <Label>Test</Label>
                             <Button variant="outline" size="sm">
                               Test Webhook
+                            </Button>
+                          </div>
+                          <div className="col-span-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleSaveChannelSettings(channel.id)}
+                              disabled={!channel.settings.url}
+                            >
+                              Save Webhook Settings
                             </Button>
                           </div>
                         </>
