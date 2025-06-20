@@ -41,6 +41,29 @@ export async function generateSpeechWithElevenLabs(
 
   // Clean text - remove SSML tags for ElevenLabs (they have their own format)
   const cleanText = text.replace(/<[^>]*>/g, '').trim()
+  
+  // 🎯 ENHANCE TEXT FOR NATURAL SPEECH PACING 🎯
+  let enhancedText = cleanText
+  
+  // Add natural pauses after sentences for conversational flow
+  enhancedText = enhancedText.replace(/([.!?])\s+/g, '$1 ')
+  
+  // Add slight pauses after commas for natural breathing
+  enhancedText = enhancedText.replace(/,\s+/g, ', ')
+  
+  // Enhance natural speech patterns for business conversations
+  enhancedText = enhancedText.replace(/\b(Got it|Perfect|Absolutely|Excellent)\b/gi, '$1.')
+  enhancedText = enhancedText.replace(/\b(Let me|Allow me|I'll)\b/gi, '$1...')
+  enhancedText = enhancedText.replace(/\b(Thank you|Thanks)\b/gi, '$1.')
+  
+  // Improve question delivery for better engagement
+  enhancedText = enhancedText.replace(/\?\s*$/g, '?')
+  
+  // Add emphasis to important business terms
+  enhancedText = enhancedText.replace(/\b(urgent|emergency|important|critical)\b/gi, '$1')
+  enhancedText = enhancedText.replace(/\b(project|deadline|timeline|status)\b/gi, '$1')
+  
+  console.log(`[🎯 BULLETPROOF ELEVENLABS] 📝 Enhanced text for natural delivery: "${enhancedText.substring(0, 100)}${enhancedText.length > 100 ? '...' : ''}"`)
 
   // ------------------------------------------------------------------
   //  Determine whether the provided value is already a **voice ID** or
@@ -99,7 +122,7 @@ export async function generateSpeechWithElevenLabs(
   try {
     const cacheDir = path.join(os.tmpdir(), 'scai_tts_cache')
     await fs.promises.mkdir(cacheDir, { recursive: true })
-    const hash = crypto.createHash('sha256').update(`11labs|${modelId}|${voiceIdForRequest}|${cleanText}|${JSON.stringify(voiceSettings || {})}`).digest('hex')
+    const hash = crypto.createHash('sha256').update(`11labs|${modelId}|${voiceIdForRequest}|${enhancedText}|${JSON.stringify(voiceSettings || {})}`).digest('hex')
     cachedPath = path.join(cacheDir, `${hash}.mp3`)
     if (fs.existsSync(cachedPath)) {
       console.log(`[ElevenLabs] Returning cached speech (hash=${hash.slice(0,8)})`)
@@ -115,7 +138,7 @@ export async function generateSpeechWithElevenLabs(
     // 🎯 BULLETPROOF REQUEST BODY WITH ENTERPRISE DEFAULTS 🎯
     const enterpriseDefaults = getEnterpriseVoiceSettings();
     const requestBody = {
-      text: cleanText,
+      text: enhancedText, // Use enhanced text for better delivery
       model_id: modelId,
       voice_settings: {
         stability: voiceSettings?.stability ?? enterpriseDefaults.stability,
@@ -134,7 +157,7 @@ export async function generateSpeechWithElevenLabs(
     console.log(`[🎯 BULLETPROOF ELEVENLABS] 🎙️ Voice ID: ${voiceIdForRequest}`)
     console.log(`[🎯 BULLETPROOF ELEVENLABS] 🔧 Model: ${modelId}`)
     console.log(`[🎯 BULLETPROOF ELEVENLABS] 📊 Voice Settings:`, requestBody.voice_settings)
-    console.log(`[🎯 BULLETPROOF ELEVENLABS] 📝 Text: "${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}"`)
+    console.log(`[🎯 BULLETPROOF ELEVENLABS] 📝 Text: "${enhancedText.substring(0, 100)}${enhancedText.length > 100 ? '...' : ''}"`)
 
     // 🚨 CRITICAL FIX: Aggressive error handling with hard failure logging
     const response = await axios.post(url, requestBody, {
@@ -154,7 +177,7 @@ export async function generateSpeechWithElevenLabs(
       console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Empty audio buffer received from ElevenLabs API');
       console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Voice ID:', voiceIdForRequest);
       console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Model:', modelId);
-      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', cleanText.length);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', enhancedText.length);
       throw new Error('ELEVENLABS_GENERATION_FAILED: Empty audio buffer');
     }
     
@@ -179,8 +202,8 @@ export async function generateSpeechWithElevenLabs(
     console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ===============================');
     console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Voice ID:', voiceIdForRequest);
     console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Model ID:', modelId);
-    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', cleanText.length);
-    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Preview:', cleanText.substring(0, 200));
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', enhancedText.length);
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Preview:', enhancedText.substring(0, 200));
     console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Timestamp:', new Date().toISOString());
     
     if (axios.isAxiosError(error)) {

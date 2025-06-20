@@ -549,101 +549,71 @@ class RealtimeAgentService {
    * Triple-layered fallback system ensures welcome message ALWAYS delivers
    */
   private async getEnterpriseWelcomeMessage(state: ConnectionState): Promise<string> {
-    console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Generating welcome message for business: ${state.businessId}`);
-    
-    // 🎯 LAYER 1: Business-specific welcome message
-    if (state.businessId) {
-      try {
-        const business = await prisma.business.findUnique({
-          where: { id: state.businessId },
-          select: { name: true }
-        });
-
-        const agentConfig = await prisma.agentConfig.findUnique({
-          where: { businessId: state.businessId }
-        });
-
-        console.log(`[🏢 ENTERPRISE WELCOME] 📊 Database query result:`, {
-          configExists: !!agentConfig,
-          hasVoiceGreeting: !!agentConfig?.voiceGreetingMessage,
-          hasWelcomeMessage: !!agentConfig?.welcomeMessage,
-          voiceGreetingLength: agentConfig?.voiceGreetingMessage?.length || 0,
-          welcomeMessageLength: agentConfig?.welcomeMessage?.length || 0,
-          businessName: business?.name,
-          agentName: agentConfig?.agentName,
-          rawVoiceGreeting: agentConfig?.voiceGreetingMessage,
-          rawWelcomeMessage: agentConfig?.welcomeMessage
-        });
-
-        let welcomeMessage = '';
-        const businessName = business?.name || 'this premier creative agency';
-        const agentName = agentConfig?.agentName || 'your AI Account Manager';
-        
-        // 🎯 CRITICAL FIX: Use CONFIGURED messages with proper validation
-        console.log(`[🏢 ENTERPRISE WELCOME] 🔍 Raw config data:`, JSON.stringify({
-          voiceGreetingMessage: agentConfig?.voiceGreetingMessage,
-          welcomeMessage: agentConfig?.welcomeMessage,
-          agentName: agentConfig?.agentName
-        }, null, 2));
-
-        if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 3) {
-          welcomeMessage = agentConfig.voiceGreetingMessage.trim();
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${welcomeMessage}"`);
-        } 
-        else if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 3) {
-          welcomeMessage = agentConfig.welcomeMessage.trim();
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${welcomeMessage}"`);
-        } 
-        else {
-          // Generate with actual business name
-          welcomeMessage = `Hello! Thank you for calling ${businessName}. I'm ${agentName}, ready to assist you with your creative projects and business needs. How may I help you today?`;
-          console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ NO CONFIGURED MESSAGE - Using generated for ${businessName}`);
-        }
-
-        // 🎯 CRITICAL: Replace ALL placeholders properly
-        welcomeMessage = welcomeMessage
-          .replace(/\{businessName\}/gi, businessName)
-          .replace(/\{agentName\}/gi, agentName)
-          .replace(/\{business\}/gi, businessName)
-          .replace(/\{company\}/gi, businessName);
-
-        // 🎯 ENHANCEMENT: Enhanced personalization for clients
-        if (state.clientId && state.fromNumber) {
-          try {
-            const client = await prisma.client.findUnique({
-              where: { id: state.clientId },
-              select: { name: true, email: true }
-            });
-            
-            if (client) {
-              const clientName = client.name;
-              
-              if (clientName) {
-                welcomeMessage = `Welcome back, ${clientName}! ` + welcomeMessage;
-                console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for client: ${clientName}`);
-              } else {
-                welcomeMessage = 'Welcome back! ' + welcomeMessage;
-                console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for returning client`);
-              }
-            }
-          } catch (clientError) {
-            console.error(`[🏢 ENTERPRISE WELCOME] Error personalizing for client:`, clientError);
-            welcomeMessage = 'Welcome back! ' + welcomeMessage;
-          }
-        }
-
-        console.log(`[🏢 ENTERPRISE WELCOME] 🎯 FINAL MESSAGE: "${welcomeMessage}"`);
-        return welcomeMessage;
-      } catch (error) {
-        console.error(`[🏢 ENTERPRISE WELCOME] ❌ Error getting business welcome message:`, error);
-        // Fall through to Layer 2
-      }
+    if (!state.businessId) {
+      return "Hey! Thanks for calling I'm your AI Account Manager. How can I help you today?";
     }
 
-    // 🎯 LAYER 2: Generic Fortune 500 professional welcome
-    const genericMessage = 'Good day! Thank you for calling. I\'m your dedicated AI Account Manager, ready to provide immediate assistance with your creative projects and business needs. How may I help you today?';
-    console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ Using generic Fortune 500 professional message`);
-    return genericMessage;
+    console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Generating welcome message for business: ${state.businessId}`);
+
+    try {
+      // 🎯 CRITICAL FIX: Load complete agent configuration including custom messages
+      const agentConfig = await prisma.agentConfig.findUnique({
+        where: { businessId: state.businessId },
+        select: {
+          voiceGreetingMessage: true,
+          welcomeMessage: true,
+          agentName: true,
+          personaPrompt: true
+        }
+      });
+
+      const business = await prisma.business.findUnique({
+        where: { id: state.businessId },
+        select: { name: true }
+      });
+
+      console.log(`[🏢 ENTERPRISE WELCOME] 📊 Database query result:`, {
+        configExists: !!agentConfig,
+        hasVoiceGreeting: !!agentConfig?.voiceGreetingMessage,
+        hasWelcomeMessage: !!agentConfig?.welcomeMessage,
+        voiceGreetingLength: agentConfig?.voiceGreetingMessage?.length || 0,
+        welcomeMessageLength: agentConfig?.welcomeMessage?.length || 0,
+        businessName: business?.name || 'Unknown',
+        agentName: agentConfig?.agentName || 'Unknown',
+        rawVoiceGreeting: agentConfig?.voiceGreetingMessage,
+        rawWelcomeMessage: agentConfig?.welcomeMessage
+      });
+
+      console.log(`[🏢 ENTERPRISE WELCOME] 🔍 Raw config data:`, JSON.stringify({
+        voiceGreetingMessage: agentConfig?.voiceGreetingMessage,
+        welcomeMessage: agentConfig?.welcomeMessage,
+        agentName: agentConfig?.agentName
+      }));
+
+      // 🎯 PRIORITIZE VOICE GREETING MESSAGE FOR PHONE CALLS 🎯
+      if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 10) {
+        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${agentConfig.voiceGreetingMessage}"`);
+        return agentConfig.voiceGreetingMessage.trim();
+      } 
+      
+      // Fallback to regular welcome message if voice greeting not configured
+      if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 10) {
+        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${agentConfig.welcomeMessage}"`);
+        return agentConfig.welcomeMessage.trim();
+      }
+
+      // 🎯 PROFESSIONAL BUSINESS-SPECIFIC FALLBACK 🎯
+      const businessName = business?.name || 'our creative studio';
+      const agentName = agentConfig?.agentName || 'AI Account Manager';
+      const professionalGreeting = `Hello! Thank you for calling ${businessName}. I'm your ${agentName}, ready to assist with your creative projects and business needs. How may I help you today?`;
+      
+      console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ No custom greeting configured - using professional business fallback`);
+      return professionalGreeting;
+
+    } catch (error) {
+      console.error('[🏢 ENTERPRISE WELCOME] ❌ Failed to load welcome message configuration:', error);
+      return "Hello! Thank you for calling. I'm your AI assistant, ready to help with your creative projects. How may I assist you today?";
+    }
   }
 
   /**
@@ -1425,22 +1395,25 @@ class RealtimeAgentService {
         'milestone', 'phase', 'iteration', 'round', 'final', 'proofs',
         // Client communication
         'meeting', 'call', 'email', 'follow', 'followup', 'discuss',
-        'review', 'changes', 'edits', 'tweaks', 'adjustments'
+        'review', 'changes', 'edits', 'tweaks', 'adjustments',
+        // ADDED: Common conversational responses
+        'you', 'me', 'want', 'need', 'check', 'see', 'know', 'think',
+        'like', 'would', 'could', 'should', 'about', 'when', 'where'
       ]
       
       // 🎯 BULLETPROOF PHANTOM TRANSCRIPTION FILTERING - ENTERPRISE GRADE 🎯
       const phantomConfig = getEnterprisePhantomFilter();
       
-      // BULLETPROOF validation using enterprise configuration
+      // BULLETPROOF validation using enterprise configuration - MUCH MORE LENIENT
       const isValid = (
-        words.length >= phantomConfig.MIN_WORDS_REQUIRED || // STRICTER - Require at least 2 words for most cases
+        words.length >= 2 || // Allow multi-word responses
         (words.length === 1 && 
-         validSingleWords.includes(txt) && 
-         !phantomConfig.PHANTOM_WORDS.includes(txt) && 
-         !phantomConfig.SINGLE_LETTERS.includes(txt) &&
-         txt.length >= phantomConfig.MIN_WORD_LENGTH) || // STRICTER - Single words must be 3+ chars and not phantom
+         (validSingleWords.includes(txt) || // Valid business/conversational words
+          !phantomConfig.PHANTOM_WORDS.includes(txt) && // Not a phantom word
+          !phantomConfig.SINGLE_LETTERS.includes(txt) && // Not a single letter
+          txt.length >= phantomConfig.MIN_WORD_LENGTH)) || // Min length check
         phantomConfig.BUSINESS_PATTERNS.some(pattern => pattern.test(txt)) ||
-        (phantomConfig.CREATIVE_INDUSTRY_TERMS.some(term => txt.includes(term)) && words.length >= phantomConfig.MIN_WORDS_REQUIRED)
+        (phantomConfig.CREATIVE_INDUSTRY_TERMS.some(term => txt.includes(term)))
       )
 
       if (!isValid) {

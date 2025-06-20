@@ -31,9 +31,9 @@ const ENTERPRISE_VOICE_CONFIG = {
       
       // 🎯 BULLETPROOF VOICE SETTINGS - ENTERPRISE GRADE 🎯
       VOICE_SETTINGS: {
-        stability: 0.71,        // OPTIMIZED - Consistent professional delivery
-        similarity_boost: 0.87, // ENHANCED - High voice fidelity 
-        style: 0.13,           // REFINED - Subtle emotional expression
+        stability: 0.75,        // INCREASED - Much more natural delivery
+        similarity_boost: 0.85, // ENHANCED - High voice fidelity 
+        style: 0.25,           // INCREASED - More expressive emotional delivery
         use_speaker_boost: true, // ENABLED - Crystal clear audio
         speed: 1.0             // PERFECT - Natural speaking pace
       }
@@ -106,8 +106,8 @@ export function getEnterpriseVADSettings() {
 // 🎯 BULLETPROOF PHANTOM SPEECH FILTER - ENTERPRISE GRADE 🎯
 export function getEnterprisePhantomFilter() {
   return {
-    MIN_WORDS_REQUIRED: 2,           // STRICT - Minimum 2 words for most cases
-    MIN_WORD_LENGTH: 3,              // STRICT - Single words must be 3+ characters
+    MIN_WORDS_REQUIRED: 1,           // FIXED - Allow single meaningful words
+    MIN_WORD_LENGTH: 2,              // FIXED - More lenient for real conversation
     
     // 🎯 ENHANCED PHANTOM DETECTION PATTERNS 🎯
     PHANTOM_WORDS: [
@@ -115,7 +115,8 @@ export function getEnterprisePhantomFilter() {
       'er', 'erm', 'uhm', 'umm', 'mmm', 'tsk', 'pfft', 'shh',
       'psst', 'ahem', 'huh', 'duh', 'meh', 'bah', 'psh', 'tch',
       'oof', 'ooh', 'eek', 'eww', 'ick', 'yuck', 'bleh', 'gah',
-      'argh', 'grr', 'grrr', 'ack', 'eep', 'yep', 'nah', 'yeah'
+      'argh', 'grr', 'grrr', 'ack', 'eep', 'nah',
+      // REMOVED: 'yep', 'yeah', 'you' - these are legitimate responses
     ],
     
     SINGLE_LETTERS: [
@@ -131,7 +132,9 @@ export function getEnterprisePhantomFilter() {
       /\b(urgent|emergency|asap|immediately|priority|critical)\b/i,
       /\b(meeting|call|follow.?up|discuss|review|feedback)\b/i,
       /\b(invoice|payment|billing|cost|pricing|fee)\b/i,
-      /\b(delivery|launch|go.?live|publish|deploy|release)\b/i
+      /\b(delivery|launch|go.?live|publish|deploy|release)\b/i,
+      // ADDED: More conversational patterns
+      /\b(yes|no|okay|sure|thanks|hello|hi|help|you|want|need|check)\b/i
     ],
     
     // 🎯 CREATIVE INDUSTRY TERMS - AGENCY CONTEXT 🎯
@@ -176,9 +179,9 @@ export function getEnterpriseErrorMessages() {
 // 🎯 BULLETPROOF ENTERPRISE VOICE SETTINGS 🎯
 export function getEnterpriseVoiceSettings() {
   return {
-    stability: 0.71,
-    similarity_boost: 0.87,
-    style: 0.13,
+    stability: 0.75,         // INCREASED for natural delivery
+    similarity_boost: 0.85,  // High fidelity
+    style: 0.25,            // More expressive
     use_speaker_boost: true,
     speed: 1.0
   }
