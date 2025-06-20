@@ -656,4 +656,34 @@ Remember: You represent a Fortune 100 quality agency. Every interaction should r
   }
 })
 
+// 🔍 DEBUG ENDPOINT - List all businesses with phone numbers
+router.get('/debug-businesses', async (req, res) => {
+  try {
+    const businesses = await prisma.business.findMany({
+      select: {
+        id: true,
+        name: true,
+        twilioPhoneNumber: true,
+        agentConfig: {
+          select: {
+            elevenlabsAgentId: true,
+            elevenlabsVoice: true
+          }
+        }
+      }
+    })
+    
+    console.log('[🔍 DEBUG] Businesses in database:', businesses)
+    
+    res.json({
+      count: businesses.length,
+      businesses: businesses
+    })
+    
+  } catch (error) {
+    console.error('[🔍 DEBUG] Error:', error)
+    res.status(500).json({ error: 'Debug failed' })
+  }
+})
+
 export default router 
