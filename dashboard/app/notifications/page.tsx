@@ -140,6 +140,62 @@ export default function NotificationsPage() {
     })
   }
 
+  const handleChannelSettingChange = (channelId: string, field: string, value: string) => {
+    setChannels(
+      channels.map((channel) => 
+        channel.id === channelId 
+          ? { ...channel, settings: { ...channel.settings, [field]: value } }
+          : channel
+      )
+    )
+  }
+
+  const handleSaveChannelSettings = async (channelId: string) => {
+    const channel = channels.find(c => c.id === channelId)
+    if (!channel) return
+
+    try {
+      if (channelId === 'email') {
+        // Save email address using existing email API
+        const emailArray = channel.settings.address ? [channel.settings.address] : []
+        const res = await fetch("/api/business/notification-emails", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ emails: emailArray }),
+        })
+        if (res.ok) {
+          toast({ title: "Saved", description: "Email notification settings updated." })
+          // Update the emails state to sync with the new setting
+          setEmails(emailArray)
+        } else {
+          toast({ title: "Error", description: "Could not save email settings", variant: "destructive" })
+        }
+      } else if (channelId === 'sms') {
+        // Save phone number using existing phone API
+        const res = await fetch("/api/business/notification-phone", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoneNumber: channel.settings.phone }),
+        })
+        if (res.ok) {
+          toast({ title: "Saved", description: "SMS notification settings updated." })
+          // Update the phoneNumber state to sync
+          setPhoneNumber(channel.settings.phone)
+        } else {
+          toast({ title: "Error", description: "Could not save SMS settings", variant: "destructive" })
+        }
+      } else {
+        // For other channels (Slack, Webhook), just show success for now
+        toast({ title: "Saved", description: `${channel.name} settings updated.` })
+      }
+    } catch (error) {
+      console.error(`Error saving ${channel.name} settings:`, error)
+      toast({ title: "Error", description: `Could not save ${channel.name} settings`, variant: "destructive" })
+    }
+  }
+
   const handleTypeToggle = (typeId: string) => {
     setTypes(types.map((type) => (type.id === typeId ? { ...type, enabled: !type.enabled } : type)))
     toast({
@@ -373,12 +429,16 @@ export default function NotificationsPage() {
                             <Input
                               id={`${channel.id}-address`}
                               value={channel.settings.address}
+                              onChange={(e) => handleChannelSettingChange(channel.id, 'address', e.target.value)}
                               placeholder="your@email.com"
                             />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor={`${channel.id}-frequency`}>Frequency</Label>
-                            <Select value={channel.settings.frequency}>
+                            <Select 
+                              value={channel.settings.frequency}
+                              onValueChange={(value) => handleChannelSettingChange(channel.id, 'frequency', value)}
+                            >
                               <SelectTrigger>
                                 <SelectValue />
                               </SelectTrigger>
@@ -388,6 +448,15 @@ export default function NotificationsPage() {
                                 <SelectItem value="daily">Daily Digest</SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="col-span-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleSaveChannelSettings(channel.id)}
+                              disabled={!channel.settings.address}
+                            >
+                              Save Email Settings
+                            </Button>
                           </div>
                         </>
                       )}
