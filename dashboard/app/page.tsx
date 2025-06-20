@@ -1,16 +1,20 @@
 import { Metadata } from "next"
-import { redirect } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardCards } from "@/components/dashboard-cards"
 import { StatsOverview } from "@/components/stats-overview"
-
-// This component is a redirect page
-// Remove dynamic = 'force-dynamic' for static export
 
 export const metadata: Metadata = {
   title: "Dashboard",
 }
 
 export default function Page() {
-  redirect("/admin/dashboard")
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <DashboardHeader />
+      <div className="flex-1 p-6 space-y-6">
+        <StatsOverview />
+        <DashboardCards />
+      </div>
+    </div>
+  )
 }

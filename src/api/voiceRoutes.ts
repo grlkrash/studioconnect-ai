@@ -1,9 +1,10 @@
 import { Router, Response, Request } from 'express'
 import twilio from 'twilio'
-import { realtimeAgentService } from '../services/realtimeAgentService'
+import realtimeAgentService from '../services/realtimeAgentService'
 import { processMessage } from '../core/aiHandler'
 import { asyncHandler } from '../utils/asyncHandler'
 import { prisma } from '../services/db'
+import { enterpriseVoiceAgent } from '../services/enterpriseVoiceAgent'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -274,5 +275,193 @@ router.post('/voicemail', customValidateTwilioRequest, asyncHandler(async (req: 
     res.status(500).send('Error')
   }
 }))
+
+/**
+ * 🏢 ENTERPRISE AGENT STATUS ENDPOINT
+ * Monitor enterprise voice agent health
+ */
+router.get('/enterprise-status', (req, res) => {
+  const health = enterpriseVoiceAgent.getSystemHealth()
+  res.json({
+    enterprise: true,
+    ...health,
+    message: 'Bulletproof Enterprise Voice Agent - Fortune 100/50 Quality'
+  })
+})
+
+/**
+ * 🏢 ENTERPRISE INCOMING ENDPOINT 🏢
+ * Fortune 100/50 quality voice experience
+ * Use this as your Twilio webhook URL for premium clients
+ */
+router.post('/enterprise-incoming', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const callSid = req.body.CallSid as string
+    const toNumberRaw = req.body.To as string | undefined
+    let resolvedBusinessId: string | undefined
+
+    // 🚨 CRITICAL FIX: Bulletproof business ID resolution for enterprise clients
+    if (!req.body.businessId && toNumberRaw) {
+      try {
+        console.log('[🏢 ENTERPRISE INCOMING] 🔍 Resolving business ID from phone number:', toNumberRaw);
+        
+        // Normalize phone to last 10 digits for reliable matching
+        const normalizedTo = toNumberRaw.replace(/\D/g, '');
+        const lastTen = normalizedTo.slice(-10);
+        
+        console.log('[🏢 ENTERPRISE INCOMING] 📞 Normalized phone numbers:', { 
+          original: toNumberRaw, 
+          normalized: normalizedTo, 
+          lastTen 
+        });
+        
+        // Try exact match first
+        let biz = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: normalizedTo },
+          select: { id: true, name: true, twilioPhoneNumber: true }
+        });
+        
+        // Try last 10 digits if exact match fails
+        if (!biz && lastTen.length === 10) {
+          biz = await prisma.business.findFirst({
+            where: { twilioPhoneNumber: { endsWith: lastTen } },
+            select: { id: true, name: true, twilioPhoneNumber: true }
+          });
+        }
+        
+        if (biz?.id) {
+          resolvedBusinessId = biz.id;
+          console.log('[🏢 ENTERPRISE INCOMING] ✅ Successfully resolved business:', { 
+            businessId: resolvedBusinessId,
+            businessName: biz.name,
+            configuredPhone: biz.twilioPhoneNumber,
+            incomingPhone: toNumberRaw
+          });
+        } else {
+          console.error('[🏢 ENTERPRISE INCOMING] ❌ CRITICAL: No business found for phone number');
+          console.error('[🏢 ENTERPRISE INCOMING] 📞 Incoming phone:', toNumberRaw);
+        }
+      } catch (lookupErr) {
+        console.error('[🏢 ENTERPRISE INCOMING] ❌ CRITICAL ERROR during business lookup:', lookupErr);
+      }
+    }
+
+    console.log(`[🏢 ENTERPRISE INCOMING] Fortune 100/50 call received: ${callSid}`)
+
+    const host = process.env.APP_PRIMARY_URL || `https://${req.hostname}`
+    const baseWsUrl = host.replace(/^https?:\/\//, 'wss://')
+    const wsBaseWithPath = baseWsUrl.endsWith('/') ? baseWsUrl : `${baseWsUrl}/`
+
+    // 🏢 ENTERPRISE WEBSOCKET URL WITH ENTERPRISE FLAG
+    let wsUrl = `${wsBaseWithPath}enterprise?callSid=${encodeURIComponent(callSid)}`
+    
+    const finalBusinessId = req.body.businessId || resolvedBusinessId;
+    
+    if (finalBusinessId) {
+      wsUrl += `&businessId=${encodeURIComponent(finalBusinessId)}`;
+      console.log('[🏢 ENTERPRISE INCOMING] ✅ Business ID included in WebSocket URL:', finalBusinessId);
+    } else {
+      console.error('[🏢 ENTERPRISE INCOMING] ❌ CRITICAL: No business ID available for WebSocket connection');
+      // Continue anyway but log for monitoring
+      wsUrl += `&missingBusinessId=true&incomingPhone=${encodeURIComponent(toNumberRaw || 'unknown')}`;
+    }
+
+    // Add enterprise flag to force enterprise routing
+    wsUrl += `&useEnterprise=true`;
+
+    console.log(`[🏢 ENTERPRISE INCOMING] Directing Twilio to Enterprise WebSocket: ${wsUrl}`)
+
+    const response = new VoiceResponse()
+    const connect = response.connect()
+    const stream = connect.stream({ url: wsUrl })
+
+    // 🏢 ENTERPRISE STREAM PARAMETERS
+    stream.parameter({ name: 'callSid', value: callSid });
+    stream.parameter({ name: 'enterpriseMode', value: 'true' });
+    
+    if (finalBusinessId) {
+      stream.parameter({ name: 'businessId', value: finalBusinessId });
+      console.log('[🏢 ENTERPRISE INCOMING] ✅ Business ID included in stream parameters:', finalBusinessId);
+    }
+
+    // Use highest quality audio for Fortune 100/50 clients
+    stream.parameter({ name: 'codec', value: 'audio/l16;rate=16000' })
+
+    // Keep the call alive (max 4-hour pause)
+    response.pause({ length: 14400 })
+
+    res.type('text/xml')
+    res.send(response.toString())
+    return
+  } catch (error) {
+    console.error('[🏢 ENTERPRISE INCOMING] Critical error:', error)
+    const response = new VoiceResponse()
+    response.say('We apologize for the technical difficulty. You are being connected to a representative.')
+    response.hangup()
+    res.type('text/xml')
+    res.status(500).send(response.toString())
+    return
+  }
+}))
+
+// 🏢 BULLETPROOF ENTERPRISE INCOMING CALLS - FORTUNE 100/50 QUALITY 🏢
+router.post('/enterprise-incoming', async (req, res) => {
+  console.log('[🏢 ENTERPRISE INCOMING] 🚀 Fortune 100/50 Quality Call Initiated')
+  console.log('[🏢 ENTERPRISE INCOMING] 📞 Call from:', req.body.From)
+  console.log('[🏢 ENTERPRISE INCOMING] 📞 Call to:', req.body.To)
+  console.log('[🏢 ENTERPRISE INCOMING] 🔗 Call SID:', req.body.CallSid)
+
+  try {
+    // Validate business is configured for enterprise
+    const business = await prisma.business.findFirst({
+      where: { 
+        twilioPhoneNumber: req.body.To,
+        planTier: 'ENTERPRISE'
+      },
+      include: {
+        agentConfig: true
+      }
+    })
+
+    if (!business) {
+      console.error('[🏢 ENTERPRISE INCOMING] ❌ No enterprise business found for:', req.body.To)
+      return res.status(404).send('<Response><Say>This number is not configured for enterprise service.</Say><Hangup/></Response>')
+    }
+
+    // Generate bulletproof WebSocket URL for enterprise agent
+    const wsUrl = `wss://${req.headers.host}/voice-ws?callSid=${req.body.CallSid}&from=${encodeURIComponent(req.body.From)}&to=${encodeURIComponent(req.body.To)}&agentType=enterprise`
+
+    console.log('[🏢 ENTERPRISE INCOMING] 🔗 WebSocket URL:', wsUrl)
+
+    // Enterprise-grade TwiML response with bulletproof configuration
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${wsUrl}" track="both_tracks" />
+  </Connect>
+</Response>`
+
+    console.log('[🏢 ENTERPRISE INCOMING] ✅ Enterprise TwiML generated successfully')
+
+    res.type('text/xml')
+    res.send(twiml)
+
+    // Log enterprise call initiation
+    console.log('[🏢 ENTERPRISE INCOMING] 🏢 ENTERPRISE CALL INITIATED SUCCESSFULLY FOR FORTUNE 100/50 CLIENT')
+
+  } catch (error) {
+    console.error('[🏢 ENTERPRISE INCOMING] 🚨 CRITICAL ERROR:', error)
+    
+    // Emergency fallback response
+    const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">I apologize, but we're experiencing technical difficulties. Please hold while I connect you to our team.</Say>
+  <Dial>${process.env.EMERGENCY_PHONE_NUMBER || '+15551234567'}</Dial>
+</Response>`
+
+    res.type('text/xml')
+    res.send(emergencyTwiml)
+  }
+})
 
 export default router 

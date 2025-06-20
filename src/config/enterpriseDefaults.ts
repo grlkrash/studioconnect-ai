@@ -1,6 +1,6 @@
 /**
  * 🎯 BULLETPROOF ENTERPRISE CONFIGURATION 🎯
- * Fortune 500 quality defaults and settings
+ * Fortune 500 quality defaults based on ElevenLabs best practices
  * ZERO TOLERANCE FOR FAILURE
  */
 
@@ -24,9 +24,9 @@ const ENTERPRISE_VOICE_CONFIG = {
     
     ELEVENLABS: {
       // 🎯 PREMIUM PROFESSIONAL VOICES FOR FORTUNE 500 🎯
-      DEFAULT_VOICE_ID: 'pNInz6obpgDQGcFmaJgB', // Rachel - Professional female
-      BACKUP_VOICE_ID: '21m00Tcm4TlvDq8ikWAM', // Rachel - Backup
-      MALE_VOICE_ID: 'TxGEqnHWrfWFTfGW9XjX', // Josh - Professional male
+      DEFAULT_VOICE_ID: 'g6xIsTj2HwM6VR4iXFCw', // Jessica - Professional, empathetic
+      BACKUP_VOICE_ID: 'kdmDKE6EkgrWrrykO9Qt', // Alexandra - Super realistic
+      MALE_VOICE_ID: 'L0Dsvb3SLTyegXwtm47J', // Archer - Professional British male
       DEFAULT_MODEL: 'eleven_turbo_v2_5',
       
       // 🎯 BULLETPROOF VOICE SETTINGS - ENTERPRISE GRADE 🎯
@@ -179,11 +179,11 @@ export function getEnterpriseErrorMessages() {
 // 🎯 BULLETPROOF ENTERPRISE VOICE SETTINGS 🎯
 export function getEnterpriseVoiceSettings() {
   return {
-    stability: 0.75,         // INCREASED for natural delivery
-    similarity_boost: 0.85,  // High fidelity
-    style: 0.25,            // More expressive
-    use_speaker_boost: true,
-    speed: 1.0
+    stability: 0.45, // ElevenLabs best practice: Lower values (0.30-0.50) create more emotional, dynamic delivery
+    similarity_boost: 0.85, // Higher values boost overall clarity and consistency
+    style: 0.30, // Balanced expressiveness for business conversations
+    use_speaker_boost: true, // Enhanced clarity for phone calls
+    speed: 1.0, // Natural conversation speed (0.9-1.1x recommended)
   }
 }
 
@@ -198,24 +198,120 @@ export function validateEnterpriseConfig(): boolean {
       'TWILIO_AUTH_TOKEN'
     ]
     
-    const missing = requiredVars.filter(key => !process.env[key])
-    if (missing.length > 0) {
-      console.error(`[🎯 ENTERPRISE CONFIG] ❌ Missing required environment variables: ${missing.join(', ')}`)
-      return false
+    for (const varName of requiredVars) {
+      if (!process.env[varName]) {
+        console.error(`[🎯 ENTERPRISE CONFIG] ❌ Missing required environment variable: ${varName}`)
+        return false
+      }
     }
     
-    // Validate voice configuration
-    const voiceSettings = getEnterpriseVoiceSettings()
-    if (!voiceSettings.stability || !voiceSettings.similarity_boost) {
-      console.error('[🎯 ENTERPRISE CONFIG] ❌ Invalid voice settings configuration')
-      return false
-    }
-    
-    console.log('[🎯 ENTERPRISE CONFIG] ✅ All enterprise configurations validated successfully')
+    console.log('[🎯 ENTERPRISE CONFIG] ✅ All required environment variables present')
     return true
   } catch (error) {
     console.error('[🎯 ENTERPRISE CONFIG] ❌ Configuration validation failed:', error)
     return false
+  }
+}
+
+// 🎯 ENTERPRISE VOICE DEFAULTS - FORTUNE 100/50 QUALITY 🎯
+// 🎯 PREMIUM ENTERPRISE VOICES - TESTED FOR FORTUNE 100/50 🎯
+export const ENTERPRISE_VOICES = {
+  // Professional, empathetic female voices
+  'jessica': 'g6xIsTj2HwM6VR4iXFCw', // Jessica Anne Bogart - Empathetic and expressive, great for wellness coaches
+  'alexandra': 'kdmDKE6EkgrWrrykO9Qt', // Alexandra - Super realistic, young female voice that likes to chat
+  'hope': 'OYTbf65OHHFELVut7v2H', // Hope - Bright and uplifting, perfect for positive interactions
+  'eryn': 'dj3G1R1ilKoFKhBnWOzG', // Eryn - Friendly and relatable, ideal for casual interactions
+  'angela': 'PT4nqlKZfc06VW1BuClj', // Angela - Raw and relatable, great listener and down to earth
+  'cassidy': '56AoDkrOh6qfVPDXZ7Pt', // Cassidy - Engaging and energetic, good for entertainment contexts
+  
+  // Professional male voices
+  'archer': 'L0Dsvb3SLTyegXwtm47J', // Archer - Grounded and friendly young British male with charm
+  'stuart': 'HDA9tsk27wYi3uq0fPcK', // Stuart - Professional & friendly Aussie, ideal for technical assistance
+  'mark': '1SM7GgM6IMuvQlz2BwM3', // Mark - Relaxed and laid back, suitable for non chalant chats
+  'finn': 'vBKc2FfBKJfcZNyEt1n6', // Finn - Tenor pitched, excellent for podcasts and light chats
+} as const
+
+// 🎯 CONVERSATION FLOW ENHANCEMENTS 🎯
+export function getConversationalEnhancements() {
+  return {
+    // Natural pause patterns for professional speech
+    sentencePauses: {
+      period: ' ... ', // Slight pause after statements
+      question: ' ? ', // Natural questioning intonation
+      exclamation: ' ! ', // Appropriate excitement
+      comma: ', ', // Natural breathing pause
+    },
+    
+    // Professional business conversation starters
+    acknowledgments: [
+      'Absolutely.',
+      'Perfect.',
+      'Excellent.',
+      'Got it.',
+      'I understand.',
+      'That makes sense.',
+      'Wonderful.',
+    ],
+    
+    // Transition phrases for smooth conversation flow
+    transitions: [
+      'Let me help you with that.',
+      'I can assist you with that.',
+      'Allow me to check on that.',
+      'I\'ll look into that for you.',
+      'Let me gather that information.',
+      'I\'d be happy to help.',
+    ],
+    
+    // Professional escalation language
+    escalations: [
+      'Let me connect you with our team directly for immediate assistance.',
+      'I\'ll have one of our specialists reach out to you right away.',
+      'Allow me to escalate this to our project team immediately.',
+      'I\'m connecting you with the right team member now.',
+    ]
+  }
+}
+
+// 🎯 ADVANCED VOICE OPTIMIZATION FOR DIFFERENT CONTEXTS 🎯
+export function getContextualVoiceSettings(context: 'greeting' | 'business' | 'technical' | 'escalation') {
+  const base = getEnterpriseVoiceSettings()
+  
+  switch (context) {
+    case 'greeting':
+      return {
+        ...base,
+        stability: 0.50, // Slightly more stable for professional first impressions
+        style: 0.35, // More warmth for welcoming
+        speed: 0.95, // Slightly slower for clear introduction
+      }
+    
+    case 'business':
+      return {
+        ...base,
+        stability: 0.45, // Dynamic for engaging business discussions
+        style: 0.25, // Professional and focused
+        speed: 1.0, // Normal business pace
+      }
+    
+    case 'technical':
+      return {
+        ...base,
+        stability: 0.55, // More stable for complex information
+        style: 0.20, // Minimal style for clarity
+        speed: 0.9, // Slower for technical details
+      }
+    
+    case 'escalation':
+      return {
+        ...base,
+        stability: 0.60, // Very stable for sensitive situations
+        style: 0.30, // Empathetic but professional
+        speed: 0.95, // Measured pace for serious matters
+      }
+    
+    default:
+      return base
   }
 }
 

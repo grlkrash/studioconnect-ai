@@ -18,7 +18,7 @@
 import { EventEmitter } from 'events'
 import { CallStatus } from '../types/callStatus';
 import { PrismaClient } from '@prisma/client';
-import { realtimeAgentService } from '../services/realtimeAgentService';
+import realtimeAgentService from '../services/realtimeAgentService';
 
 const prisma = new PrismaClient();
 
