@@ -303,6 +303,12 @@ nextApp.prepare()
       return handleNext(req, res)
     })
 
+    // Test page for API debugging (BEFORE Next.js routes)
+    app.get('/test-calls', (req: Request, res: Response) => {
+      const testPagePath = path.join(__dirname, '../public/test-calls.html');
+      res.sendFile(testPagePath);
+    });
+
     // All admin routes are now handled by the Next.js dashboard.
     // IMPORTANT: Preserve the full "/admin" segment when delegating to Next.
     // Express strips the mount path ("/admin") from `req.url` which breaks
@@ -324,7 +330,8 @@ nextApp.prepare()
     app.use('/api/agent-config', agentConfigRoutes)
     app.use('/api/lead-questions', leadQuestionRoutes)
     app.use('/api/integrations', integrationRoutes)
-    app.use('/api/calls', callHistoryRoutes)
+    // Removed conflicting calls route - dashboard handles this via Next.js API routes
+    // app.use('/api/calls', callHistoryRoutes)
     app.use('/api/interactions', interactionRoutes)
     app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)

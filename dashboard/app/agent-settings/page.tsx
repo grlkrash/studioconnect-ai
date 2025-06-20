@@ -135,9 +135,9 @@ Maintain the highest standards of professionalism while being genuinely helpful 
     setIsLoading(true)
     try {
       const [configRes, voicesRes, statusRes] = await Promise.all([
-        fetch(`/api/agent-config?businessId=${businessId}`, { credentials: "include" }),
-        fetch('/api/elevenlabs/voices', { credentials: "include" }),
-        fetch(`/api/dashboard-status?businessId=${businessId}`, { credentials: "include" })
+        fetch(`/admin/api/agent-config?businessId=${businessId}`, { credentials: "include" }),
+        fetch('/admin/api/elevenlabs/voices', { credentials: "include" }),
+        fetch(`/admin/api/dashboard-status?businessId=${businessId}`, { credentials: "include" })
       ])
 
       if (configRes.ok) {
@@ -232,7 +232,7 @@ Maintain the highest standards of professionalism while being genuinely helpful 
         businessId: businessId
       }
 
-      const response = await fetch(`/api/agent-config?businessId=${businessId}`, {
+      const response = await fetch(`/admin/api/agent-config?businessId=${businessId}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -270,7 +270,7 @@ Maintain the highest standards of professionalism while being genuinely helpful 
     try {
       const testText = settings.voiceGreetingMessage || "Hello! This is a test of your voice agent configuration."
       
-      const response = await fetch('/api/voice-preview', {
+      const response = await fetch('/admin/api/voice-preview', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

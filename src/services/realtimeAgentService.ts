@@ -326,7 +326,7 @@ class RealtimeAgentService {
     }
 
     this.callSid = callSid;
-    console.log(`[🏢 ENTERPRISE AGENT] 🚀 NEW FORTUNE 50 CONNECTION: Call ${callSid} → Business ${businessId}`);
+    console.log(`[🏢 ENTERPRISE AGENT] 🚀 NEW CONNECTION: Call ${callSid} → Business ${businessId}`);
 
     // Initialize connection state with BULLETPROOF ENTERPRISE DEFAULTS
     const state: ConnectionState = {
@@ -370,7 +370,7 @@ class RealtimeAgentService {
       hasUserTranscript: false,
       bargeInDetected: false,
       pendingSpeechBuffer: null,
-      // 🎯 ENTERPRISE VOICE SETTINGS FOR FORTUNE 50 QUALITY 🎯
+      // 🎯 ENTERPRISE VOICE SETTINGS FOR PROFESSIONAL QUALITY 🎯
       voiceSettings: { ...ENTERPRISE_DEFAULTS.voiceSettings },
       isListening: false,
     };
@@ -420,7 +420,7 @@ class RealtimeAgentService {
         console.log(`[🏢 ENTERPRISE AGENT] ✅ ENTERPRISE VOICE PIPELINE INITIALIZED FOR BUSINESS ${businessId}`);
         console.log(`[🏢 ENTERPRISE AGENT] 🎯 Provider: ${state.ttsProvider.toUpperCase()}`);
         console.log(`[🏢 ENTERPRISE AGENT] 🎙️ Voice: ${state.openaiVoice}`);
-        console.log(`[🏢 ENTERPRISE AGENT] 🚀 READY FOR FORTUNE 50 QUALITY EXPERIENCE`);
+        console.log(`[🏢 ENTERPRISE AGENT] 🚀 READY FOR PROFESSIONAL VOICE EXPERIENCE`);
       } catch (error) {
         console.error('[🏢 ENTERPRISE AGENT] ❌ Error in enterprise initialization:', error);
         // Continue with bulletproof defaults
@@ -2266,39 +2266,53 @@ class RealtimeAgentService {
         const buf = Buffer.from(mediaPayload, 'base64')
 
         // ----------------------------------
+        //  🎯 CRITICAL FIX: PREVENT TTS AUDIO CONTAMINATION 🎯
+        //  The core issue is TTS output bleeding into STT input
+        // ----------------------------------
+        
+        // ABSOLUTELY BLOCK all audio processing when AI is speaking
+        if (state.isSpeaking || state.pendingAudioGeneration) {
+          // Clear any accumulated audio to prevent contamination
+          if (state.audioQueue.length > 0) {
+            console.log(`[🎯 AUDIO ISOLATION] 🚫 Clearing ${state.audioQueue.length} contaminated audio chunks while AI speaking`);
+            state.audioQueue = [];
+            state.isRecording = false;
+          }
+          return; // CRITICAL: Do not process ANY audio while TTS is active
+        }
+        
+        // Additional protection: Block for extended period after TTS completes
+        const timeSinceLastTTS = Date.now() - (state.lastActivity || 0);
+        if (timeSinceLastTTS < 1500) { // 1.5 second buffer after TTS
+          console.log(`[🎯 AUDIO ISOLATION] ⏳ Blocking audio processing ${timeSinceLastTTS}ms after TTS (need 1500ms)`);
+          return;
+        }
+
+        // ----------------------------------
         //  🎯 IMPROVED BARGE-IN DETECTION 🎯
         //  More intelligent barge-in with reduced false positives
         // ----------------------------------
-        if (state.isSpeaking && !state.bargeInDetected && state.welcomeMessageDelivered) {
-          // 🎯 CRITICAL FIX: More conservative barge-in detection
-          // Only enable barge-in AFTER welcome message AND first response is fully delivered
-          const timeSinceCallStart = Date.now() - (state.callStartTime || Date.now());
-          const timeSinceLastResponse = Date.now() - state.lastActivity;
+        if (state.welcomeMessageDelivered && !state.bargeInDetected) {
+          // Calculate energy for barge-in detection
+          let energy = 0;
+          const isLinear16 = buf.length % 2 === 0;
           
-          // Don't allow barge-in for first 15 seconds or within 3 seconds of agent speaking
-          if (timeSinceCallStart < 15000 || timeSinceLastResponse < 3000) {
-            // Skip barge-in detection during initial conversation setup
-            // console.log(`[🎯 REALTIME AGENT] 🔇 Barge-in disabled: call=${timeSinceCallStart}ms, activity=${timeSinceLastResponse}ms`);
+          if (isLinear16) {
+            for (let i = 0; i < buf.length; i += 2) {
+              const sample = buf.readInt16LE(i);
+              energy += Math.abs(sample);
+            }
+            energy = energy / (buf.length / 2) / 256;
           } else {
-            // Rough energy check on µ-law / PCM stream with higher threshold
-            let energySum = 0
-            if (buf.length % 2 === 0) {
-              for (let i = 0; i < buf.length; i += 2) {
-                energySum += Math.abs(buf.readInt16LE(i))
-              }
-              energySum = energySum / (buf.length / 2) / 256
-            } else {
-              for (let i = 0; i < buf.length; i++) energySum += Math.abs(buf[i] - 128)
-              energySum = energySum / buf.length
-            }
-
-            // 🎯 MUCH higher threshold to prevent false barge-ins
-            const bargeInThreshold = state.vadCalibrated ? state.vadThreshold * 3.0 : VAD_THRESHOLD * 3.0;
-
-            if (energySum > bargeInThreshold) {
-              console.log(`[🎯 REALTIME AGENT] 🎤 Legitimate barge-in detected (energy: ${energySum.toFixed(1)}, threshold: ${bargeInThreshold.toFixed(1)}) – pausing playback`);
-              state.bargeInDetected = true
-            }
+            for (let i = 0; i < buf.length; i++) energy += Math.abs(buf[i] - 128);
+            energy = energy / buf.length;
+          }
+          
+          // Much higher threshold for barge-in to prevent false triggers
+          const bargeInThreshold = 80; // Significantly higher threshold
+          if (energy > bargeInThreshold) {
+            console.log(`[🎯 BARGE-IN] 🛑 User interruption detected (energy: ${energy.toFixed(1)})`);
+            state.bargeInDetected = true;
           }
         }
 
@@ -2332,15 +2346,15 @@ class RealtimeAgentService {
           state.vadSamples += 1
           if (state.vadSamples >= 150) { // More samples for better calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            // 🎯 CRITICAL FIX: More conservative threshold calculation
-            state.vadThreshold = Math.max(state.vadNoiseFloor + 35, 40) // Higher minimum threshold
+            // 🎯 CRITICAL FIX: Much higher threshold to prevent phantom detection
+            state.vadThreshold = Math.max(state.vadNoiseFloor + 50, 60) // Much higher minimum threshold
             state.vadCalibrated = true
             console.log(`[🎯 BULLETPROOF VAD] ✅ Calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
         }
 
         const now = Date.now()
-        const threshold = state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD
+        const threshold = state.vadCalibrated ? state.vadThreshold : 70 // Higher default threshold
 
         // ----------------------------------
         // Realtime pipeline (OpenAI client)
@@ -2368,10 +2382,10 @@ class RealtimeAgentService {
         // Wait for business context before processing
         if (!state.businessId) return
 
-        // 🎯 BULLETPROOF SPEECH DETECTION - FORTUNE 500 QUALITY 🎯
+        // 🎯 CRITICAL FIX: Much higher energy requirements for actual speech 🎯
         if (energy > threshold) {
           if (!state.isRecording) {
-            console.log('[🎯 BULLETPROOF SPEECH] 🎙️ Recording started - Fortune 500 quality detection')
+            console.log(`[🎯 BULLETPROOF SPEECH] 🎙️ Recording started - energy: ${energy.toFixed(1)} > ${threshold.toFixed(1)}`)
             this._clearIdlePrompt(state);
             state.isRecording = true
             state.recordingStartMs = now
@@ -2393,12 +2407,12 @@ class RealtimeAgentService {
           const shouldProcess = (
             silenceDuration > VAD_SILENCE_MS || // Silence detected
             recordingDuration > MAX_UTTERANCE_MS || // Max recording time reached
-            (silenceDuration > 800 && state.audioQueue.length >= 25) // 🎯 FIXED: Better timing for natural speech
+            (silenceDuration > 1200 && state.audioQueue.length >= 40) // 🎯 FIXED: Even more conservative timing
           )
           
           if (shouldProcess) {
             state.isLinear16Recording = isLinear16
-            console.log(`[🎯 BULLETPROOF SPEECH] 🔄 Processing utterance: ${state.audioQueue.length} chunks, ${recordingDuration}ms duration`)
+            console.log(`[🎯 BULLETPROOF SPEECH] 🔄 Processing utterance: ${state.audioQueue.length} chunks, ${recordingDuration}ms duration, energy: ${energy.toFixed(1)}`)
             state.isProcessing = true
             // Process asynchronously to prevent blocking
             this.flushAudioQueue(state).catch(error => {

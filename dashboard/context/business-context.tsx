@@ -15,7 +15,7 @@ function fetcher(url: string) {
 }
 
 export function BusinessProvider({ children }: { children: React.ReactNode }) {
-  const { data, isLoading } = useSWR<{ businessId?: string }>('/api/auth/me', fetcher)
+  const { data, isLoading } = useSWR<{ businessId?: string }>('/admin/api/auth/me', fetcher)
 
   const value: BusinessContextValue = {
     businessId: data?.businessId,
