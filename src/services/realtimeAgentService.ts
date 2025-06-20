@@ -100,6 +100,8 @@ interface ConnectionState {
   bargeInDetected?: boolean;
   /** Remaining speech buffer that was interrupted */
   pendingSpeechBuffer?: Buffer | null;
+  /** indicates that the agent has transitioned to an active listening state */
+  isListening: boolean;
 }
 
 interface AgentSession {
@@ -369,7 +371,8 @@ class RealtimeAgentService {
       bargeInDetected: false,
       pendingSpeechBuffer: null,
       // 🎯 ENTERPRISE VOICE SETTINGS FOR FORTUNE 50 QUALITY 🎯
-      voiceSettings: { ...ENTERPRISE_DEFAULTS.voiceSettings }
+      voiceSettings: { ...ENTERPRISE_DEFAULTS.voiceSettings },
+      isListening: false,
     };
 
     // Try to identify client if phone number is available
@@ -604,11 +607,29 @@ class RealtimeAgentService {
           .replace(/\{business\}/gi, businessName)
           .replace(/\{company\}/gi, businessName);
 
-        // Personalize for existing clients
-        if (state.clientId) {
-          const personalizedPrefix = state.clientId ? 'Welcome back! ' : '';
-          welcomeMessage = personalizedPrefix + welcomeMessage;
-          console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for existing client`);
+        // 🎯 ENHANCEMENT: Enhanced personalization for clients
+        if (state.clientId && state.fromNumber) {
+          try {
+            const client = await prisma.client.findUnique({
+              where: { id: state.clientId },
+              select: { name: true, email: true }
+            });
+            
+            if (client) {
+              const clientName = client.name;
+              
+              if (clientName) {
+                welcomeMessage = `Welcome back, ${clientName}! ` + welcomeMessage;
+                console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for client: ${clientName}`);
+              } else {
+                welcomeMessage = 'Welcome back! ' + welcomeMessage;
+                console.log(`[🏢 ENTERPRISE WELCOME] ✅ Personalized for returning client`);
+              }
+            }
+          } catch (clientError) {
+            console.error(`[🏢 ENTERPRISE WELCOME] Error personalizing for client:`, clientError);
+            welcomeMessage = 'Welcome back! ' + welcomeMessage;
+          }
         }
 
         console.log(`[🏢 ENTERPRISE WELCOME] 🎯 FINAL MESSAGE: "${welcomeMessage}"`);
@@ -664,6 +685,16 @@ class RealtimeAgentService {
         
         state.welcomeMessageDelivered = true;
         console.log(`[🏢 ENTERPRISE WELCOME] ✅ WELCOME MESSAGE DELIVERED SUCCESSFULLY ON ATTEMPT ${attempts}`);
+        
+        // 🎯 CRITICAL FIX: Transition to listening state immediately after successful delivery
+        this.startListening(state);
+        
+        // 🎯 CRITICAL FIX: Initialize STT and ensure call stays alive
+        await this.initializeElevenLabsSTT(state).catch(err => {
+          console.error('[🏢 ENTERPRISE WELCOME] STT initialization warning:', err);
+        });
+        
+        console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Agent is now actively listening for caller response`);
         return;
 
       } catch (error) {
@@ -676,6 +707,12 @@ class RealtimeAgentService {
             await this.streamEnterpriseQualityTTS(state, 'Hello! Thank you for calling. I am here to help. How may I assist you?');
             state.welcomeMessageDelivered = true;
             console.log(`[🏢 ENTERPRISE WELCOME] ✅ EMERGENCY WELCOME MESSAGE DELIVERED`);
+            
+            // 🎯 CRITICAL FIX: Ensure emergency fallback also starts listening
+            this.startListening(state);
+            await this.initializeElevenLabsSTT(state).catch(err => {
+              console.error('[🏢 ENTERPRISE WELCOME] Emergency STT initialization warning:', err);
+            });
           } catch (emergencyError) {
             console.error(`[🏢 ENTERPRISE WELCOME] 🚨 CRITICAL: Emergency fallback failed:`, emergencyError);
           }
@@ -755,48 +792,61 @@ class RealtimeAgentService {
         state.voiceSettings
       );
 
-      // 🎯 BULLETPROOF FALLBACK SYSTEM 🎯
+      // Hard-fail if ElevenLabs generation did not succeed – no low-quality fallbacks
       if (!mp3Path) {
-        console.warn(`[🏢 ENTERPRISE TTS] ⚠️ ElevenLabs failed, initiating fallback sequence...`);
-
-        // Fallback 1: OpenAI TTS HD
-        console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 1: OpenAI TTS HD`);
-        mp3Path = await generateSpeechFromText(cleanText, 'nova', 'tts-1-hd', 'openai');
-        
-        if (!mp3Path) {
-          // Fallback 2: OpenAI TTS Standard
-          console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 2: OpenAI TTS Standard`);
-          mp3Path = await generateSpeechFromText(cleanText, 'nova', 'tts-1', 'openai');
-        }
-
-        if (!mp3Path) {
-          // Fallback 3: Amazon Polly
-          console.log(`[🏢 ENTERPRISE TTS] 🔄 Fallback 3: Amazon Polly`);
-          mp3Path = await generateSpeechFromText(cleanText, 'Amy', 'tts-1', 'polly');
-        }
-
-        if (!mp3Path) {
-          console.error('[🏢 ENTERPRISE TTS] 🚨 CRITICAL: All TTS providers failed');
-          return;
-        }
+        console.error('[🏢 ENTERPRISE TTS] 🚨 ELEVENLABS_GENERATION_FAILED – aborting stream');
+        throw new Error('ELEVENLABS_GENERATION_FAILED');
       }
 
       // Mark as speaking before streaming
       state.isSpeaking = true;
       console.log(`[🏢 ENTERPRISE TTS] 🎵 Starting audio stream...`);
 
-      // Convert MP3 to µ-law for Twilio with enterprise-grade settings
+      // 🚨 CRITICAL FIX: Convert MP3 to µ-law with bulletproof error handling
       const ulawPath = path.join(os.tmpdir(), `${path.basename(mp3Path, path.extname(mp3Path))}.ulaw`);
 
-      await execFileAsync(ffmpegPath as string, [
-        '-y',
-        '-i', mp3Path,
-        '-ar', '8000',
-        '-ac', '1',
-        '-f', 'mulaw',
-        '-af', 'volume=0.85,highpass=f=100,lowpass=f=3400', // Professional audio processing
-        ulawPath
-      ]);
+      try {
+        console.log(`[🚨 FFMPEG CONVERSION] 🔄 Converting MP3 to µ-law: ${mp3Path} -> ${ulawPath}`);
+        
+        await execFileAsync(ffmpegPath as string, [
+          '-y',
+          '-i', mp3Path,
+          '-ar', '8000',
+          '-ac', '1',
+          '-f', 'mulaw',
+          '-af', 'volume=0.85,highpass=f=100,lowpass=f=3400', // Professional audio processing
+          ulawPath
+        ]);
+        
+        // 🚨 CRITICAL FIX: Validate conversion output
+        if (!fs.existsSync(ulawPath)) {
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] Output file does not exist after conversion');
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] Expected output:', ulawPath);
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] Input file:', mp3Path);
+          throw new Error('FFMPEG_CONVERSION_FAILED: Output file not created');
+        }
+        
+        const ulawStats = await fs.promises.stat(ulawPath);
+        if (ulawStats.size === 0) {
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] Output file is empty after conversion');
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] Output path:', ulawPath);
+          console.error('[🚨 FFMPEG_CONVERSION_FAILED] File size:', ulawStats.size);
+          throw new Error('FFMPEG_CONVERSION_FAILED: Output file is empty');
+        }
+        
+        console.log(`[🚨 FFMPEG CONVERSION] ✅ Conversion successful: ${ulawStats.size} bytes`);
+        
+      } catch (ffmpegError) {
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] ===============================');
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] CRITICAL AUDIO CONVERSION FAILURE');
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] ===============================');
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] Input file:', mp3Path);
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] Output file:', ulawPath);
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] FFmpeg path:', ffmpegPath);
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] Error:', ffmpegError);
+        console.error('[🚨 FFMPEG_CONVERSION_FAILED] ===============================');
+        throw new Error('FFMPEG_CONVERSION_FAILED: Audio conversion error');
+      }
 
       const ulawBuffer = await fs.promises.readFile(ulawPath);
       const CHUNK_SIZE = 320; // 40ms of audio at 8kHz µ-law
@@ -885,30 +935,9 @@ class RealtimeAgentService {
       await cleanupTempFile(ulawPath);
 
     } catch (error) {
-      console.error('[🏢 ENTERPRISE TTS] 🚨 CRITICAL ERROR:', error);
-      
-      // Emergency fallback with simple message
-      try {
-        console.log('[🏢 ENTERPRISE TTS] 🚨 EMERGENCY FALLBACK ACTIVATED');
-        const emergencyMp3 = await generateSpeechFromText(
-          "I apologize, I am having technical difficulties. Please hold while I reconnect.", 
-          'nova', 'tts-1', 'openai'
-        );
-        
-        if (emergencyMp3 && state.ws.readyState === WebSocket.OPEN && state.streamSid) {
-          const buffer = await fs.promises.readFile(emergencyMp3);
-          const payload = buffer.toString('base64');
-          state.ws.send(JSON.stringify({
-            event: 'media',
-            streamSid: state.streamSid,
-            media: { payload }
-          }));
-          await cleanupTempFile(emergencyMp3);
-          console.log('[🏢 ENTERPRISE TTS] ✅ Emergency message delivered');
-        }
-      } catch (emergencyError) {
-        console.error('[🏢 ENTERPRISE TTS] 🚨 Emergency fallback also failed:', emergencyError);
-      }
+      // 🚨 HARD FAIL – do not attempt to recover with lower-quality TTS
+      console.error('[🏢 ENTERPRISE TTS] 🚨 CRITICAL ERROR – abandoning call:', error)
+      throw error
     } finally {
       // Always reset state flags
       state.isSpeaking = false;
@@ -1117,34 +1146,60 @@ class RealtimeAgentService {
 
       await fs.promises.writeFile(rawPath, rawData)
 
-      // Enhanced audio conversion with noise reduction
+      // 🚨 CRITICAL FIX: Enhanced audio conversion with bulletproof error handling
       const inputFormat = isLinear16 ? 's16le' : 'mulaw'
       const inputRate = isLinear16 ? '16000' : '8000'
       
-      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🔄 Converting ${inputFormat} audio to WAV...`)
+      console.log(`[🚨 FFMPEG TRANSCRIPTION] 🔄 Converting ${inputFormat} audio to WAV...`)
       
-      await execFileAsync(ffmpegPath as string, [
-        '-y',
-        '-f', inputFormat,
-        '-ar', inputRate,
-        '-ac', '1',
-        '-i', rawPath,
-        '-af', 'highpass=f=80,lowpass=f=3400,volume=1.5,dynaudnorm',
-        '-ar', '16000',
-        wavPath
-      ])
-
-      // Verify WAV file was created and has content
-      if (!fs.existsSync(wavPath)) {
-        throw new Error('WAV file was not created by ffmpeg')
+      try {
+        await execFileAsync(ffmpegPath as string, [
+          '-y',
+          '-f', inputFormat,
+          '-ar', inputRate,
+          '-ac', '1',
+          '-i', rawPath,
+          '-af', 'highpass=f=80,lowpass=f=3400,volume=1.5,dynaudnorm',
+          '-ar', '16000',
+          wavPath
+        ]);
+        
+        // 🚨 CRITICAL FIX: Bulletproof validation of WAV conversion
+        if (!fs.existsSync(wavPath)) {
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] WAV file was not created by ffmpeg');
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Expected output:', wavPath);
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input file:', rawPath);
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input format:', inputFormat);
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input rate:', inputRate);
+          throw new Error('FFMPEG_TRANSCRIPTION_FAILED: WAV file was not created by ffmpeg');
+        }
+        
+        const wavStats = await fs.promises.stat(wavPath);
+        if (wavStats.size < 1000) {
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] WAV file too small after conversion');
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] File size:', wavStats.size);
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input size:', rawData.length);
+          console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Duration estimate:', durationMs + 'ms');
+          throw new Error(`FFMPEG_TRANSCRIPTION_FAILED: WAV file too small (${wavStats.size} bytes)`);
+        }
+        
+        console.log(`[🚨 FFMPEG TRANSCRIPTION] ✅ WAV conversion successful: ${wavStats.size} bytes`);
+        
+      } catch (ffmpegTranscriptionError) {
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] ===============================');
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] CRITICAL TRANSCRIPTION AUDIO CONVERSION FAILURE');
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] ===============================');
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input file:', rawPath);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Output file:', wavPath);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input format:', inputFormat);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Input rate:', inputRate);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Raw data size:', rawData.length);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Duration estimate:', durationMs + 'ms');
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] FFmpeg path:', ffmpegPath);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] Error:', ffmpegTranscriptionError);
+        console.error('[🚨 FFMPEG_TRANSCRIPTION_FAILED] ===============================');
+        throw new Error('FFMPEG_TRANSCRIPTION_FAILED: Audio conversion error for transcription');
       }
-      
-      const wavStats = await fs.promises.stat(wavPath)
-      if (wavStats.size < 1000) { // Less than 1KB is suspicious
-        throw new Error(`WAV file too small (${wavStats.size} bytes)`)
-      }
-      
-      console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ WAV file created: ${wavStats.size} bytes`)
 
       // 🎯 BULLETPROOF TRANSCRIPTION WITH COMPREHENSIVE ERROR HANDLING 🎯
       let transcriptRaw: string | null = null;
@@ -1451,7 +1506,7 @@ class RealtimeAgentService {
           const biz = await prisma.business.findUnique({ where: { id: state.businessId }, select: { notificationPhoneNumber: true } })
           targetNum = biz?.notificationPhoneNumber || undefined
         }
-        this.escalateToHuman(state, targetNum)
+        await this.escalateToHuman(state, targetNum)
       } else if (response.nextAction === 'VOICEMAIL') {
         console.log('[🎯 AI PROCESSING] 📧 AI requested voicemail – redirecting caller')
         this.sendToVoicemail(state)
@@ -1674,6 +1729,8 @@ class RealtimeAgentService {
               console.log(`[🏢 ENTERPRISE AGENT] 🚀 DELIVERING WELCOME MESSAGE NOW (Attempt ${attempt})`);
               await this.deliverBulletproofWelcomeMessage(state);
               console.log(`[🏢 ENTERPRISE AGENT] ✅ WELCOME MESSAGE DELIVERED SUCCESSFULLY ON ATTEMPT ${attempt}`);
+              // 👉 Transition to listening state immediately after successful delivery
+              this.startListening(state);
             } catch (error) {
               console.error(`[🏢 ENTERPRISE AGENT] ❌ Welcome delivery attempt ${attempt} failed:`, error);
               if (attempt < 3) {
@@ -2357,7 +2414,12 @@ class RealtimeAgentService {
       }
       case 'stop':
       case 'end': {
-        // Clean-up when Twilio signals the end of the stream.
+        // If we have already moved into an active listening state, ignore premature STOP events
+        if (state.isListening) {
+          console.log('[REALTIME AGENT] 🛈 Ignoring premature Twilio STOP event – agent is listening');
+          break;
+        }
+        // Clean-up when Twilio signals the end of the stream **after** the call actually ends
         this.cleanup('Twilio STOP event');
         if (!state.callSid) ws.close();
         break;
@@ -2367,7 +2429,7 @@ class RealtimeAgentService {
     }
   }
 
-  private escalateToHuman(state: ConnectionState, targetNumber?: string): void {
+  private async escalateToHuman(state: ConnectionState, targetNumber?: string): Promise<void> {
     const { callSid, businessId } = state
     if (!callSid) {
       console.error('[REALTIME AGENT] Attempted escalation without CallSid')
@@ -2403,19 +2465,47 @@ class RealtimeAgentService {
     }
 
     try {
+      // 🎯 ENHANCEMENT: Provide warm handoff message with context
+      await this.streamEnterpriseQualityTTS(state, 
+        "Of course! I'm connecting you to a member of our team right now. Please hold while I transfer your call."
+      );
+      
+      // Give the message time to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       const twiml = new twilio.twiml.VoiceResponse()
-      const dial = twiml.dial({ action: voicemailUrl, timeout: 20, callerId: state.fromNumber || undefined })
+      const dial = twiml.dial({ 
+        action: voicemailUrl, 
+        timeout: 30, // Increased timeout for better connection chances
+        callerId: state.fromNumber || undefined,
+        record: 'record-from-answer' // Record the conversation for QA
+      })
       dial.number(dialNumber)
-      twiml.say({ voice: 'Polly.Amy' }, 'Connecting you now, please hold.')
 
       this.twilioClient.calls(callSid).update({ twiml: twiml.toString() })
-      console.log(`[REALTIME AGENT] Warm transfer initiated to ${dialNumber} for call ${callSid}`)
+      console.log(`[🎯 HUMAN ESCALATION] ✅ Warm transfer initiated to ${dialNumber} for call ${callSid}`)
+      
+      // Log escalation details for analytics
+      const escalationContext = {
+        transferredTo: dialNumber,
+        escalationTime: new Date().toISOString(),
+        conversationLength: state.conversationHistory.length,
+        fromNumber: state.fromNumber,
+        businessId: state.businessId,
+        reason: 'USER_REQUESTED'
+      };
 
       // Update callLog status
-      prisma.callLog.update({ where: { callSid }, data: { status: 'TRANSFERRED', metadata: { transferredTo: dialNumber } } } as any).catch(() => {})
+      prisma.callLog.update({ 
+        where: { callSid }, 
+        data: { 
+          status: 'TRANSFERRED', 
+          metadata: escalationContext 
+        } 
+      } as any).catch(() => {})
 
     } catch (error) {
-      console.error('[REALTIME AGENT] Failed to initiate warm transfer:', error)
+      console.error('[🎯 HUMAN ESCALATION] ❌ Failed to initiate warm transfer:', error)
       // As a last resort, fall back to voicemail so the caller is never left hanging
       this.sendToVoicemail(state)
     }
@@ -2799,6 +2889,39 @@ class RealtimeAgentService {
     } catch (err) {
       console.error('[REALTIME AGENT] Failed to initialize lead qualification:', err);
     }
+  }
+
+  // ----------------------------------- CRITICAL FIX: Enhanced startListening -----------------------------------
+  private startListening(state: ConnectionState): void {
+    if (state.isListening) {
+      console.log('[🎯 REALTIME AGENT] Agent already in listening state');
+      return;
+    }
+    
+    state.isListening = true;
+    state.isSpeaking = false; // Ensure we're not in speaking state
+    state.pendingAudioGeneration = false; // Clear any pending generation flags
+    
+    // Reset barge-in detection for new listening session
+    state.bargeInDetected = false;
+    
+    console.log('[🎯 REALTIME AGENT] ✅ TRANSITIONING TO LISTENING STATE - Agent is now actively waiting for user input');
+    
+    // Ensure WebSocket is ready and call is active
+    if (state.ws.readyState !== WebSocket.OPEN) {
+      console.error('[🎯 REALTIME AGENT] ❌ WebSocket not open, cannot start listening');
+      return;
+    }
+    
+    if (!state.streamSid) {
+      console.error('[🎯 REALTIME AGENT] ❌ No streamSid available, cannot start listening');
+      return;
+    }
+    
+    // Mark that we're ready to process audio
+    state.lastActivity = Date.now();
+    
+    console.log('[🎯 REALTIME AGENT] 🎯 LISTENING STATE ACTIVE - Ready to process incoming audio');
   }
 }
 

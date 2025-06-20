@@ -8,16 +8,23 @@ export async function GET(request: NextRequest) {
     const business = await getBusiness(request)
     
     if (!business) {
+      console.warn('[Auth Me] Business not found for request')
       return NextResponse.json(
-        { error: 'Business not found' },
+        { error: 'Business not found or authentication failed' },
         { status: 404 }
       )
     }
 
-    // Return basic business info for auth context
+    // Return business info for auth context
     return NextResponse.json({
       businessId: business.id,
-      authenticated: true
+      businessName: business.name,
+      authenticated: true,
+      user: {
+        id: business.id,
+        name: business.name,
+        email: business.email
+      }
     })
   } catch (error) {
     console.error('[Auth Me] Error:', error)

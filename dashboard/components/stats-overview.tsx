@@ -8,21 +8,51 @@ export async function StatsOverview() {
   if (!business) return null
 
   // Aggregate metrics
-  const [totalCalls, totalChats, leadCalls, leadChats, projectInquiries, callMinutes] = await Promise.all([
+  const [totalCalls, totalChats, leadCalls, leadChats, projectInquiries, callLogs] = await Promise.all([
     prisma.callLog.count({ where: { businessId: business.id } }),
     prisma.conversation.count({ where: { businessId: business.id } }),
-    prisma.callLog.count({ where: { businessId: business.id, type: 'VOICE', status: 'COMPLETED' } }),
-    prisma.conversation.count({ where: { businessId: business.id, leadId: { not: null } } }),
-    prisma.conversation.count({ where: { businessId: business.id, metadata: { path: ['projectInquiry'], equals: true } } }),
-    prisma.callLog.aggregate({
-      where: { businessId: business.id },
-      _sum: {
-        metadata: true as any, // duration stored in metadata.duration
+    prisma.callLog.count({
+      where: {
+        businessId: business.id,
+        type: 'VOICE',
+        status: 'COMPLETED',
       },
-    }) as unknown as { _sum: { metadata: { duration: number } | null } },
+    }),
+    prisma.conversation.count({
+      where: {
+        businessId: business.id,
+        leadId: { not: null },
+      },
+    }),
+    prisma.conversation.count({
+      where: {
+        businessId: business.id,
+        metadata: {
+          path: ['projectInquiry'],
+          equals: true,
+        },
+      },
+    }),
+    prisma.callLog.findMany({
+      where: { businessId: business.id },
+      select: { metadata: true },
+    }),
   ])
 
-  const voiceMinutes = (callMinutes?._sum?.metadata as any)?.duration || 0
+  // Calculate total voice minutes safely from metadata
+  const totalSeconds = callLogs.reduce((sum, log) => {
+    const meta: any = log.metadata || {}
+    const seconds: number =
+      typeof meta.duration === 'number'
+        ? meta.duration
+        : typeof meta.durationInSeconds === 'number'
+        ? meta.durationInSeconds
+        : 0
+    return sum + seconds
+  }, 0)
+
+  // Convert to minutes, rounded to whole number for display
+  const voiceMinutes = Math.round(totalSeconds / 60)
 
   const stats = [
     {

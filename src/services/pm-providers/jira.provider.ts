@@ -5,6 +5,7 @@ import { prisma } from '../db'
 import { getAppBaseUrl } from '../../utils/env'
 import { ProjectManagementProvider } from './pm.provider.interface'
 import { getOrCreateClient } from './client-helper'
+import { decryptCredentials } from '../../utils/tokenEncryption'
 
 // Enterprise Jira OAuth Scopes for large agencies and creative studios
 const REQUIRED_JIRA_SCOPES = [
@@ -663,7 +664,8 @@ export class JiraProvider implements ProjectManagementProvider {
       where: { businessId_provider: { businessId, provider: 'JIRA' } },
       select: { credentials: true }
     })
-    return integration?.credentials || {}
+    if (!integration?.credentials) return {}
+    return decryptCredentials(integration.credentials as any)
   }
 }
 

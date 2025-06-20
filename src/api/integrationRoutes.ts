@@ -23,7 +23,14 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
     const provider = req.params.provider.toUpperCase()
     const state = randomUUID()
     const redis = RedisManager.getInstance()
-    if (!redis.isClientConnected()) await redis.connect()
+    if (!redis.isClientConnected()) {
+      try {
+        await redis.connect()
+      } catch (redisError) {
+        console.error('[OAuth] Redis connection failed:', redisError)
+        return res.status(500).json({ error: 'Session storage unavailable. Please try again.' })
+      }
+    }
 
     if (provider === 'ASANA') {
       if (!isProviderEnabled('ASANA')) {
@@ -117,7 +124,14 @@ router.get('/:provider/oauth-callback', async (req: Request, res: Response) => {
     if (!code || !state) return res.status(400).send('Missing code or state')
 
     const redis = RedisManager.getInstance()
-    if (!redis.isClientConnected()) await redis.connect()
+    if (!redis.isClientConnected()) {
+      try {
+        await redis.connect()
+      } catch (redisError) {
+        console.error('[OAuth Callback] Redis connection failed:', redisError)
+        return res.status(500).send('Session storage unavailable. Please try again.')
+      }
+    }
 
     const saved = await redis.getClient().get(`oauth:${state}`)
     if (!saved) return res.status(400).send('Invalid or expired state')

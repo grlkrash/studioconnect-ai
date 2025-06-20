@@ -30,6 +30,87 @@ const customValidateTwilioRequest = (req: Request, res: Response, next: () => vo
 router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: Request, res: Response) => {
   try {
     const callSid = req.body.CallSid as string
+    const toNumberRaw = req.body.To as string | undefined
+    let resolvedBusinessId: string | undefined
+
+    // 🚨 CRITICAL FIX: Bulletproof business ID resolution
+    if (!req.body.businessId && toNumberRaw) {
+      try {
+        console.log('[🚨 BUSINESS RESOLUTION] 🔍 Resolving business ID from phone number:', toNumberRaw);
+        
+        // Normalize phone to last 10 digits for reliable matching
+        const normalizedTo = toNumberRaw.replace(/\D/g, '');
+        const lastTen = normalizedTo.slice(-10);
+        
+        console.log('[🚨 BUSINESS RESOLUTION] 📞 Normalized phone numbers:', { 
+          original: toNumberRaw, 
+          normalized: normalizedTo, 
+          lastTen 
+        });
+        
+        // Try exact match first
+        let biz = await prisma.business.findFirst({
+          where: { twilioPhoneNumber: normalizedTo },
+          select: { id: true, name: true, twilioPhoneNumber: true }
+        });
+        
+        // Try last 10 digits if exact match fails
+        if (!biz && lastTen.length === 10) {
+          biz = await prisma.business.findFirst({
+            where: { twilioPhoneNumber: { endsWith: lastTen } },
+            select: { id: true, name: true, twilioPhoneNumber: true }
+          });
+        }
+        
+        // Try alternate formats if still no match
+        if (!biz && normalizedTo.length > 10) {
+          const alternateFormats = [
+            normalizedTo.substring(1), // Remove leading '1'
+            `+${normalizedTo}`,        // Add leading '+'
+            `+1${lastTen}`             // +1 + last 10 digits
+          ];
+          
+          for (const format of alternateFormats) {
+            biz = await prisma.business.findFirst({
+              where: { 
+                OR: [
+                  { twilioPhoneNumber: format },
+                  { twilioPhoneNumber: { endsWith: format.slice(-10) } }
+                ]
+              },
+              select: { id: true, name: true, twilioPhoneNumber: true }
+            });
+            if (biz) break;
+          }
+        }
+        
+        if (biz?.id) {
+          resolvedBusinessId = biz.id;
+          console.log('[🚨 BUSINESS RESOLUTION] ✅ Successfully resolved business:', { 
+            businessId: resolvedBusinessId,
+            businessName: biz.name,
+            configuredPhone: biz.twilioPhoneNumber,
+            incomingPhone: toNumberRaw
+          });
+        } else {
+          console.error('[🚨 BUSINESS RESOLUTION] ❌ CRITICAL: No business found for phone number');
+          console.error('[🚨 BUSINESS RESOLUTION] 📞 Incoming phone:', toNumberRaw);
+          console.error('[🚨 BUSINESS RESOLUTION] 📞 Normalized forms tried:', { normalizedTo, lastTen });
+          
+          // Log all configured Twilio numbers for debugging
+          const allBusinesses = await prisma.business.findMany({
+            where: { twilioPhoneNumber: { not: null } },
+            select: { id: true, name: true, twilioPhoneNumber: true }
+          });
+          console.error('[🚨 BUSINESS RESOLUTION] 📋 All configured Twilio numbers:', allBusinesses);
+        }
+      } catch (lookupErr) {
+        console.error('[🚨 BUSINESS RESOLUTION] ❌ CRITICAL ERROR during business lookup:', lookupErr);
+        console.error('[🚨 BUSINESS RESOLUTION] 📞 Phone number:', toNumberRaw);
+        console.error('[🚨 BUSINESS RESOLUTION] ⚠️ Call will proceed without business context');
+      }
+    }
+
     console.log(`[VOICE STREAM] Incoming call received: ${callSid}`)
 
     const host = process.env.APP_PRIMARY_URL || `https://${req.hostname}`
@@ -48,11 +129,21 @@ router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: R
      */
     const wsBaseWithPath = baseWsUrl.endsWith('/') ? baseWsUrl : `${baseWsUrl}/`
 
-    // Build WebSocket URL with required query parameters so the WS server can parse them immediately
+    // 🚨 CRITICAL FIX: Bulletproof WebSocket URL with guaranteed business ID
     let wsUrl = `${wsBaseWithPath}?callSid=${encodeURIComponent(callSid)}`
-
-    if (req.body.businessId) {
-      wsUrl += `&businessId=${encodeURIComponent(req.body.businessId as string)}`
+    
+    const finalBusinessId = req.body.businessId || resolvedBusinessId;
+    
+    if (finalBusinessId) {
+      wsUrl += `&businessId=${encodeURIComponent(finalBusinessId)}`;
+      console.log('[🚨 WEBSOCKET URL] ✅ Business ID included in WebSocket URL:', finalBusinessId);
+    } else {
+      console.error('[🚨 WEBSOCKET URL] ❌ CRITICAL: No business ID available for WebSocket connection');
+      console.error('[🚨 WEBSOCKET URL] 📞 Incoming phone:', toNumberRaw);
+      console.error('[🚨 WEBSOCKET URL] ⚠️ Call may fail without proper business context');
+      
+      // Continue anyway but log for monitoring
+      wsUrl += `&missingBusinessId=true&incomingPhone=${encodeURIComponent(toNumberRaw || 'unknown')}`;
     }
 
     console.log(`[VOICE STREAM] Directing Twilio to connect to WebSocket: ${wsUrl}`)
@@ -61,10 +152,16 @@ router.post('/incoming', customValidateTwilioRequest, asyncHandler(async (req: R
     const connect = response.connect()
     const stream = connect.stream({ url: wsUrl })
 
-    // Still pass parameters for redundancy (they will be available inside the START event too)
-    stream.parameter({ name: 'callSid', value: callSid })
-    if (req.body.businessId) {
-      stream.parameter({ name: 'businessId', value: req.body.businessId })
+    // 🚨 CRITICAL FIX: Enhanced parameter passing for maximum redundancy
+    stream.parameter({ name: 'callSid', value: callSid });
+    
+    if (finalBusinessId) {
+      stream.parameter({ name: 'businessId', value: finalBusinessId });
+      console.log('[🚨 STREAM PARAMETERS] ✅ Business ID included in stream parameters:', finalBusinessId);
+    } else {
+      console.error('[🚨 STREAM PARAMETERS] ❌ No business ID available for stream parameters');
+      stream.parameter({ name: 'missingBusinessId', value: 'true' });
+      stream.parameter({ name: 'incomingPhone', value: toNumberRaw || 'unknown' });
     }
 
     // Use higher-quality 16 kHz Linear PCM instead of 8 kHz µ-law

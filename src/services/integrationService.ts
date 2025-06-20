@@ -3,6 +3,7 @@ import { asanaProvider } from './pm-providers/asana.provider'
 import { JiraProvider } from './pm-providers/jira.provider'
 import { MondayProvider } from './pm-providers/monday.provider'
 import prisma from './db'
+import { encryptCredentials, decryptCredentials } from '../utils/tokenEncryption'
 
 /**
  * Central service for managing 3rd-party Project-Management integrations.
@@ -49,6 +50,9 @@ class IntegrationService {
     const ok = await provider.connect(mergedCredentials)
     if (!ok) throw new Error('Failed to validate credentials with provider')
 
+    // Encrypt tokens before persisting
+    const encryptedCreds = encryptCredentials(credentials)
+
     // 2. Upsert Integration row
     await prisma.integration.upsert({
       where: { businessId_provider: { businessId, provider: providerKey.toUpperCase() } },
@@ -56,13 +60,13 @@ class IntegrationService {
         businessId,
         provider: providerKey.toUpperCase(),
         apiKey: credentials.apiKey ?? null,
-        credentials,
+        credentials: encryptedCreds,
         syncStatus: 'CONNECTED',
         isEnabled: true,
       } as any,
       update: {
         apiKey: credentials.apiKey ?? undefined,
-        credentials,
+        credentials: encryptedCreds,
         syncStatus: 'CONNECTED',
         isEnabled: true,
         updatedAt: new Date(),
@@ -163,7 +167,8 @@ class IntegrationService {
     })
     if (!integration?.credentials) throw new Error('Provider not connected')
     const provider = this.getProvider(providerKey)
-    return provider.connect({ ...(integration.credentials as any), businessId })
+    const decrypted = decryptCredentials(integration.credentials as any)
+    return provider.connect({ ...decrypted, businessId })
   }
 }
 

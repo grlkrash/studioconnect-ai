@@ -136,6 +136,7 @@ export async function generateSpeechWithElevenLabs(
     console.log(`[🎯 BULLETPROOF ELEVENLABS] 📊 Voice Settings:`, requestBody.voice_settings)
     console.log(`[🎯 BULLETPROOF ELEVENLABS] 📝 Text: "${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}"`)
 
+    // 🚨 CRITICAL FIX: Aggressive error handling with hard failure logging
     const response = await axios.post(url, requestBody, {
       headers: {
         'xi-api-key': apiKey,
@@ -147,43 +148,85 @@ export async function generateSpeechWithElevenLabs(
     })
 
     const buffer = Buffer.from(response.data as ArrayBuffer)
+    
+    // 🚨 CRITICAL FIX: Validate audio buffer before proceeding
+    if (!buffer || buffer.length === 0) {
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Empty audio buffer received from ElevenLabs API');
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Voice ID:', voiceIdForRequest);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Model:', modelId);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', cleanText.length);
+      throw new Error('ELEVENLABS_GENERATION_FAILED: Empty audio buffer');
+    }
+    
     const targetPath = cachedPath || path.join(os.tmpdir(), `11labs_speech_${Date.now()}.mp3`)
-    await fs.promises.writeFile(targetPath, buffer)
+    
+    // 🚨 CRITICAL FIX: Wrap file write in try-catch with detailed error logging
+    try {
+      await fs.promises.writeFile(targetPath, buffer)
+    } catch (writeError) {
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Failed to write audio file:', writeError);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Target path:', targetPath);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Buffer size:', buffer.length);
+      throw new Error('ELEVENLABS_GENERATION_FAILED: File write error');
+    }
     
     console.log(`[🎯 BULLETPROOF ELEVENLABS] ✅ Successfully generated Fortune 500 quality speech: ${targetPath} (${buffer.length} bytes)`)
     return targetPath
   } catch (error) {
+    // 🚨 CRITICAL FIX: Aggressive error logging with NO silent fallbacks
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ===============================');
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] CRITICAL TTS GENERATION FAILURE');
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ===============================');
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Voice ID:', voiceIdForRequest);
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Model ID:', modelId);
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Length:', cleanText.length);
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Text Preview:', cleanText.substring(0, 200));
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Timestamp:', new Date().toISOString());
+    
     if (axios.isAxiosError(error)) {
-      console.error('[🎯 BULLETPROOF ELEVENLABS] ❌ API Error:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        voiceId: voiceIdForRequest,
-        modelId,
-        textLength: cleanText.length
-      })
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] HTTP Status:', error.response?.status);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] HTTP Status Text:', error.response?.statusText);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Response Data:', error.response?.data);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Request URL:', error.config?.url);
       
       // Enhanced error handling with specific remediation advice
       if (error.response?.status === 400) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 🚫 Bad Request - Check voice ID and model compatibility')
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Voice ID used:', voiceIdForRequest)
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Model used:', modelId)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 🚫 Bad Request - Voice ID and model incompatible')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Voice ID used:', voiceIdForRequest)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Model used:', modelId)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Verify voice ID exists and supports the model')
       } else if (error.response?.status === 401) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 🔐 Authentication failed - Check API key')
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Please verify ELEVENLABS_API_KEY in environment variables')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 🔐 Authentication failed - Invalid API key')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 API Key present:', !!apiKey)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 API Key length:', apiKey ? apiKey.length : 0)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Check ELEVENLABS_API_KEY environment variable')
       } else if (error.response?.status === 403) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 🚫 Forbidden - API key may not have access to this voice')
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 💡 Voice ID:', voiceIdForRequest)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 🚫 Forbidden - API key lacks access to this voice')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Voice ID:', voiceIdForRequest)
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Verify API key has access to the voice or use a different voice')
       } else if (error.response?.status === 422) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 🔧 Validation error - Check request parameters')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 🔧 Validation error - Invalid request parameters')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Voice Settings:', JSON.stringify(voiceSettings, null, 2))
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Check voice settings values are within valid ranges')
       } else if (error.response?.status === 429) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] ⏰ Rate limit exceeded - Too many requests')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ⏰ Rate limit exceeded - Too many requests')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Implement request throttling or upgrade API plan')
       } else if (error.response && error.response.status >= 500) {
-        console.error('[🎯 BULLETPROOF ELEVENLABS] 🏥 Server error - ElevenLabs service issue')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 🏥 Server error - ElevenLabs service issue')
+        console.error('[🚨 ELEVENLABS_GENERATION_FAILED] 💡 Remediation: Retry after delay or contact ElevenLabs support')
       }
     } else {
-      console.error('[🎯 BULLETPROOF ELEVENLABS] ❌ Error generating speech:', error)
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Non-HTTP Error:', error);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Error Type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Error Message:', error instanceof Error ? error.message : String(error));
+      console.error('[🚨 ELEVENLABS_GENERATION_FAILED] Error Stack:', error instanceof Error ? error.stack : 'No stack trace');
     }
-    return null
+    
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ===============================');
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] NO FALLBACK WILL BE ATTEMPTED');
+    console.error('[🚨 ELEVENLABS_GENERATION_FAILED] ===============================');
+    
+    // 🚨 HARD FAIL – Prevent silent fallback to low-quality TTS
+    throw new Error('ELEVENLABS_GENERATION_FAILED')
   }
 } 

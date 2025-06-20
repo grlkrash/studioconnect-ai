@@ -2,6 +2,7 @@ import { Project } from "@prisma/client"
 import axios, { AxiosInstance } from "axios"
 import crypto from "crypto"
 import { getAppBaseUrl } from "../../utils/env"
+import { decryptCredentials, encryptCredentials } from "../../utils/tokenEncryption"
 
 import { prisma } from "../db"
 import { ProjectManagementProvider } from "./pm.provider.interface"
@@ -288,32 +289,111 @@ class AsanaProvider implements ProjectManagementProvider {
 
   /**
    * Fetches and validates the stored Asana credentials for a business.
+   * Enhanced with token refresh logic and better error handling.
    */
   private async getBusinessCredentials(businessId: string) {
     const integration = await prisma.integration.findFirst({
       where: {
         businessId,
         provider: 'ASANA',
+        isEnabled: true,
       },
       select: {
         apiKey: true,
         credentials: true,
         webhookSecret: true,
+        updatedAt: true,
       },
     })
 
-    const creds = integration?.credentials as any || {}
+    if (!integration) {
+      throw new Error(`Asana integration not found or disabled for business ${businessId}`)
+    }
+
+    const creds = integration?.credentials ? decryptCredentials(integration.credentials as any) : {}
     const token = integration?.apiKey || creds.accessToken || creds.apiKey
     const workspaceGid = creds.workspaceGid
+    const refreshToken = creds.refreshToken
 
-    if (!token || !workspaceGid) {
-      throw new Error(`Asana credentials not configured for business ${businessId}`)
+    if (!token) {
+      throw new Error(`Asana access token not configured for business ${businessId}`)
+    }
+
+    if (!workspaceGid) {
+      throw new Error(`Asana workspace GID not configured for business ${businessId}`)
+    }
+
+    // Check if token is expired and needs refresh (if we have a refresh token)
+    const tokenAge = Date.now() - new Date(integration.updatedAt).getTime()
+    const isTokenExpired = tokenAge > (55 * 60 * 1000) // 55 minutes (tokens typically expire at 60 min)
+    
+    if (isTokenExpired && refreshToken) {
+      console.log(`[AsanaProvider] Token expired for business ${businessId}, attempting refresh...`)
+      try {
+        const refreshedToken = await this.refreshAccessToken(refreshToken, businessId)
+        return {
+          asanaToken: refreshedToken,
+          asanaWorkspaceGid: workspaceGid,
+          asanaWebhookSecret: integration?.webhookSecret ?? null,
+        }
+      } catch (refreshError) {
+        console.error(`[AsanaProvider] Token refresh failed for business ${businessId}:`, refreshError)
+        // Fall back to existing token and let API call fail if needed
+      }
     }
 
     return {
       asanaToken: token,
       asanaWorkspaceGid: workspaceGid,
       asanaWebhookSecret: integration?.webhookSecret ?? null,
+    }
+  }
+
+  /**
+   * Refreshes the Asana access token using the refresh token.
+   */
+  private async refreshAccessToken(refreshToken: string, businessId: string): Promise<string> {
+    try {
+      const tokenResponse = await axios.post('https://app.asana.com/-/oauth_token', new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: process.env.ASANA_CLIENT_ID!,
+        client_secret: process.env.ASANA_CLIENT_SECRET!,
+        refresh_token: refreshToken,
+      }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+
+      const { access_token, refresh_token: newRefreshToken, expires_in } = tokenResponse.data
+
+      // Update the stored credentials with the new tokens
+      const existingIntegration = await prisma.integration.findFirst({
+        where: { businessId, provider: 'ASANA' },
+        select: { credentials: true }
+      })
+
+      if (existingIntegration?.credentials) {
+        const currentCreds = decryptCredentials(existingIntegration.credentials as any)
+        const updatedCreds = {
+          ...currentCreds,
+          accessToken: access_token,
+          refreshToken: newRefreshToken || refreshToken, // Keep old refresh token if new one not provided
+          expiresIn: expires_in,
+        }
+
+        await prisma.integration.update({
+          where: { businessId_provider: { businessId, provider: 'ASANA' } },
+          data: {
+            credentials: encryptCredentials(updatedCreds),
+            updatedAt: new Date(),
+          },
+        })
+      }
+
+      console.log(`[AsanaProvider] Successfully refreshed token for business ${businessId}`)
+      return access_token
+    } catch (error) {
+      console.error('[AsanaProvider] Token refresh failed:', error)
+      throw new Error('Failed to refresh Asana access token')
     }
   }
 

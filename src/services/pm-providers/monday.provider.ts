@@ -4,6 +4,7 @@ import { prisma } from '../db'
 import { ProjectManagementProvider } from './pm.provider.interface'
 import { getOrCreateClient } from './client-helper'
 import { getAppBaseUrl } from '../../utils/env'
+import { decryptCredentials } from '../../utils/tokenEncryption'
 
 const MONDAY_API_URL = 'https://api.monday.com/v2'
 
@@ -27,7 +28,7 @@ export class MondayProvider implements ProjectManagementProvider {
       },
     })
 
-    const creds = integration?.credentials as any || {}
+    const creds = integration?.credentials ? decryptCredentials(integration.credentials as any) : {}
     const token = creds.accessToken || creds.apiKey || process.env.MONDAY_API_KEY
 
     if (!token) {
