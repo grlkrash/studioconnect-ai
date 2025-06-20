@@ -17,7 +17,7 @@ async function seedBusiness() {
     const business = await prisma.business.create({
       data: {
         name: 'StudioConnect AI',
-        businessType: 'CREATIVE_AGENCY',
+        businessType: 'CREATIVE',
         planTier: 'PRO',
         notificationEmail: 'admin@studioconnect.ai',
         notificationEmails: ['admin@studioconnect.ai'],
