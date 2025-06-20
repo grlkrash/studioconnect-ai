@@ -236,100 +236,119 @@ app.set('views', [
 app.get('/admin/login', (req, res) => {
     res.render('login', { error: null });
 });
-const devNext = process.env.NODE_ENV !== 'production';
-const nextApp = (0, next_1.default)({ dev: devNext, dir: path_1.default.join(__dirname, '../dashboard') });
-const handleNext = nextApp.getRequestHandler();
-app.use('/admin/_next/static', express_1.default.static(path_1.default.join(__dirname, '../dashboard/.next/static')));
-nextApp.prepare()
-    .then(() => {
-    app.use('/admin/_next', (req, res) => {
-        req.url = req.originalUrl.replace('/admin', '');
-        return handleNext(req, res);
-    });
-    app.get('/test-calls', (req, res) => {
-        const testPagePath = path_1.default.join(__dirname, '../public/test-calls.html');
-        res.sendFile(testPagePath);
-    });
-    app.use('/admin', (req, res) => {
-        req.url = req.originalUrl;
-        return handleNext(req, res);
-    });
-    app.use('/api/admin', admin_1.default);
-    app.use('/api/clients', clientRoutes_1.default);
-    app.use('/api/projects', projectRoutes_1.default);
-    app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
-    app.use('/api/business', businessRoutes_1.default);
-    app.use('/api/agent-config', agentConfigRoutes_1.default);
-    app.use('/api/lead-questions', leadQuestionRoutes_1.default);
-    app.use('/api/integrations', integrationRoutes_1.default);
-    app.use('/api/interactions', interactionRoutes_1.default);
-    app.use('/api/widget-config', widgetConfigRoutes_1.default);
-    app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
-    app.use('/api/healthz', healthzRoutes_1.healthzRouter);
-    app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-    app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-    app.post('/api/voice-preview', async (req, res) => {
-        req.url = '/preview';
-        (0, elevenlabsRoutes_1.elevenLabsRouter)(req, res, () => { });
-    });
-    const widgetHandler = (req, res) => {
-        const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
-        console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
-        try {
-            if (fs_1.default.existsSync(widgetPath)) {
-                console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
-                res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
-                res.sendFile(widgetPath, (err) => {
-                    if (err) {
-                        console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
-                        if (!res.headersSent) {
-                            res.status(500).send('// Server error: Could not send widget file.');
-                        }
-                    }
-                    else {
-                        console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
-                    }
-                });
-            }
-            else {
-                console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
-                res.status(404).send('// Widget script not found.');
-            }
-        }
-        catch (e) {
-            console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
-            if (!res.headersSent) {
-                res.status(500).send('// Server error processing widget request.');
-            }
-        }
-    };
-    app.get('/widget.js', widgetHandler);
-    app.get('/embed.js', widgetHandler);
-    app.get('/admin-test', (req, res) => {
-        res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
-    });
-    app.get('/', (req, res) => {
-        res.send('Application Root - Hello from Deployed App!');
-    });
-    app.use('/static', express_1.default.static(path_1.default.join(__dirname, '../public')));
-    const staticPath = path_1.default.join(__dirname, '../public');
-    console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+const dashboardDir = path_1.default.join(__dirname, '../dashboard');
+const isDev = process.env.NODE_ENV !== 'production';
+console.log(`[DASHBOARD] Initializing Next.js from: ${dashboardDir}`);
+const nextApp = (0, next_1.default)({
+    dev: isDev,
+    dir: dashboardDir,
+    conf: {
+        poweredByHeader: false
+    }
+});
+const handle = nextApp.getRequestHandler();
+let nextReady = false;
+let nextError = null;
+nextApp.prepare().then(() => {
+    console.log('[DASHBOARD] Next.js app prepared successfully');
+    nextReady = true;
+}).catch((err) => {
+    console.error('[DASHBOARD] Error preparing Next.js app:', err);
+    nextError = err;
+});
+app.use('/admin/_next', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
+app.use('/admin/static', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
+app.all('/admin*', (req, res) => {
+    if (nextError) {
+        return res.status(500).send('Dashboard initialization failed. Please check server logs.');
+    }
+    if (!nextReady) {
+        return res.status(503).send('Dashboard is starting up. Please wait a moment and refresh.');
+    }
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/admin/, '') || '/';
+    console.log(`[DASHBOARD] Handling ${originalUrl} -> ${req.url}`);
+    return handle(req, res);
+});
+app.get('/test-calls', (req, res) => {
+    const testPagePath = path_1.default.join(__dirname, '../public/test-calls.html');
+    res.sendFile(testPagePath);
+});
+app.use('/api/admin', admin_1.default);
+app.use('/api/clients', clientRoutes_1.default);
+app.use('/api/projects', projectRoutes_1.default);
+app.use('/api/knowledge-base', knowledgeBaseRoutes_1.default);
+app.use('/api/business', businessRoutes_1.default);
+app.use('/api/agent-config', agentConfigRoutes_1.default);
+app.use('/api/lead-questions', leadQuestionRoutes_1.default);
+app.use('/api/integrations', integrationRoutes_1.default);
+app.use('/api/interactions', interactionRoutes_1.default);
+app.use('/api/widget-config', widgetConfigRoutes_1.default);
+app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
+app.use('/api/healthz', healthzRoutes_1.healthzRouter);
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.post('/api/voice-preview', async (req, res) => {
+    req.url = '/preview';
+    (0, elevenlabsRoutes_1.elevenLabsRouter)(req, res, () => { });
+});
+const widgetHandler = (req, res) => {
+    const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');
+    console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
     try {
-        const files = fs_1.default.readdirSync(staticPath);
-        console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+        if (fs_1.default.existsSync(widgetPath)) {
+            console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
+            res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+            res.sendFile(widgetPath, (err) => {
+                if (err) {
+                    console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
+                    if (!res.headersSent) {
+                        res.status(500).send('// Server error: Could not send widget file.');
+                    }
+                }
+                else {
+                    console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
+                }
+            });
+        }
+        else {
+            console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
+            res.status(404).send('// Widget script not found.');
+        }
     }
     catch (e) {
-        console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+        console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
+        if (!res.headersSent) {
+            res.status(500).send('// Server error processing widget request.');
+        }
     }
-    app.use('*', (req, res) => {
-        res.status(404).json({
-            error: 'Route not found',
-            path: req.originalUrl,
-            method: req.method
-        });
-    });
-    isServerReady = true;
+};
+app.get('/widget.js', widgetHandler);
+app.get('/embed.js', widgetHandler);
+app.get('/admin-test', (req, res) => {
+    res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() });
 });
+app.get('/', (req, res) => {
+    res.send('Application Root - Hello from Deployed App!');
+});
+app.use('/static', express_1.default.static(path_1.default.join(__dirname, '../public')));
+const staticPath = path_1.default.join(__dirname, '../public');
+console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+try {
+    const files = fs_1.default.readdirSync(staticPath);
+    console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+}
+catch (e) {
+    console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+}
+app.use('*', (req, res) => {
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+    });
+});
+isServerReady = true;
 app.use((err, req, res, next) => {
     console.error('Error:', err.stack);
     res.status(500).json({

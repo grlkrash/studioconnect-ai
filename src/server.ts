@@ -36,6 +36,8 @@ import integrationRoutes from './api/integrationRoutes'
 import webhookRoutes from './api/webhookRoutes'
 import callHistoryRoutes from './api/callHistoryRoutes'
 import interactionRoutes from './api/interactionRoutes'
+// TODO: Re-enable authRoutes import once TypeScript issues are resolved
+// import authRoutes from './api/authRoutes'
 import { startAsanaCron } from './services/projectSync/cron'
 import { voiceHealthMonitor } from './monitor/voiceHealthMonitor'
 
@@ -281,29 +283,57 @@ app.get('/admin/login', (req: Request, res: Response) => {
 // STATIC DASHBOARD SERVING
 // =======================
 
-// Production: Serve pre-built static dashboard files
-// Development: Serve from .next/static directory
-const dashboardStaticPath = process.env.NODE_ENV === 'production' 
-  ? path.join(__dirname, '../dashboard/out')
-  : path.join(__dirname, '../dashboard/.next')
+// Initialize Next.js for dashboard integration
+const dashboardDir = path.join(__dirname, '../dashboard')
+const isDev = process.env.NODE_ENV !== 'production'
 
-console.log(`[DASHBOARD] Serving static files from: ${dashboardStaticPath}`)
+console.log(`[DASHBOARD] Initializing Next.js from: ${dashboardDir}`)
+
+// Initialize Next.js app
+const nextApp = next({ 
+  dev: isDev, 
+  dir: dashboardDir,
+  conf: {
+    // Disable X-Powered-By header for security
+    poweredByHeader: false
+  }
+})
+const handle = nextApp.getRequestHandler()
+
+// Variables to track Next.js initialization status
+let nextReady = false
+let nextError: Error | null = null
+
+// Prepare Next.js app
+nextApp.prepare().then(() => {
+  console.log('[DASHBOARD] Next.js app prepared successfully')
+  nextReady = true
+}).catch((err) => {
+  console.error('[DASHBOARD] Error preparing Next.js app:', err)
+  nextError = err
+})
 
 // Serve dashboard static assets
-app.use('/admin/_next', express.static(path.join(dashboardStaticPath, '_next')))
-app.use('/admin/static', express.static(path.join(dashboardStaticPath, 'static')))
+app.use('/admin/_next', express.static(path.join(dashboardDir, '.next/static')))
+app.use('/admin/static', express.static(path.join(dashboardDir, '.next/static')))
 
-// Serve dashboard pages
-app.use('/admin', express.static(dashboardStaticPath))
-
-// Fallback for SPA routing - serve index.html for admin routes
-app.get('/admin/*', (req: Request, res: Response) => {
-  const indexPath = path.join(dashboardStaticPath, 'index.html')
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath)
-  } else {
-    res.status(404).send('Dashboard not built. Run: cd dashboard && npm run build')
+// Handle all admin routes with Next.js
+app.all('/admin*', (req: Request, res: Response) => {
+  if (nextError) {
+    return res.status(500).send('Dashboard initialization failed. Please check server logs.')
   }
+  
+  if (!nextReady) {
+    return res.status(503).send('Dashboard is starting up. Please wait a moment and refresh.')
+  }
+  
+  // Rewrite the URL to remove /admin prefix for Next.js routing
+  const originalUrl = req.url
+  req.url = req.url.replace(/^\/admin/, '') || '/'
+  
+  console.log(`[DASHBOARD] Handling ${originalUrl} -> ${req.url}`)
+  
+  return handle(req, res)
 })
 
 // Test page for API debugging
@@ -313,10 +343,12 @@ app.get('/test-calls', (req: Request, res: Response) => {
 });
 
 // 2. Mount API routes
-    // (chat route mounted earlier to avoid 404 during Next.js prepare)
-    // app.use('/api/chat', chatRoutes)
-    app.use('/api/admin', adminRoutes)
-    app.use('/api/clients', clientRoutes)
+// (chat route mounted earlier to avoid 404 during Next.js prepare)
+// app.use('/api/chat', chatRoutes)
+// TODO: Re-enable authRoutes once TypeScript import issues are resolved
+// app.use('/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/clients', clientRoutes)
     app.use('/api/projects', projectRoutes)
     app.use('/api/knowledge-base', knowledgeBaseRoutes)
     app.use('/api/business', businessRoutes)
@@ -418,7 +450,6 @@ app.get('/test-calls', (req: Request, res: Response) => {
 
     // Signal that every route has been mounted – server is ready
     isServerReady = true
-  })
 
 // Global error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

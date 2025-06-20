@@ -1,27 +1,92 @@
-import { prisma } from "@/lib/prisma"
+"use client"
+
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Users, Phone, Mail, Calendar, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import ClientTable from "./client-table"
 
-export default async function ClientsPage() {
-  const business = await prisma.business.findFirst({ select: { id: true } })
+interface ClientData {
+  id: string
+  businessId: string
+  name: string
+  email: string | null
+  phone: string | null
+  externalId: string | null
+  createdAt: Date
+  updatedAt: Date
+  projects: any[]
+}
 
-  if (!business) return <div className="p-6">No business records found.</div>
+interface ClientStats {
+  clientsTotal: number
+  clientsNewWeek: number
+  leadsQualified: number
+}
 
-  const [clientsTotal, clientsNewWeek, leadsQualified] = await Promise.all([
-    prisma.client.count({ where: { businessId: business.id } }),
-    prisma.client.count({
-      where: { businessId: business.id, createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
-    }),
-    prisma.lead.count({ where: { businessId: business.id, status: "QUALIFIED" } }),
-  ])
+export default function ClientsPage() {
+  const [clients, setClients] = useState<ClientData[]>([])
+  const [stats, setStats] = useState<ClientStats>({ clientsTotal: 0, clientsNewWeek: 0, leadsQualified: 0 })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const clients = await prisma.client.findMany({
-    where: { businessId: business.id },
-    include: { projects: true },
-    orderBy: { createdAt: "desc" },
-  })
+  useEffect(() => {
+    async function fetchClients() {
+      try {
+        const response = await fetch('/api/clients', { credentials: 'include' })
+        if (!response.ok) {
+          throw new Error('Failed to fetch clients')
+        }
+        const data = await response.json()
+        const clientsWithDates = (data.clients || []).map((client: any) => ({
+          ...client,
+          createdAt: new Date(client.createdAt),
+          updatedAt: new Date(client.updatedAt)
+        }))
+        setClients(clientsWithDates)
+        setStats({
+          clientsTotal: data.stats?.clientsTotal || 0,
+          clientsNewWeek: data.stats?.clientsNewWeek || 0,
+          leadsQualified: data.stats?.leadsQualified || 0
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load clients')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchClients()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+              <p className="mt-4 text-slate-600">Loading clients...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <p className="text-red-600">Error: {error}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
@@ -50,7 +115,7 @@ export default async function ClientsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">Total Clients</p>
-                  <p className="text-2xl font-bold text-slate-900">{clientsTotal}</p>
+                  <p className="text-2xl font-bold text-slate-900">{stats.clientsTotal}</p>
                 </div>
                 <div className="p-2 bg-blue-50 rounded-lg">
                   <Users className="w-5 h-5 text-blue-600" />
@@ -63,7 +128,7 @@ export default async function ClientsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">New This Week</p>
-                  <p className="text-2xl font-bold text-slate-900">{clientsNewWeek}</p>
+                  <p className="text-2xl font-bold text-slate-900">{stats.clientsNewWeek}</p>
                 </div>
                 <div className="p-2 bg-green-50 rounded-lg">
                   <Phone className="w-5 h-5 text-green-600" />
@@ -76,7 +141,7 @@ export default async function ClientsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600">Qualified Leads</p>
-                  <p className="text-2xl font-bold text-slate-900">{leadsQualified}</p>
+                  <p className="text-2xl font-bold text-slate-900">{stats.leadsQualified}</p>
                 </div>
                 <div className="p-2 bg-purple-50 rounded-lg">
                   <Calendar className="w-5 h-5 text-purple-600" />
@@ -113,5 +178,3 @@ export default async function ClientsPage() {
     </div>
   )
 }
-
-export const dynamic = 'force-dynamic'
