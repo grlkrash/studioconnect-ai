@@ -41,8 +41,9 @@ export async function getBusiness(req?: NextRequest) {
       // Ignore bare domain like studio-manager.app; sub-domain must have at least 3 parts
       if (parts.length > 2) {
         const sub = parts[0]
-        const found = await prisma.business.findFirst({ where: { slug: sub }, select: { id: true } })
-        if (found) bizId = found.id
+        // Note: slug field doesn't exist in current schema, skip subdomain lookup for now
+        // const found = await prisma.business.findFirst({ where: { slug: sub }, select: { id: true } })
+        // if (found) bizId = found.id
       }
     }
   }
@@ -56,12 +57,23 @@ export async function getBusiness(req?: NextRequest) {
   }
 
   // 6. env variable fallback (demo/dev only)
-  if (!bizId && (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'demo')) {
+  if (!bizId && process.env.NODE_ENV === 'development') {
     bizId = process.env.DEFAULT_BUSINESS_ID
   }
 
   if (bizId) {
-    const found = await prisma.business.findUnique({ where: { id: bizId }, select: { id: true } })
+    const found = await prisma.business.findUnique({ 
+      where: { id: bizId }, 
+      select: { 
+        id: true, 
+        name: true, 
+        planTier: true,
+        businessType: true,
+        notificationEmail: true,
+        createdAt: true,
+        updatedAt: true
+      } 
+    })
     if (found) return found
   }
 
@@ -75,7 +87,17 @@ export async function getBusiness(req?: NextRequest) {
   try {
     const count = await prisma.business.count()
     if (count === 1) {
-      return prisma.business.findFirst({ select: { id: true } })
+      return prisma.business.findFirst({ 
+        select: { 
+          id: true, 
+          name: true, 
+          planTier: true,
+          businessType: true,
+          notificationEmail: true,
+          createdAt: true,
+          updatedAt: true
+        } 
+      })
     }
   } catch {
     // ignore – fall through to null

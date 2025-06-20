@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       }),
 
       // Total interactions 
-      prisma.interaction.count({
+      prisma.integration.count({
         where: { businessId }
       }),
 

@@ -5,6 +5,7 @@ import { processMessage } from '../core/aiHandler'
 import { asyncHandler } from '../utils/asyncHandler'
 import { prisma } from '../services/db'
 import { enterpriseVoiceAgent } from '../services/enterpriseVoiceAgent'
+import { elevenLabsAgent } from '../services/elevenlabsConversationalAgent'
 
 const router = Router()
 const { VoiceResponse } = twilio.twiml
@@ -461,6 +462,80 @@ router.post('/enterprise-incoming', async (req, res) => {
 
     res.type('text/xml')
     res.send(emergencyTwiml)
+  }
+})
+
+// �� ELEVENLABS CONVERSATIONAL AI WEBHOOK - OFFICIAL IMPLEMENTATION
+router.post('/elevenlabs-webhook', async (req, res) => {
+  try {
+    console.log('[🎯 ELEVENLABS WEBHOOK] Incoming call from Twilio')
+    await elevenLabsAgent.handleTwilioWebhook(req, res)
+  } catch (error) {
+    console.error('[🎯 ELEVENLABS WEBHOOK] Error:', error)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// 🎯 ELEVENLABS CONVERSATION EVENTS
+router.post('/elevenlabs-events', async (req, res) => {
+  try {
+    console.log('[🎯 ELEVENLABS EVENTS] Conversation event received')
+    await elevenLabsAgent.handleConversationEvent(req.body)
+    res.status(200).send('OK')
+  } catch (error) {
+    console.error('[🎯 ELEVENLABS EVENTS] Error:', error)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// 🎯 CREATE ELEVENLABS AGENT FOR BUSINESS
+router.post('/create-agent/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params
+    const { 
+      name, 
+      description, 
+      instructions, 
+      first_message, 
+      voice_id,
+      voice_settings 
+    } = req.body
+
+    console.log(`[🎯 ELEVENLABS AGENT] Creating agent for business: ${businessId}`)
+
+    const agentId = await elevenLabsAgent.createAgent(businessId, {
+      name,
+      description,
+      instructions,
+      first_message,
+      voice_id,
+      voice_settings
+    })
+
+    // Update business configuration with new agent ID
+    await prisma.agentConfig.upsert({
+      where: { businessId },
+      update: { elevenlabsAgentId: agentId },
+      create: {
+        businessId,
+        elevenlabsAgentId: agentId,
+        personaPrompt: instructions,
+        elevenlabsVoice: voice_id
+      }
+    })
+
+    res.json({ 
+      success: true, 
+      agentId,
+      message: 'ElevenLabs Conversational AI agent created successfully'
+    })
+
+  } catch (error) {
+    console.error('[🎯 ELEVENLABS AGENT] Create agent error:', error)
+    res.status(500).json({ 
+      error: 'Failed to create ElevenLabs agent',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    })
   }
 })
 

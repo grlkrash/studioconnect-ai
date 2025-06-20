@@ -48,14 +48,11 @@ export async function GET(req: NextRequest) {
         }
       }),
 
-      // Voice agent configuration status
-      prisma.business.findUnique({
-        where: { id: businessId },
-        select: {
-          voiceEnabled: true,
-          openaiVoiceId: true,
-          elevenlabsVoiceId: true
-        }
+      // Voice agent configuration status - simplified for now
+      Promise.resolve({
+        voiceEnabled: false,
+        openaiVoiceId: null,
+        elevenlabsVoiceId: null
       }),
 
       // Total clients

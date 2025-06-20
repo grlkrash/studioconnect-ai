@@ -42,6 +42,7 @@ import {
 import { useBusiness } from "@/context/business-context"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { BusinessGuard } from "@/components/business-guard"
 import { cn } from "@/lib/utils"
 import { format, isToday, isYesterday, subDays, startOfDay, endOfDay } from "date-fns"
 
