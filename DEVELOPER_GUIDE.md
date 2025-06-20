@@ -321,17 +321,17 @@ MONDAY_CLIENT_SECRET=""
    ```
 
 4. **Dashboard Setup**:
-   ```bash
+```bash
    cd dashboard
-   npm install
+npm install
    npm run build
    cd ..
    ```
 
 5. **Start Development Server**:
    ```bash
-   npm run dev
-   ```
+npm run dev
+```
 
 ### Development Workflow
 

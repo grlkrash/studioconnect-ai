@@ -63,7 +63,7 @@ interface EnterpriseConnectionState {
   
   // Enterprise Features - OPTIMIZED FOR ELEVENLABS
   personaPrompt: string
-  voiceSettings: {
+    voiceSettings: {
     voiceId: string
     stability: number
     similarity_boost: number
@@ -148,9 +148,9 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
       
       // Initialize enterprise connection state with optimized settings
       const state: EnterpriseConnectionState = {
-        ws,
-        callSid,
-        streamSid: null,
+      ws,
+      callSid,
+      streamSid: null,
         businessId: business.id,
         fromNumber,
         toNumber,
@@ -159,8 +159,8 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
         conversationHistory: [],
         currentIntent: existingClient ? 'project_status' : 'greeting',
         audioBuffer: [],
-        isRecording: false,
-        isSpeaking: false,
+      isRecording: false,
+      isSpeaking: false,
         lastAudioTimestamp: Date.now(),
         clientId: existingClient?.id || null,
         leadQualifier: null,
@@ -212,7 +212,7 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
       
       console.log(`[🏢 ENTERPRISE AGENT] ✅ Enterprise call initialized successfully`)
       
-    } catch (error) {
+      } catch (error) {
       console.error('[🏢 ENTERPRISE AGENT] Failed to initialize call:', error)
       ws.close(1011, 'Initialization failed')
     }
@@ -301,7 +301,7 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
       await this.processAudioChunk(state, audioData)
     }
   }
-  
+
   /**
    * 🎯 BULLETPROOF AUDIO PROCESSING
    * Converts audio to text with enterprise-grade reliability
@@ -320,7 +320,7 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
         // Process the conversation
         await this.processClientMessage(state, transcript)
       }
-      
+
     } catch (error) {
       console.error('[🏢 ENTERPRISE AGENT] Audio processing error:', error)
       state.healthChecks.audioProcessing = false
@@ -539,7 +539,7 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
             
             state.ws.send(JSON.stringify({
               event: 'media',
-              streamSid: state.streamSid,
+            streamSid: state.streamSid,
               media: {
                 payload: base64Chunk
               }
@@ -549,7 +549,7 @@ export class BulletproofEnterpriseVoiceAgent extends EventEmitter {
           // Clean up temp file
           fs.unlink(audioPath, () => {})
           resolve()
-        } else {
+              } else {
           reject(new Error(`FFmpeg failed with code ${code}`))
         }
       })
@@ -736,11 +736,11 @@ Remember: You represent a Fortune 100 quality agency. Every interaction should r
         }
       })
       conversationId = conversation.id
-    } catch (error) {
+        } catch (error) {
       console.error('Failed to create conversation:', error)
-      return
-    }
-    
+          return
+        }
+
     // Save call log with proper fields
     try {
       await prisma.callLog.create({
