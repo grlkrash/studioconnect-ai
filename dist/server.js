@@ -246,6 +246,10 @@ nextApp.prepare()
         req.url = req.originalUrl.replace('/admin', '');
         return handleNext(req, res);
     });
+    app.get('/test-calls', (req, res) => {
+        const testPagePath = path_1.default.join(__dirname, '../public/test-calls.html');
+        res.sendFile(testPagePath);
+    });
     app.use('/admin', (req, res) => {
         req.url = req.originalUrl;
         return handleNext(req, res);

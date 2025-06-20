@@ -277,49 +277,42 @@ app.get('/admin/login', (req: Request, res: Response) => {
 // We first declare the app & handler, then defer route mounting
 // and server start until after nextApp.prepare() completes.
 // ────────────────────────────────────────────────────────────
-// Wait for Next to be ready before mounting its handler and legacy view routes
-const devNext = process.env.NODE_ENV !== 'production'
-const nextApp = next({ dev: devNext, dir: path.join(__dirname, '../dashboard') })
-const handleNext = nextApp.getRequestHandler()
-
-// Add this immediately after the Express app is initialized and before nextApp.prepare to ensure static assets are served early.
-// Serve Next.js dashboard static assets directly to avoid 404s during asset loading when using a custom basePath.
-app.use('/admin/_next/static', express.static(path.join(__dirname, '../dashboard/.next/static')))
-
 // =======================
-// ROUTE MOUNTING ORDER
+// STATIC DASHBOARD SERVING
 // =======================
 
-// 1. Mount admin view routes FIRST
-nextApp.prepare()
-  .then(() => {
-    // Explicitly route asset requests (e.g. /admin/_next/static/...) and preserve the
-    // full path so Next.js can locate the file. When Express mounts a sub-app it
-    // strips the mount prefix from `req.url`, which breaks the lookup and causes
-    // 404s like `208-*.js` and `main-app-*.js`. Re-attach the `/admin` base path
-    // before delegating to Next.
-    app.use('/admin/_next', (req: Request, res: Response) => {
-      req.url = req.originalUrl.replace('/admin', '') // restore `/admin` segment
-      return handleNext(req, res)
-    })
+// Production: Serve pre-built static dashboard files
+// Development: Serve from .next/static directory
+const dashboardStaticPath = process.env.NODE_ENV === 'production' 
+  ? path.join(__dirname, '../dashboard/out')
+  : path.join(__dirname, '../dashboard/.next')
 
-    // Test page for API debugging (BEFORE Next.js routes)
-    app.get('/test-calls', (req: Request, res: Response) => {
-      const testPagePath = path.join(__dirname, '../public/test-calls.html');
-      res.sendFile(testPagePath);
-    });
+console.log(`[DASHBOARD] Serving static files from: ${dashboardStaticPath}`)
 
-    // All admin routes are now handled by the Next.js dashboard.
-    // IMPORTANT: Preserve the full "/admin" segment when delegating to Next.
-    // Express strips the mount path ("/admin") from `req.url` which breaks
-    // Next.js routing when `basePath: \"/admin\"` is enabled. Re-attach the
-    // original URL so that Next can correctly match `/admin/*` routes.
-    app.use('/admin', (req: Request, res: Response) => {
-      req.url = req.originalUrl // restore `/admin` basePath for Next
-      return handleNext(req, res)
-    })
+// Serve dashboard static assets
+app.use('/admin/_next', express.static(path.join(dashboardStaticPath, '_next')))
+app.use('/admin/static', express.static(path.join(dashboardStaticPath, 'static')))
 
-    // 2. Mount API routes
+// Serve dashboard pages
+app.use('/admin', express.static(dashboardStaticPath))
+
+// Fallback for SPA routing - serve index.html for admin routes
+app.get('/admin/*', (req: Request, res: Response) => {
+  const indexPath = path.join(dashboardStaticPath, 'index.html')
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath)
+  } else {
+    res.status(404).send('Dashboard not built. Run: cd dashboard && npm run build')
+  }
+})
+
+// Test page for API debugging
+app.get('/test-calls', (req: Request, res: Response) => {
+  const testPagePath = path.join(__dirname, '../public/test-calls.html');
+  res.sendFile(testPagePath);
+});
+
+// 2. Mount API routes
     // (chat route mounted earlier to avoid 404 during Next.js prepare)
     // app.use('/api/chat', chatRoutes)
     app.use('/api/admin', adminRoutes)
