@@ -515,10 +515,12 @@ router.post('/create-agent/:businessId', async (req, res) => {
     // Update business configuration with new agent ID
     await prisma.agentConfig.upsert({
       where: { businessId },
-      update: { elevenlabsAgentId: agentId },
+      update: { 
+        personaPrompt: instructions,
+        elevenlabsVoice: voice_id
+      },
       create: {
         businessId,
-        elevenlabsAgentId: agentId,
         personaPrompt: instructions,
         elevenlabsVoice: voice_id
       }
@@ -536,6 +538,121 @@ router.post('/create-agent/:businessId', async (req, res) => {
       error: 'Failed to create ElevenLabs agent',
       details: error instanceof Error ? error.message : 'Unknown error'
     })
+  }
+})
+
+// 🎯 ELEVENLABS WEBHOOK FOR MULTI-TENANT PERSONALIZATION
+// This webhook is called by ElevenLabs when a call comes in
+// We return business-specific configuration (welcome message, system prompt, voice)
+router.post('/elevenlabs-personalization', async (req, res) => {
+  try {
+    const { caller_id, agent_id, called_number, call_sid } = req.body
+    
+    console.log(`[🎯 ELEVENLABS PERSONALIZATION] Incoming call from ${caller_id} to ${called_number}`)
+    
+    // Find business by phone number
+    const business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: {
+        agentConfig: true
+      }
+    })
+    
+    if (!business) {
+      console.error(`[🎯 ELEVENLABS PERSONALIZATION] No business found for phone: ${called_number}`)
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    // Check if caller is existing client
+    const existingClient = await prisma.client.findFirst({
+      where: { 
+        phone: caller_id,
+        businessId: business.id
+      },
+      select: { id: true, name: true }
+    })
+    
+    // Build dynamic welcome message
+    let welcomeMessage = business.agentConfig?.welcomeMessage
+    if (!welcomeMessage) {
+      if (existingClient) {
+        const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
+        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm here to help with your projects and any questions you might have. What can I assist you with today?`
+      } else {
+        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant, and I'm here to help with any questions about our services and projects. How may I assist you today?`
+      }
+    }
+    
+    // Build dynamic system prompt
+    let systemPrompt = business.agentConfig?.personaPrompt
+    if (!systemPrompt) {
+      systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
+
+PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
+
+YOUR CORE ROLES:
+1. LEAD QUALIFICATION: For new callers, professionally gather:
+   - Company name and contact details
+   - Project type and requirements
+   - Timeline and budget expectations
+   - Decision-making authority
+
+2. CLIENT SERVICE: For existing clients, provide:
+   - Project status updates and timeline information
+   - Address concerns and questions professionally
+   - Coordinate with the team for complex requests
+   - Maintain strong client relationships
+
+CONVERSATION GUIDELINES:
+- Keep responses concise and to the point (2-3 sentences max)
+- Ask clarifying questions when needed
+- Always offer to connect with a team member for complex requests
+- Use natural, conversational language with professional tone
+- Show empathy and understanding for client needs
+
+ESCALATION TRIGGERS:
+- Complex project discussions requiring creative input
+- Pricing negotiations or contract discussions
+- Emergency or urgent project issues
+- Client dissatisfaction or complaints
+
+Remember: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards.`
+    }
+    
+    // Select voice (use business preference or smart default)
+    const voiceId = business.agentConfig?.elevenlabsVoice || 
+                   (existingClient ? 'g6xIsTj2HwM6VR4iXFCw' : 'OYTbf65OHHFELVut7v2H') // Jessica for existing, Hope for new
+    
+    // Return ElevenLabs personalization response
+    const personalizationResponse = {
+      first_message: welcomeMessage,
+      system_prompt: systemPrompt,
+      voice_id: voiceId,
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1.0
+      },
+      variables: {
+        business_name: business.name,
+        business_id: business.id,
+        caller_id: caller_id,
+        is_existing_client: !!existingClient,
+        client_name: existingClient?.name || null
+      }
+    }
+    
+    console.log(`[🎯 ELEVENLABS PERSONALIZATION] ✅ Configured for ${business.name}:`)
+    console.log(`[🎯 ELEVENLABS PERSONALIZATION] 🎙️ Voice: ${voiceId}`)
+    console.log(`[🎯 ELEVENLABS PERSONALIZATION] 👤 Existing client: ${!!existingClient}`)
+    
+    res.json(personalizationResponse)
+    
+  } catch (error) {
+    console.error('[🎯 ELEVENLABS PERSONALIZATION] Error:', error)
+    res.status(500).json({ error: 'Personalization failed' })
   }
 })
 

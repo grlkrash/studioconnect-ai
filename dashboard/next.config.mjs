@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  basePath: "/admin",
+  // Remove basePath since Express handles /admin/* routing
+  // basePath: "/admin",
   trailingSlash: true,
   images: {
     unoptimized: true

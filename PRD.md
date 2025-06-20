@@ -126,27 +126,30 @@ The user interface for the admin dashboard must be clean, intuitive, and simple.
 ## 9. Technical Architecture
 
 ### 9.1 System Overview
-The StudioConnect AI platform is built on a modern, scalable architecture using Node.js, TypeScript, and PostgreSQL with pgvector for AI embeddings. The system is containerized using Docker and is designed around a **"bulletproof" philosophy**, emphasizing enterprise-grade reliability, configuration-driven behavior, and resilient services with automated fallbacks and recovery.
+The StudioConnect AI platform is built on a modern, scalable architecture using Node.js, TypeScript, and PostgreSQL with pgvector for AI embeddings. The system leverages **ElevenLabs Conversational AI platform** as its core voice infrastructure, providing enterprise-grade reliability and natural conversation capabilities. The architecture emphasizes multi-tenant support, configuration-driven behavior, and seamless integration with business dashboards.
 
 ### 9.2 Core Components
 
 #### API Layer
-- **Express.js REST API**: Handles HTTP requests and WebSocket connections
-- **WebSocket Server**: Manages real-time voice communication
+- **Express.js REST API**: Handles HTTP requests and webhook integrations
+- **Multi-Tenant Webhook System**: Dynamic personalization for ElevenLabs agents per business
 - **Authentication Middleware**: JWT-based authentication with role-based access control
 - **Rate Limiting**: Per-IP and per-business rate limiting for API endpoints
 
-#### AI & Voice Processing
-- **OpenAI Integration**: 
-  - GPT-4 for conversation handling
-  - Whisper for high-accuracy transcription
-  - OpenAI Voice models (e.g., TTS-1-HD) serving as a high-quality fallback in the TTS chain
-- **ElevenLabs Integration**:
-  - The **primary TTS provider**, utilizing premium voices for enterprise-grade quality.
-  - The `BulletproofElevenLabsClient` manages streaming connections with built-in resilience (circuit breaker, retries, quality monitoring).
-- **Multi-Provider TTS Strategy**: A fallback chain ensures TTS availability: **ElevenLabs -> OpenAI -> Polly**.
-- **Voice Activity Detection**: Server-side, enterprise-grade VAD with dynamic noise-floor calibration and a strict phantom speech filtering layer to prevent responses to non-speech audio.
-- **SSML Processing**: Enhanced natural language patterns and conversational flow.
+#### AI & Voice Processing (ElevenLabs Native Platform)
+- **ElevenLabs Conversational AI**: 
+  - **Primary voice platform** handling all conversation logic
+  - Native speech-to-text, text-to-speech, and turn-taking models
+  - Built-in support for thousands of concurrent calls
+  - Premium voice selection (Jessica, Hope, Archer) for enterprise quality
+- **Dynamic Agent Configuration**:
+  - **Multi-tenant webhook personalization**: Each business gets custom welcome messages, system prompts, and voice selection
+  - **Real-time configuration loading**: Business settings pulled from database during call initiation
+  - **Client recognition**: Existing clients receive personalized greetings and context
+- **Conversation Management**:
+  - **GPT-4 integration** for intelligent conversation handling
+  - **Claude and Gemini support** for diverse LLM options
+  - **Custom system prompts** per business for brand-specific conversations
 
 #### Data Layer
 - **PostgreSQL**: Primary database with pgvector extension for AI embeddings
@@ -183,7 +186,37 @@ The StudioConnect AI platform is built on a modern, scalable architecture using 
   }
   ```
 
-### 9.3 Integration Architecture
+### 9.3 ElevenLabs Conversational AI Integration
+
+#### Architecture Overview
+The platform now leverages ElevenLabs' enterprise-grade Conversational AI platform as its primary voice infrastructure, replacing the previous custom-built pipeline with a production-ready solution.
+
+#### Key Benefits
+- **Enterprise Reliability**: Built-in support for thousands of concurrent calls with 99.9% uptime
+- **Natural Conversations**: Advanced turn-taking models and premium voice quality
+- **Multi-Tenant Support**: Dynamic agent personalization via webhook integration
+- **Reduced Complexity**: Eliminates custom audio processing, VAD, and TTS management
+- **Cost Efficiency**: $0.08/minute on business plan vs. custom infrastructure costs
+
+#### Implementation Details
+- **Agent Configuration**: Each business can have custom ElevenLabs agents with specific voices and prompts
+- **Webhook Personalization**: `/api/voice/elevenlabs-personalization` endpoint provides dynamic configuration
+- **Voice Selection**: Premium voices (Jessica, Hope, Archer) selected based on business preferences and client type
+- **System Prompts**: Business-specific conversation patterns and escalation rules
+- **Call Transfer**: Native integration with Twilio for seamless human handoff
+
+#### Multi-Tenant Webhook Flow
+```mermaid
+graph TD
+    A[Client calls Twilio number] --> B[Twilio routes to ElevenLabs Agent]
+    B --> C[ElevenLabs calls personalization webhook]
+    C --> D[Webhook loads business configuration]
+    D --> E[Returns custom welcome message & settings]
+    E --> F[ElevenLabs starts personalized conversation]
+    F --> G[Conversation logged to StudioConnect database]
+```
+
+### 9.4 Integration Architecture
 
 #### Project Management Tools
 - **Supported Platforms**: Asana, Jira, Monday.com
@@ -216,17 +249,19 @@ The integration process follows a standardized flow for each provider, consistin
         - Jira `issue.fields.summary` -> `Project.name`
         - Monday.com `item.name` -> `Project.name`
 
-#### Voice Infrastructure
-- **Twilio Integration**:
-  - Media Streams for bidirectional audio
-  - WebSocket-based real-time communication
-  - Call recording and transcription
-- **Voice Processing Pipeline**:
-  1. Audio capture (G.711 μ-law / L16)
-  2. Real-time transcription (Whisper) with enterprise-grade phantom speech filtering
-  3. AI response generation via `LeadQualifier` or core `AIHandler`
-  4. TTS conversion via bulletproof, multi-provider engine (ElevenLabs -> OpenAI -> Polly)
-  5. Audio playback with barge-in detection
+#### Voice Infrastructure (ElevenLabs Native Integration)
+- **ElevenLabs Conversational AI Platform**:
+  - **Native Twilio integration** with μ-law 8kHz audio format
+  - **Built-in turn-taking model** for natural conversation flow
+  - **Real-time transcription** with fine-tuned ASR models
+  - **Premium TTS** with 5k+ voices across 31 languages
+  - **Call transfer capabilities** for human escalation
+- **Multi-Tenant Webhook Architecture**:
+  1. **Call initiation**: Twilio routes call to ElevenLabs agent
+  2. **Webhook trigger**: ElevenLabs calls personalization webhook
+  3. **Dynamic configuration**: System returns business-specific settings
+  4. **Personalized conversation**: Agent uses custom welcome message, voice, and prompts
+  5. **Call logging**: Conversation data stored in StudioConnect database
 
 ### 9.4 Security Architecture
 
@@ -732,15 +767,22 @@ Open Tasks:
 
 ### 12.2 Usage-Based Pricing
 
-#### Voice Call Pricing
+#### Voice Call Pricing (ElevenLabs Integration)
 - **PRO Plan**:
-  - $0.10/minute over included minutes
-  - Volume discounts available
+  - $0.12/minute over included minutes (includes ElevenLabs platform costs)
+  - Volume discounts available at 1,000+ minutes
   - No minimum commitment
 - **ENTERPRISE Plan**:
-  - $0.08/minute over included minutes
-  - Custom volume pricing
-  - Annual commitment options
+  - $0.10/minute over included minutes (optimized ElevenLabs enterprise rates)
+  - Custom volume pricing for 10,000+ minutes
+  - Annual commitment options with additional discounts
+
+#### ElevenLabs Platform Benefits Included
+- **Premium voice quality** with human-like speech synthesis
+- **Built-in conversation management** eliminating custom infrastructure costs
+- **99.9% uptime guarantee** with enterprise-grade reliability
+- **Real-time transcription** and natural turn-taking
+- **Multi-language support** across 31 languages
 
 #### API Usage Pricing
 - **PRO Plan**:

@@ -1,111 +1,155 @@
 # Developer Guide & System Architecture
 ## StudioConnect AI - Enterprise Voice Platform
 
-**Version:** 5.0  
-**Last Updated:** [Current Date]
-**Purpose:** Technical implementation guide and architectural reference for the enterprise-grade, "bulletproof" AI voice platform.
+**Version:** 6.0  
+**Last Updated:** June 2025
+**Purpose:** Technical implementation guide and architectural reference for the ElevenLabs Conversational AI integrated platform.
 
 ---
 
 ## Table of Contents
 
-1. [The Bulletproof Philosophy](#1-the-bulletproof-philosophy)
+1. [ElevenLabs Integration Architecture](#1-elevenlabs-integration-architecture)
 2. [Project Overview](#2-project-overview)
 3. [System Architecture](#3-system-architecture)
 4. [Core Services & Components](#4-core-services--components)
-5. [Project Management Integrations](#5-project-management-integrations)
-6. [Development Setup](#6-development-setup)
-7. [API Documentation](#7-api-documentation)
-8. [Database Schema](#8-database-schema)
-9. [Deployment Guide](#9-deployment-guide)
-10. [Security Considerations](#10-security-considerations)
-11. [Testing Strategy](#11-testing-strategy)
-12. [Troubleshooting](#12-troubleshooting)
+5. [Multi-Tenant Voice Configuration](#5-multi-tenant-voice-configuration)
+6. [Project Management Integrations](#6-project-management-integrations)
+7. [Development Setup](#7-development-setup)
+8. [API Documentation](#8-api-documentation)
+9. [Database Schema](#9-database-schema)
+10. [Deployment Guide](#10-deployment-guide)
+11. [Security Considerations](#11-security-considerations)
+12. [Testing Strategy](#12-testing-strategy)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
-## 1. The Bulletproof Philosophy
+## 1. ElevenLabs Integration Architecture
 
-Our system has evolved to meet enterprise demands, adopting a "bulletproof" engineering philosophy. This approach prioritizes reliability, resilience, and professional-grade quality in every component. All new development should adhere to these principles.
+Our system has evolved from a custom voice pipeline to leverage **ElevenLabs Conversational AI platform** as the primary voice infrastructure. This provides enterprise-grade reliability, natural conversation capabilities, and significant cost savings.
 
-### Core Tenets:
-- **Design for Failure**: Assume external services can and will fail. Implement robust fallback mechanisms for all critical dependencies. The prime example is our **multi-provider TTS engine** (`ElevenLabs` -> `OpenAI` -> `Polly`), ensuring we can always generate voice responses.
-- **Configuration over Code**: Abstract key logic and settings into a centralized configuration file (`src/config/enterpriseDefaults.ts`). This allows for rapid tuning of system behavior (e.g., VAD thresholds, TTS provider settings, retry logic) without changing code. Functions like `getEnterpriseVADSettings()` should be used to retrieve these settings.
-- **Build Resilient Clients**: When interacting with external APIs, build clients that can handle failure gracefully. The `BulletproofElevenLabsClient` is our standard, featuring:
-    - **Circuit Breakers**: To stop sending requests to a failing service.
-    - **Exponential Backoff**: To intelligently retry failed requests.
-    - **Health & Quality Monitoring**: To proactively detect service degradation.
-- **Guard the User Experience**: The user experience must be professional at all times. This means aggressively filtering out "phantom speech" from noisy audio feeds using our `getEnterprisePhantomFilter` settings to prevent the AI from responding to non-speech sounds.
-- **Enterprise-Grade Logging**: Use descriptive and structured logs (e.g., `[🎯 BULLETPROOF VAD] Calibrated...`) to provide clear insight into system behavior, especially in production environments.
+### Key Benefits:
+- **Enterprise Reliability**: Built-in support for thousands of concurrent calls with 99.9% uptime
+- **Natural Conversations**: Advanced turn-taking models eliminate complex custom audio processing
+- **Multi-Tenant Support**: Dynamic agent personalization via webhook integration
+- **Reduced Infrastructure**: Eliminates need for custom VAD, STT, TTS, and turn-taking logic
+- **Premium Voice Quality**: Access to 5k+ voices across 31 languages
+- **Cost Efficiency**: $0.08/minute on business plan vs. custom infrastructure maintenance
+
+### Core Architecture Principles:
+- **Webhook-Driven Personalization**: Each business gets custom voice agents configured via real-time webhooks
+- **Configuration over Code**: Business settings drive conversation behavior without code changes
+- **Database Integration**: ElevenLabs conversations logged to StudioConnect database for analytics
+- **Seamless Fallbacks**: Integration with existing OpenAI services for complex queries
 
 ---
 
 ## 2. Project Overview
 
-The StudioConnect AI platform is an **enterprise-grade, voice-first AI communications system** designed for high-stakes business interactions. It provides a highly reliable, intelligent, and conversational AI agent that integrates deeply into business workflows.
+The StudioConnect AI platform is an **enterprise-grade, voice-first AI communications system** designed for high-stakes business interactions. It leverages ElevenLabs Conversational AI platform to provide professional, reliable, and intelligent voice agents that integrate deeply into business workflows.
 
 ### Key Technologies:
 
 - **Runtime**: Node.js 20.x
 - **Language**: TypeScript 5.x
-- **Framework**: Express.js 4.x with `ws` for WebSockets
+- **Framework**: Express.js 4.x with webhook integrations
 - **Database**: PostgreSQL 15+ with `pgvector`
 - **Session Store / Caching**: Redis
 - **ORM**: Prisma 5.x
-- **AI**: OpenAI (GPT-4 for language, Whisper for transcription), Multi-provider TTS
-- **Primary TTS**: ElevenLabs (via `BulletproofElevenLabsClient`)
-- **Voice**: Twilio Media Streams
+- **Primary Voice Platform**: ElevenLabs Conversational AI
+- **AI Language Models**: OpenAI GPT-4, Claude, Gemini (via ElevenLabs)
+- **Voice Infrastructure**: Twilio + ElevenLabs native integration
 - **Authentication**: JWT
 - **Frontend Dashboard**: Next.js 14 App Router
 - **Containerization**: Docker & Docker Compose
 
 ### Major System Features:
-1.  **Bulletproof Voice Agent**: A highly resilient voice agent with multi-provider fallbacks, advanced VAD, and enterprise-grade error recovery.
-2.  **Intelligent Lead Qualification**: A dynamic, configuration-driven engine for qualifying new leads over the phone, including urgency detection and automated escalation.
-3.  **Deep Project Management Integrations**: Secure, OAuth 2.0-based, bi-directional synchronization with Jira, Asana, and Monday.com.
-4.  **Configuration-Driven Behavior**: Centralized management of system settings for performance, reliability, and voice characteristics.
+1. **ElevenLabs Conversational AI Integration**: Native voice platform with webhook personalization
+2. **Multi-Tenant Voice Configuration**: Dynamic agent settings per business
+3. **Intelligent Client Recognition**: Existing clients receive personalized greetings
+4. **Deep Project Management Integrations**: OAuth 2.0-based synchronization with Jira, Asana, Monday.com
+5. **Professional Call Transfer**: Seamless escalation to human team members
 
 ---
 
 ## 3. System Architecture
 
-The architecture is designed for scalability and resilience, with clear separation of concerns.
+The architecture leverages ElevenLabs as the primary voice platform with webhook-driven personalization.
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │   SMB Website   │   │ Voice Callers   │   │ Admin Dashboard │
-│   (widget.js)   │   │(Twilio Media)   │   │  (Next.js App)  │
+│   (widget.js)   │   │(Twilio->11Labs) │   │  (Next.js App)  │
 └────────┬────────┘   └────────┬────────┘   └────────┬────────┘
          │                     │                     │
-         │ HTTPS               │ WebSocket (WSS)     │ HTTPS
+         │ HTTPS               │ ElevenLabs Agent    │ HTTPS
          │                     │                     │
          ▼                     ▼                     ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│             StudioConnect AI Backend (Express.js)                │
+│           StudioConnect AI Backend (Express.js)                  │
 │ ┌──────────────────┐ ┌──────────────────┐ ┌─────────────────────┐ │
-│ │   REST API /     │ │ WebSocket Server │ │      Admin API      │ │
-│ │  Webhook Handler │ │(ws) for Twilio   │ │ (for Next.js dash)  │ │
+│ │   REST API /     │ │ Webhook Handlers │ │      Admin API      │ │
+│ │  Chat Widget     │ │(ElevenLabs Call  │ │ (for Next.js dash)  │ │
+│ │                  │ │ Personalization) │ │                     │ │
 │ └────────┬─────────┘ └────────┬─────────┘ └──────────┬──────────┘ │
 │          │                    │                      │            │
 │ ┌────────▼────────────────────▼──────────────────────▼───────────┐ │
-│ │                Core Services & Business Logic                  │ │
+│ │              Business Logic & Configuration                    │ │
 │ │ ┌────────────────┐ ┌────────────────┐ ┌───────────────────────┐ │ │
-│ │ │ Realtime Agent │ │ Lead Qualifier │ │ PM Integration Service│ │ │
-│ │ │ Service (Voice)│ │   (Dynamic)    │ │(Asana, Jira, Monday)  │ │ │
+│ │ │ElevenLabs Agent│ │ Lead Qualifier │ │ PM Integration Service│ │ │
+│ │ │   Manager      │ │   (Dynamic)    │ │(Asana, Jira, Monday)  │ │ │
 │ │ └───────┬────────┘ └───────┬────────┘ └───────────┬───────────┘ │ │
 │ └─────────│──────────────────│───────────────────────│───────────┘ │
 └───────────│──────────────────│───────────────────────│─────────────┘
+            │                  │                       │
       ┌─────▼─────┐      ┌─────▼─────┐           ┌─────▼─────┐
 ┌─────┴─────┐┌────┴───────────┐┌─────┴─────┐┌─────┴─────┐┌─────┴─────┐
-│ PostgreSQL││     Redis      ││  OpenAI   ││ ElevenLabs││   Twilio  │
-│(pgvector) ││(Cache/Session) ││(GPT/Whisper)││ (TTS)     ││(PSTN/Voice)│
+│ PostgreSQL││     Redis      ││ElevenLabs ││   OpenAI  ││   Twilio  │
+│(Business  ││(Cache/Session) ││Conversational││(Analysis) ││(Phone #s) │
+│ Config)   ││                ││    AI     ││           ││           │
 └───────────┘└────────────────┘└───────────┘└───────────┘└───────────┘
 ```
+
+### ElevenLabs Integration Flow
+1. **Client calls Twilio number** → Twilio routes to configured ElevenLabs agent
+2. **ElevenLabs agent initiated** → Webhook calls `/api/voice/elevenlabs-personalization`
+3. **Webhook returns configuration** → Business-specific welcome message, voice, system prompt
+4. **Personalized conversation** → ElevenLabs handles all voice processing
+5. **Call completion** → Conversation events logged to StudioConnect database
+
 ---
 
 ## 4. Core Services & Components
 
-This section outlines the key services that form the backbone of the application.
+This section outlines the key services that support the ElevenLabs integration.
+
+### `ElevenLabsConversationalAgent`
+- **Location**: `src/services/elevenlabsConversationalAgent.ts`
+- **Description**: Manages ElevenLabs agent creation, configuration, and webhook handling
+- **Key Responsibilities**:
+  - Creating and configuring ElevenLabs agents via API
+  - Handling webhook personalization requests
+  - Loading business-specific configuration from database
+  - Managing conversation logging and call summaries
+
+### Multi-Tenant Webhook Handler
+- **Location**: `src/api/voiceRoutes.ts` → `/elevenlabs-personalization`
+- **Description**: Provides dynamic agent configuration based on business settings
+- **Key Responsibilities**:
+  - Identifying business by called phone number
+  - Loading custom welcome messages and system prompts
+  - Selecting appropriate voice based on client type
+  - Returning ElevenLabs-compatible configuration object
+
+### `AgentConfig` Database Integration
+- **Location**: Prisma schema + business configuration
+- **Description**: Stores business-specific voice agent settings
+- **Key Fields**:
+  - `elevenlabsAgentId`: Links to ElevenLabs agent
+  - `elevenlabsVoice`: Custom voice selection
+  - `personaPrompt`: Business-specific conversation style
+  - `welcomeMessage`: Custom greeting per business
 
 ### `RealtimeAgentService`
 -   **Location**: `src/services/realtimeAgentService.ts`
@@ -145,7 +189,47 @@ This section outlines the key services that form the backbone of the application
 
 ---
 
-## 5. Project Management Integrations
+## 5. Multi-Tenant Voice Configuration
+
+The platform supports complete customization of voice agents per business through ElevenLabs webhook personalization.
+
+### Configuration Flow
+1. **Business Setup**: Admin creates ElevenLabs agent via dashboard
+2. **Webhook Configuration**: ElevenLabs agent configured with personalization webhook
+3. **Real-time Personalization**: Each call triggers webhook to load business settings
+4. **Dynamic Response**: Agent uses custom welcome message, voice, and conversation style
+
+### Database Schema
+```typescript
+model AgentConfig {
+  id                    String   @id @default(cuid())
+  businessId            String   @unique
+  elevenlabsAgentId     String?  // Links to ElevenLabs agent
+  elevenlabsVoice       String?  // Custom voice selection
+  personaPrompt         String   @default("Professional AI assistant...")
+  welcomeMessage        String   @default("Hello! How can I help you today?")
+  // ... other fields
+}
+```
+
+### Webhook Personalization Response
+```typescript
+interface ElevenLabsPersonalizationResponse {
+  first_message: string           // Custom welcome message
+  system_prompt: string          // Business-specific conversation style  
+  voice_id?: string              // Custom voice selection
+  voice_settings?: VoiceSettings // Voice quality parameters
+}
+```
+
+### Voice Selection Logic
+- **New callers**: Bright, uplifting Hope voice for lead generation
+- **Existing clients**: Empathetic Jessica voice for relationship management
+- **Custom override**: Business can specify preferred voice in dashboard
+
+---
+
+## 6. Project Management Integrations
 
 The platform uses a provider-based architecture to integrate with PM tools. This ensures modularity and maintainability.
 
@@ -166,7 +250,7 @@ The platform uses a provider-based architecture to integrate with PM tools. This
 
 ---
 
-## 6. Development Setup
+## 7. Development Setup
 
 ### Environment Variables
 Create a `.env` file from `.env.example` and fill in the required values.
@@ -185,231 +269,329 @@ REDIS_URL="redis://localhost:6379"
 
 #-- Core Services --#
 JWT_SECRET="a-very-strong-secret-key"
-FROM_EMAIL="noreply@studioconnect.ai" # For sending lead notifications
-SENDGRID_API_KEY="" # Optional, if using SendGrid for email
+FROM_EMAIL="noreply@studioconnect.ai"
+SENDGRID_API_KEY="" # For email notifications
 
-#-- Twilio (Voice) --#
+#-- Twilio (Phone Numbers) --#
 TWILIO_ACCOUNT_SID=""
 TWILIO_AUTH_TOKEN=""
 TWILIO_PHONE_NUMBER="" # The Twilio number clients will call
 
-#-- OpenAI (AI Language Model & Transcription) --#
+#-- ElevenLabs Conversational AI (Primary Voice Platform) --#
+ELEVENLABS_API_KEY=""
+ELEVENLABS_AGENT_ID="" # Default agent ID for new businesses
+
+#-- OpenAI (Analysis & Complex Queries) --#
 OPENAI_API_KEY=""
 
-#-- ElevenLabs (Primary TTS Provider) --#
-ELEVENLABS_API_KEY=""
-ELEVENLABS_VOICE_ID="pNInz6obpgDQGcFmaJgB" # Default: Rachel (professional female)
-ELEVENLABS_MODEL_ID="eleven_turbo_v2_5"
-
-#-- Project Management Integrations (OAuth Credentials) --#
-# Asana
+#-- Project Management Integrations --#
 ASANA_CLIENT_ID=""
 ASANA_CLIENT_SECRET=""
-
-# Jira
 JIRA_CLIENT_ID=""
 JIRA_CLIENT_SECRET=""
-
-# Monday.com
 MONDAY_CLIENT_ID=""
 MONDAY_CLIENT_SECRET=""
-
-#-- Development Flags --#
-# Set to true to seed the database with mock project data on startup
-SEED_MOCK_PROJECTS=false
 ```
 
-### Database Setup
-1.  Ensure you have Docker and Docker Compose installed.
-2.  Run `docker-compose up -d` to start the PostgreSQL and Redis containers.
-3.  Run `npx prisma migrate dev` to apply database migrations and create the schema.
-4.  (Optional) Run `npx prisma db seed` to run the seed script if one is configured.
+### Setup Steps
 
-### Running the Application
-```bash
-# Install dependencies
-npm install
+1. **Clone and Install**:
+   ```bash
+   git clone <repository-url>
+   cd studioconnect-ai
+   npm install
+   ```
 
-# Run the development server
-npm run dev
-```
+2. **Database Setup**:
+   ```bash
+   # Start local PostgreSQL and Redis
+   docker-compose up -d db redis
+   
+   # Run migrations
+   npx prisma migrate dev
+   
+   # Generate Prisma client
+   npx prisma generate
+   ```
 
-### Development Scripts
--   `npm run dev`: Starts the server with `nodemon` for auto-reloading.
--   `npm run build`: Compiles the TypeScript code to JavaScript.
--   `npm start`: Starts the compiled application (for production).
--   `npm test`: Runs the Jest test suite.
--   `npx ts-node scripts/seedAdmin.ts`: Creates a default admin user and business.
--   `npx ts-node scripts/seedMockProjects.ts`: Seeds the database with mock project data for a business (requires a business ID).
--   `npx ts-node scripts/stressTest.ts`: Runs a load test against the voice endpoints.
+3. **ElevenLabs Agent Setup**:
+   ```bash
+   # Create your first ElevenLabs agent
+   npx ts-node src/scripts/setupElevenLabsAgent.ts <business-id>
+   ```
+
+4. **Dashboard Setup**:
+   ```bash
+   cd dashboard
+   npm install
+   npm run build
+   cd ..
+   ```
+
+5. **Start Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+### Development Workflow
+
+1. **Voice Agent Testing**: Use ElevenLabs platform directly to test agent behavior
+2. **Webhook Testing**: Use ngrok to expose local webhook endpoints
+3. **Database Changes**: Always create Prisma migrations for schema updates
+4. **Multi-Tenant Testing**: Create multiple businesses to test personalization
 
 ---
-## 7. API Documentation
-The REST API is the primary interface for the frontend dashboard. All endpoints are protected by JWT-based authentication. Refer to the route definitions in `src/api/` for a complete list of endpoints and their functionality. Key route files include:
-// ... existing code ...
--   `src/api/voiceRoutes.ts`.
--   `src/api/integrationRoutes.ts`: For managing PM tool connections.
 
----
+## 8. API Documentation
 
-## 8. Core Services
-// ... existing code ...
-This section describes the key services that implement the core business logic of the platform.
+### ElevenLabs Integration Endpoints
 
-### 14.1 Real-time Agent Service (`realtimeAgentService.ts`)
+#### POST `/api/voice/elevenlabs-personalization`
+**Purpose**: Webhook endpoint for ElevenLabs agent personalization
 
-This is the heart of the voice integration. It manages the real-time, bidirectional communication between Twilio and the OpenAI Real-time API. It handles setting up the WebSocket connections, managing the session, and streaming audio data.
-
-### 14.2 Voice Session Service (`voiceSessionService.ts`)
-// ... existing code ...
-This service manages the lifecycle of a voice call session. It tracks the state of the call, stores the transcript, and logs events related to the call.
-
-### 14.3 Notification Service (`notificationService.ts`)
-
-Handles all outbound notifications, including emails for lead summaries and alerts. It uses Nodemailer and can be configured with different transport options like SendGrid.
-
-### 14.4 OpenAI Service (`openai.ts`)
-// ... existing code ...
-A wrapper around the OpenAI client library. It provides convenient methods for interacting with OpenAI's APIs, including chat completions and other AI functionalities.
-
-### 14.5 WebSocket Server (`websocketServer.ts`)
-
-This service sets up and manages the WebSocket server that listens for connections from Twilio Media Streams. It's the entry point for all real-time voice communication.
-
-### 14.6 Database Service (`db.ts`)
-
-Provides a singleton instance of the Prisma client for database interactions.
-
-## 15. Development Setup
-// ... existing code ...
-## Emergency Handling System
-
-### Emergency Detection and Response Flow
-
-1. **Initial Detection**
-// ... existing code ...
-   - Keywords and context analysis, powered by `LeadQualifier`.
-
-2. **Customer Experience**
-   ```
-// ... existing code ...
-   Emergency Detection
-   ↓
-   Severity Assessment
-// ... existing code ...
-   ↓
-   High Severity (URGENT flag):
-     → Offer Options:
-       1. Immediate Connection (30s)
-// ... existing code ...
-       2. Quick Info Gathering
-   ↓
-   Based on Choice:
-// ... existing code ...
-     A. Immediate Connection
-        → Emergency Team Transfer
-        → Confirmation Message
-     
-// ... existing code ...
-     B. Info Gathering
-        → Essential Questions:
-// ... existing code ...
-           - Address/Location
-           - Name
-           - Phone
-// ... existing code ...
-           - Emergency Details
-        → Lead Processing
-        → Business Notification
-   ```
-// ... existing code ...
-# Project Management Integrations
-
-**Version:** 2.0  
-**Status:** Implemented  
-**Last Updated:** [Current Date]
-
-## 1. Overview
-// ... existing code ...
-This section documents the one-way data sync from client PM tools (Asana, Jira, Monday.com) into StudioConnect AI, giving the agent real-time project context.  The design is modular and easily extensible for new providers.
-
-## 2. Core Architecture
-// ... existing code ...
-All provider logic lives behind a common interface, keeping the core application agnostic of third-party specifics.
-
-### 2.1 Directory Structure
-```text
-// ... existing code ...
-src/
-└── services/
-    └── pm-providers/
-        ├── pm.provider.interface.ts  // Contract for providers
-// ... existing code ...
-        ├── asana.provider.ts         // Asana implementation
-        ├── jira.provider.ts          // Jira implementation
-        └── monday.provider.ts        // Monday.com implementation
-```
-
-### 2.2 `ProjectManagementProvider` Interface
-```typescript
-// src/services/pm-providers/pm.provider.interface.ts
-export interface ProjectManagementProvider {
-  /** Validate credentials & establish a connection using OAuth 2.0 */
-  connect(credentials: Record<string, any>): Promise<boolean>
-
-  /** One-way initial sync of all projects/tasks */
-// ... existing code ...
-  syncProjects(businessId: string): Promise<{ projectCount: number; taskCount: number }>
-
-  /** Create provider-specific webhooks */
-// ... existing code ...
-  setupWebhooks(businessId: string): Promise<{ webhookId: string }>
-
-  /** Handle incoming webhook payloads */
-  handleWebhook(payload: any, businessId: string): Promise<void>
-
-  /** Translate provider data to internal Project model */
-  normalizeData(providerData: any, businessId: string): Partial<Project>
+**Request Body** (from ElevenLabs):
+```json
+{
+  "caller_id": "+15551234567",
+  "called_number": "+15559876543", 
+  "agent_id": "conv_agent_123",
+  "call_sid": "CA123..."
 }
 ```
 
-### 2.3 Data Normalisation & Storage
-// ... existing code ...
-Each provider maps external structures to our `Project` schema (Prisma).  Primary key mapping is `pmToolId`; status fields map to `status`.
+**Response**:
+```json
+{
+  "first_message": "Hello! Thank you for calling Aurora Branding...",
+  "system_prompt": "You are a professional AI assistant for Aurora Branding...",
+  "voice_id": "kdmDKE6EkgrWrrykO9Qt",
+  "voice_settings": {
+    "stability": 0.45,
+    "similarity_boost": 0.85,
+    "style": 0.30
+  }
+}
+```
 
-### 2.4 Webhook Handling
-// ... existing code ...
-All PM webhooks post to `POST /api/webhooks/pm/:provider`.
-1. Controller identifies provider and loads implementation.
-2. Request authenticity validated (signatures, tokens, etc.).
-3. Delegates to `handleWebhook` for upserts.
+#### POST `/api/voice/elevenlabs-events`
+**Purpose**: Receive conversation events from ElevenLabs
+
+**Request Body**:
+```json
+{
+  "event_type": "conversation.completed",
+  "conversation_id": "conv_123",
+  "call_sid": "CA123...",
+  "transcript": "...",
+  "duration": 120
+}
+```
+
+### Business Configuration Endpoints
+
+#### GET `/api/businesses/:id/agent-config`
+**Purpose**: Get current agent configuration for business
+
+#### PUT `/api/businesses/:id/agent-config`
+**Purpose**: Update agent configuration
+
+**Request Body**:
+```json
+{
+  "elevenlabsVoice": "kdmDKE6EkgrWrrykO9Qt",
+  "welcomeMessage": "Hello! Welcome to our agency...",
+  "personaPrompt": "You are a professional assistant..."
+}
+```
 
 ---
 
-## 3. Provider Implementations
+## 9. Database Schema
 
-### 3.1 AsanaProvider (`asana.provider.ts`)
-• Auth: OAuth 2.0
-• Initial sync via `searchTasksInWorkspace`.  Pagination handled via `offset`.
-• Webhooks created with `POST /api/1.0/webhooks`, handshake via `X-Hook-Secret`.
-• Payload validation using `X-Hook-Signature`.
+### Core Tables for ElevenLabs Integration
 
-### 3.2 JiraProvider (`jira.provider.ts`)
-• Auth: OAuth 2.0 (with automatic token refresh)
-• Initial sync via `GET /rest/api/3/search` with JQL.
-• Webhooks via `POST /rest/api/3/webhook` subscribing to `jira:issue_*` events.
-• Optional URL token for authenticity.
+```sql
+-- Agent configuration per business
+CREATE TABLE "AgentConfig" (
+  "id" TEXT PRIMARY KEY,
+  "businessId" TEXT UNIQUE NOT NULL,
+  "elevenlabsAgentId" TEXT, -- ElevenLabs agent ID
+  "elevenlabsVoice" TEXT,   -- Custom voice selection
+  "personaPrompt" TEXT DEFAULT 'Professional AI assistant',
+  "welcomeMessage" TEXT DEFAULT 'Hello! How can I help you today?',
+  -- ... other fields
+);
 
-### 3.3 MondayProvider (`monday.provider.ts`)
-• Auth: OAuth 2.0
-• Initial sync uses GraphQL `boards` & `items_page` queries with cursor pagination.
-• Webhooks via `create_webhook` mutation and challenge-response handshake.
+-- Conversation logging for ElevenLabs calls
+CREATE TABLE "Conversation" (
+  "id" TEXT PRIMARY KEY,
+  "businessId" TEXT NOT NULL,
+  "sessionId" TEXT,
+  "messages" JSONB,
+  "clientId" TEXT,
+  "phoneNumber" TEXT,
+  "endedAt" TIMESTAMP,
+  -- ... other fields
+);
+
+-- Call logs for analytics
+CREATE TABLE "CallLog" (
+  "callSid" TEXT PRIMARY KEY,
+  "businessId" TEXT NOT NULL,
+  "conversationId" TEXT,
+  "from" TEXT NOT NULL,
+  "to" TEXT NOT NULL,
+  "source" TEXT DEFAULT 'elevenlabs',
+  "type" TEXT DEFAULT 'VOICE',
+  "direction" TEXT DEFAULT 'INBOUND',
+  "status" TEXT,
+  "content" TEXT,
+  "metadata" JSONB
+);
+```
 
 ---
 
-## 4. Future Providers
-// ... existing code ...
-Implementing a new provider involves:
-1. Creating `<tool>.provider.ts` in `pm-providers`.
-2. Implementing all methods from the interface.
-3. Registering the provider in the factory used by the webhook controller.
+## 10. Deployment Guide
+
+### Production Deployment with ElevenLabs
+
+1. **ElevenLabs Agent Configuration**:
+   - Create production ElevenLabs agents for each business
+   - Configure webhook URLs to point to production endpoints
+   - Set up agent authentication and override permissions
+
+2. **Environment Configuration**:
+   ```bash
+   # Production .env
+   NODE_ENV=production
+   HOST="https://your-domain.com"
+   ELEVENLABS_API_KEY="your-production-key"
+   ```
+
+3. **Webhook Security**:
+   - Implement webhook signature verification
+   - Use HTTPS for all webhook endpoints
+   - Rate limit webhook endpoints
+
+4. **Monitoring**:
+   - Monitor ElevenLabs agent performance
+   - Track webhook response times
+   - Set up alerts for failed personalization requests
+
+### Docker Deployment
+```dockerfile
+# Updated Dockerfile for ElevenLabs integration
+FROM node:20-alpine
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+RUN npx prisma generate
+RUN npm run build
+
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+---
+
+## 11. Security Considerations
+
+### ElevenLabs Integration Security
+
+1. **API Key Management**:
+   - Store ElevenLabs API keys in secure environment variables
+   - Rotate keys regularly
+   - Use separate keys for development and production
+
+2. **Webhook Security**:
+   - Implement request signature verification
+   - Validate webhook source IP addresses
+   - Rate limit webhook endpoints
+
+3. **Agent Access Control**:
+   - Enable authentication on ElevenLabs agents
+   - Implement proper agent ID management
+   - Monitor agent usage and costs
+
+4. **Data Privacy**:
+   - Log conversation data according to privacy policies
+   - Implement data retention policies
+   - Provide data deletion capabilities
+
+---
+
+## 12. Testing Strategy
+
+### ElevenLabs Integration Testing
+
+1. **Webhook Testing**:
+   ```bash
+   # Test personalization webhook
+   curl -X POST http://localhost:3000/api/voice/elevenlabs-personalization \
+     -H "Content-Type: application/json" \
+     -d '{"caller_id":"+15551234567","called_number":"+15559876543"}'
+   ```
+
+2. **Agent Configuration Testing**:
+   - Test agent creation via API
+   - Verify webhook configuration
+   - Test multi-tenant personalization
+
+3. **Integration Testing**:
+   - Test complete call flow end-to-end
+   - Verify conversation logging
+   - Test call analytics and reporting
+
+### Testing Tools
+- **Postman**: For API endpoint testing
+- **ngrok**: For local webhook testing
+- **ElevenLabs Dashboard**: For agent testing and monitoring
+
+---
+
+## 13. Troubleshooting
+
+### Common ElevenLabs Integration Issues
+
+1. **Webhook Not Called**:
+   - Verify ElevenLabs agent webhook configuration
+   - Check webhook URL accessibility
+   - Validate webhook endpoint authentication
+
+2. **Personalization Not Applied**:
+   - Check webhook response format
+   - Verify business configuration in database
+   - Test webhook endpoint manually
+
+3. **Voice Quality Issues**:
+   - Verify voice ID validity
+   - Check voice settings parameters
+   - Test with different premium voices
+
+4. **Call Logging Failures**:
+   - Check database connection
+   - Verify Prisma schema is up to date
+   - Monitor conversation event webhook
+
+### Debug Commands
+```bash
+# Check ElevenLabs agent status
+curl -H "xi-api-key: $ELEVENLABS_API_KEY" \
+  "https://api.elevenlabs.io/v1/conversational-ai/agents"
+
+# Test webhook personalization
+npm run test:webhook
+
+# Monitor conversation logs
+npx prisma studio
+```
+
+### Performance Monitoring
+- **ElevenLabs Dashboard**: Monitor agent performance and usage
+- **Application Logs**: Track webhook response times and errors
+- **Database Metrics**: Monitor conversation logging performance
+- **Cost Tracking**: Monitor ElevenLabs usage and costs per business
