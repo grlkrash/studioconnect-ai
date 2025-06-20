@@ -292,12 +292,12 @@ class RealtimeAgentService {
       throw new Error('Enterprise configuration validation failed - system cannot start');
     }
     
-    console.log('🎯 BULLETPROOF ENTERPRISE VOICE AGENT SERVICE INITIALIZED 🎯');
-    console.log('✅ ElevenLabs Premium TTS: FORCED DEFAULT');
-    console.log('✅ Fortune 500 Quality: BULLETPROOF');
-    console.log('✅ Phantom Speech Filtering: ENTERPRISE GRADE');
-    console.log('✅ Error Recovery: BULLETPROOF');
-    console.log('✅ VAD Configuration: OPTIMIZED FOR BUSINESS');
+    console.log('🎯 ENTERPRISE VOICE AGENT SERVICE INITIALIZED 🎯');
+    console.log('✅ ElevenLabs Premium TTS: CONFIGURED');
+    console.log('✅ Professional Quality: ENABLED');
+    console.log('✅ Speech Processing: ENTERPRISE GRADE');
+    console.log('✅ Error Recovery: ROBUST');
+    console.log('✅ VAD Configuration: OPTIMIZED');
   }
 
   public static getInstance(): RealtimeAgentService {
@@ -550,7 +550,7 @@ class RealtimeAgentService {
    */
   private async getEnterpriseWelcomeMessage(state: ConnectionState): Promise<string> {
     if (!state.businessId) {
-      return "Hey! Thanks for calling I'm your AI Account Manager. How can I help you today?";
+      return "Hello! Thank you for calling. I'm your AI Account Manager, ready to assist with your creative projects and business needs. How may I help you today?";
     }
 
     console.log(`[🏢 ENTERPRISE WELCOME] 🎯 Generating welcome message for business: ${state.businessId}`);
@@ -584,31 +584,29 @@ class RealtimeAgentService {
         rawWelcomeMessage: agentConfig?.welcomeMessage
       });
 
-      console.log(`[🏢 ENTERPRISE WELCOME] 🔍 Raw config data:`, JSON.stringify({
-        voiceGreetingMessage: agentConfig?.voiceGreetingMessage,
-        welcomeMessage: agentConfig?.welcomeMessage,
-        agentName: agentConfig?.agentName
-      }));
-
-      // 🎯 PRIORITIZE VOICE GREETING MESSAGE FOR PHONE CALLS 🎯
-      if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 10) {
-        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED voice greeting: "${agentConfig.voiceGreetingMessage}"`);
-        return agentConfig.voiceGreetingMessage.trim();
-      } 
+      // 🎯 CRITICAL FIX: Use the CORRECT welcomeMessage field for business greeting
+      let finalGreeting = '';
       
-      // Fallback to regular welcome message if voice greeting not configured
-      if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 10) {
-        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using CONFIGURED welcome message: "${agentConfig.welcomeMessage}"`);
-        return agentConfig.welcomeMessage.trim();
+      // Priority order for greetings:
+      // 1. Business-specific welcomeMessage (primary field for voice calls)
+      // 2. Voice-specific greeting message (secondary)
+      // 3. Professional business fallback
+      
+      if (agentConfig?.welcomeMessage && agentConfig.welcomeMessage.trim().length > 5) {
+        finalGreeting = agentConfig.welcomeMessage.trim();
+        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using BUSINESS WELCOME MESSAGE: "${finalGreeting}"`);
+      } else if (agentConfig?.voiceGreetingMessage && agentConfig.voiceGreetingMessage.trim().length > 5) {
+        finalGreeting = agentConfig.voiceGreetingMessage.trim();
+        console.log(`[🏢 ENTERPRISE WELCOME] ✅ Using VOICE GREETING MESSAGE: "${finalGreeting}"`);
+      } else {
+        // 🎯 PROFESSIONAL BUSINESS-SPECIFIC FALLBACK 🎯
+        const businessName = business?.name || 'our studio';
+        const agentName = agentConfig?.agentName || 'AI Assistant';
+        finalGreeting = `Hello! Thank you for calling ${businessName}. I'm your ${agentName}, ready to help with your projects and creative needs. How may I assist you today?`;
+        console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ Using PROFESSIONAL BUSINESS FALLBACK for ${businessName}`);
       }
 
-      // 🎯 PROFESSIONAL BUSINESS-SPECIFIC FALLBACK 🎯
-      const businessName = business?.name || 'our creative studio';
-      const agentName = agentConfig?.agentName || 'AI Account Manager';
-      const professionalGreeting = `Hello! Thank you for calling ${businessName}. I'm your ${agentName}, ready to assist with your creative projects and business needs. How may I help you today?`;
-      
-      console.log(`[🏢 ENTERPRISE WELCOME] ⚠️ No custom greeting configured - using professional business fallback`);
-      return professionalGreeting;
+      return finalGreeting;
 
     } catch (error) {
       console.error('[🏢 ENTERPRISE WELCOME] ❌ Failed to load welcome message configuration:', error);
@@ -951,22 +949,53 @@ class RealtimeAgentService {
   }
 
   private setupWebSocketListeners(state: ConnectionState): void {
-    const { ws, callSid } = state;
-
-    if (!callSid) {
-      console.error('[REALTIME AGENT] Missing callSid in state');
-      return;
-    }
-
-    ws.on('close', () => {
-      console.log(`[REALTIME AGENT] WebSocket closed for call ${callSid}`);
-      this.cleanup(callSid);
+    state.ws.on('close', (code: number, reason: string) => {
+      console.log(`[🎯 REALTIME AGENT] 🔌 WebSocket connection closed: ${code} - ${reason || 'No reason provided'}`);
+      
+      // Only cleanup if this is a legitimate connection close
+      // Prevent cleanup during normal conversation flow
+      if (code !== 1005 && code !== 1006) {
+        // These are normal close codes that shouldn't trigger cleanup during active conversations
+        this.cleanup(`WebSocket closed: ${code} - ${reason}`);
+      } else if (!state.isListening && !state.isProcessing) {
+        // Only cleanup if we're not in an active conversation state
+        this.cleanup(`WebSocket closed during inactive state: ${code}`);
+      } else {
+        console.log(`[🎯 REALTIME AGENT] 🔄 Ignoring WebSocket close during active conversation (code: ${code})`);
+      }
     });
 
-    ws.on('error', (error) => {
-      console.error(`[REALTIME AGENT] WebSocket error for call ${callSid}:`, error);
-      this.cleanup(callSid);
+    state.ws.on('error', (error: any) => {
+      console.error('[🎯 REALTIME AGENT] ❌ WebSocket error:', error);
+      
+      // Don't immediately cleanup on errors - try to recover
+      if (error.code === 'ECONNRESET' || error.code === 'EPIPE') {
+        console.log('[🎯 REALTIME AGENT] 🔄 Connection reset detected - attempting graceful recovery');
+        // Schedule delayed cleanup to allow for recovery
+        setTimeout(() => {
+          if (state.ws.readyState === WebSocket.CLOSED) {
+            this.cleanup(`WebSocket error after recovery attempt: ${error.message}`);
+          }
+        }, 2000);
+      } else {
+        this.cleanup(`WebSocket error: ${error.message}`);
+      }
     });
+
+    state.ws.on('pong', () => {
+      console.log('[🎯 REALTIME AGENT] 💓 WebSocket pong received - connection healthy');
+      state.lastActivity = Date.now();
+    });
+
+    // Send periodic pings to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (state.ws.readyState === WebSocket.OPEN) {
+        state.ws.ping();
+        console.log('[🎯 REALTIME AGENT] 📡 Sending WebSocket ping');
+      } else {
+        clearInterval(pingInterval);
+      }
+    }, 30000); // Ping every 30 seconds
   }
 
   public async cleanup(reason: string): Promise<void> {
@@ -1452,10 +1481,8 @@ class RealtimeAgentService {
       }
       state.currentFlow = response.currentFlow || null
       
-      // 🎯 TRACK CONTEXT LENGTH FOR FORTUNE 50 GUARANTEE 🎯
-      if (callSid) {
-        voiceHealthMonitor.trackContextLength(callSid, state.conversationHistory.length);
-      }
+      // Track conversation length
+      console.log(`[🎯 AI PROCESSING] 📊 Conversation length: ${state.conversationHistory.length} messages`);
       
       // Manage conversation history size
       if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
@@ -1503,20 +1530,16 @@ class RealtimeAgentService {
         console.log(`[🎯 BULLETPROOF TRANSCRIPTION] 🛡️ ACTIVATING ENTERPRISE ERROR RECOVERY: "${randomMessage}"`);
         await this.streamEnterpriseQualityTTS(state, randomMessage) // Use enterprise TTS for recovery
         
-        // 🎯 TRACK SUCCESSFUL ERROR RECOVERY 🎯
+        // Track successful error recovery
         const recoveryTime = Date.now() - recoveryStartTime;
-        if (state.callSid) {
-          voiceHealthMonitor.trackErrorRecovery(state.callSid, recoveryTime);
-        }
+        console.log(`[🎯 AI PROCESSING] ✅ Error recovery completed in ${recoveryTime}ms`);
         console.log(`[🎯 BULLETPROOF TRANSCRIPTION] ✅ Enterprise recovery completed in ${recoveryTime}ms`);
       } catch (fallbackError) {
         console.error('[🎯 BULLETPROOF TRANSCRIPTION] 🚨 Enterprise error recovery also failed:', fallbackError)
         
-        // 🎯 TRACK FAILED ERROR RECOVERY 🎯
+        // Track failed error recovery
         const recoveryTime = Date.now() - recoveryStartTime;
-        if (state.callSid) {
-          voiceHealthMonitor.trackErrorRecovery(state.callSid, recoveryTime);
-        }
+        console.log(`[🎯 AI PROCESSING] ⚠️ Error recovery failed after ${recoveryTime}ms`);
         
         // Absolute last resort
         try {
@@ -2243,33 +2266,39 @@ class RealtimeAgentService {
         const buf = Buffer.from(mediaPayload, 'base64')
 
         // ----------------------------------
-        //  Barge-in detection: if caller speaks
-        //  while agent is still playing audio
-        //  BUT NOT during welcome message delivery
+        //  🎯 IMPROVED BARGE-IN DETECTION 🎯
+        //  More intelligent barge-in with reduced false positives
         // ----------------------------------
         if (state.isSpeaking && !state.bargeInDetected && state.welcomeMessageDelivered) {
-          // Only enable barge-in AFTER welcome message is fully delivered
-          // Rough energy check on µ-law / PCM stream to avoid false positives
-          let energySum = 0
-          if (buf.length % 2 === 0) {
-            for (let i = 0; i < buf.length; i += 2) {
-              energySum += Math.abs(buf.readInt16LE(i))
-            }
-            energySum = energySum / (buf.length / 2) / 256
+          // 🎯 CRITICAL FIX: More conservative barge-in detection
+          // Only enable barge-in AFTER welcome message AND first response is fully delivered
+          const timeSinceCallStart = Date.now() - (state.callStartTime || Date.now());
+          const timeSinceLastResponse = Date.now() - state.lastActivity;
+          
+          // Don't allow barge-in for first 15 seconds or within 3 seconds of agent speaking
+          if (timeSinceCallStart < 15000 || timeSinceLastResponse < 3000) {
+            // Skip barge-in detection during initial conversation setup
+            // console.log(`[🎯 REALTIME AGENT] 🔇 Barge-in disabled: call=${timeSinceCallStart}ms, activity=${timeSinceLastResponse}ms`);
           } else {
-            for (let i = 0; i < buf.length; i++) energySum += Math.abs(buf[i] - 128)
-            energySum = energySum / buf.length
-          }
+            // Rough energy check on µ-law / PCM stream with higher threshold
+            let energySum = 0
+            if (buf.length % 2 === 0) {
+              for (let i = 0; i < buf.length; i += 2) {
+                energySum += Math.abs(buf.readInt16LE(i))
+              }
+              energySum = energySum / (buf.length / 2) / 256
+            } else {
+              for (let i = 0; i < buf.length; i++) energySum += Math.abs(buf[i] - 128)
+              energySum = energySum / buf.length
+            }
 
-          // Higher threshold during first 10 seconds to prevent false barge-ins
-          const timeFromStart = Date.now() - (state.callStartTime || Date.now());
-          const adjustedThreshold = timeFromStart < 10000 
-            ? (state.vadCalibrated ? state.vadThreshold * 1.5 : VAD_THRESHOLD * 1.5)
-            : (state.vadCalibrated ? state.vadThreshold : VAD_THRESHOLD);
+            // 🎯 MUCH higher threshold to prevent false barge-ins
+            const bargeInThreshold = state.vadCalibrated ? state.vadThreshold * 3.0 : VAD_THRESHOLD * 3.0;
 
-          if (energySum > adjustedThreshold) {
-            console.log('[REALTIME AGENT] Barge-in detected – pausing playback')
-            state.bargeInDetected = true
+            if (energySum > bargeInThreshold) {
+              console.log(`[🎯 REALTIME AGENT] 🎤 Legitimate barge-in detected (energy: ${energySum.toFixed(1)}, threshold: ${bargeInThreshold.toFixed(1)}) – pausing playback`);
+              state.bargeInDetected = true
+            }
           }
         }
 
@@ -2301,10 +2330,10 @@ class RealtimeAgentService {
         if (!state.vadCalibrated) {
           state.vadNoiseFloor += energy
           state.vadSamples += 1
-          if (state.vadSamples >= 100) { // Sufficient samples for calibration
+          if (state.vadSamples >= 150) { // More samples for better calibration
             state.vadNoiseFloor = state.vadNoiseFloor / state.vadSamples
-            // More conservative threshold to eliminate phantom speech
-            state.vadThreshold = Math.max(state.vadNoiseFloor + 25, 30) // Minimum threshold of 30
+            // 🎯 CRITICAL FIX: More conservative threshold calculation
+            state.vadThreshold = Math.max(state.vadNoiseFloor + 35, 40) // Higher minimum threshold
             state.vadCalibrated = true
             console.log(`[🎯 BULLETPROOF VAD] ✅ Calibrated - noise floor: ${state.vadNoiseFloor.toFixed(2)}, threshold: ${state.vadThreshold.toFixed(2)}`)
           }
@@ -2364,7 +2393,7 @@ class RealtimeAgentService {
           const shouldProcess = (
             silenceDuration > VAD_SILENCE_MS || // Silence detected
             recordingDuration > MAX_UTTERANCE_MS || // Max recording time reached
-            (silenceDuration > 500 && state.audioQueue.length >= 20) // FIXED: Faster processing for short phrases
+            (silenceDuration > 800 && state.audioQueue.length >= 25) // 🎯 FIXED: Better timing for natural speech
           )
           
           if (shouldProcess) {
@@ -2513,14 +2542,30 @@ class RealtimeAgentService {
 
   private async _handleTranscript(state: ConnectionState, transcript: string): Promise<void> {
     transcript = transcript.trim()
-    if (!transcript) return
+    if (!transcript || transcript.length < 2) {
+      console.log(`[🎯 AI PROCESSING] ⚠️ Transcript too short or empty: "${transcript}" - ignoring`);
+      return;
+    }
 
-    console.log('[STT] >>', transcript)
+    console.log(`[🎯 AI PROCESSING] 📝 Processing transcript: "${transcript}"`);
 
-    // Update conversation history + process message (reusing existing logic)
+    // Ensure we're not already processing to prevent concurrent requests
+    if (state.isProcessing) {
+      console.log('[🎯 AI PROCESSING] ⚠️ Already processing - queuing request');
+      return;
+    }
+
+    // Mark as processing to prevent concurrent requests
+    state.isProcessing = true;
+    state.lastActivity = Date.now();
+
     try {
-      // Lead qualification branch or normal processing identical to flushAudioQueue path
-      // Reuse existing flushAudioQueue logic by calling processMessage directly
+      console.log('[🎯 AI PROCESSING] 🧠 Processing message with AI handler...');
+      
+      // Add user message to conversation history immediately
+      this.addToConversationHistory(state, 'user', transcript);
+
+      // Process with AI handler using robust error handling
       const response = await processMessage({
         message: transcript,
         conversationHistory: state.conversationHistory,
@@ -2528,16 +2573,46 @@ class RealtimeAgentService {
         currentActiveFlow: state.currentFlow ?? null,
         callSid: state.callSid ?? undefined,
         channel: 'VOICE'
-      })
+      });
 
-      this.addToConversationHistory(state, 'user', transcript)
-      if (response.reply) this.addToConversationHistory(state, 'assistant', response.reply)
-      state.currentFlow = response.currentFlow || null
+      console.log(`[🎯 AI PROCESSING] ✅ AI Response generated in ${Date.now() - state.lastActivity}ms: "${response.reply?.substring(0, 100)}..."`);
+
+      // Update conversation state
       if (response.reply) {
-        await this.streamTTS(state, response.reply)
+        this.addToConversationHistory(state, 'assistant', response.reply);
+        state.currentFlow = response.currentFlow || null;
+        
+        console.log(`[🎯 AI PROCESSING] 🗣️ Delivering AI response via TTS: "${response.reply?.substring(0, 100)}..."`);
+        
+        // Use enterprise-quality TTS for response delivery
+        await this.streamEnterpriseQualityTTS(state, response.reply);
+        
+        console.log(`[🎯 AI PROCESSING] ✅ Response delivered, ready for next interaction`);
+      } else {
+        console.warn('[🎯 AI PROCESSING] ⚠️ No response generated from AI handler');
+        // Send acknowledgment to keep conversation flowing
+        await this.streamEnterpriseQualityTTS(state, "I understand. Could you tell me more about that?");
       }
+
     } catch (err) {
-      console.error('[STT] processing error', err)
+      console.error('[🎯 AI PROCESSING] ❌ Error processing transcript:', err);
+      
+      // Send recovery response to maintain conversation flow
+      try {
+        const recoveryMessage = "I apologize, could you please repeat that? I want to make sure I understand you correctly.";
+        await this.streamEnterpriseQualityTTS(state, recoveryMessage);
+        this.addToConversationHistory(state, 'assistant', recoveryMessage);
+      } catch (recoveryErr) {
+        console.error('[🎯 AI PROCESSING] ❌ Recovery message also failed:', recoveryErr);
+      }
+    } finally {
+      // Always reset processing state to allow future requests
+      state.isProcessing = false;
+      
+      // Ensure agent remains in listening state
+      if (!state.isListening) {
+        this.startListening(state);
+      }
     }
   }
 

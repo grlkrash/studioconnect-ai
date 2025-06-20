@@ -123,14 +123,6 @@ router.get('/clients', authMiddleware, async (req: Request, res: Response) => {
   res.render('clients', { clients, successMessage: successMessageParam })
 })
 
-// Projects list page
-router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
-  if (!req.user) return res.redirect('/admin/login')
-  const projects = await prisma.project.findMany({ where: { businessId: req.user.businessId }, include: { client: true } })
-  const successMessageParam = typeof req.query.success === 'string' ? decodeURIComponent(req.query.success) : null
-  res.render('projects', { projects, successMessage: successMessageParam })
-})
-
 // Integrations page
 router.get('/integrations', authMiddleware, (req: Request, res: Response) => {
   if (!req.user) return res.redirect('/admin/login')

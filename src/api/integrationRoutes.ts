@@ -51,7 +51,7 @@ router.get('/:provider/oauth-start', authMiddleware, async (req: Request, res: R
         response_type: 'code',
         redirect_uri: `${appBaseUrl}/api/integrations/asana/oauth-callback`,
         state,
-        scope: 'read_user read_workspace',
+        scope: 'users:read workspaces:read tasks:read projects:read',
         code_challenge: challenge,
         code_challenge_method: 'S256',
       })

@@ -6,7 +6,6 @@ import {
   BookOpen,
   Users,
   Bell,
-  FolderOpen,
   Plug,
   Home,
   BarChart3,
@@ -79,11 +78,6 @@ const managementItems = [
     title: "Notification Settings",
     url: "/notifications",
     icon: Bell,
-  },
-  {
-    title: "Projects",
-    url: "/projects",
-    icon: FolderOpen,
   },
   {
     title: "Integrations",

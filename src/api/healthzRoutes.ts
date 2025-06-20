@@ -344,7 +344,7 @@ export const healthzRoutes = {
           metric: alert.metric,
           message: alert.message,
           timestamp: alert.timestamp,
-          breach: alert.type === 'CRITICAL'
+          breach: alert.severity === 'CRITICAL'
         })) : ['No recent alerts - system performing optimally'],
 
         // 🎯 ENTERPRISE STATUS 🎯
