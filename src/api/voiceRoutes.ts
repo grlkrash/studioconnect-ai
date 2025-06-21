@@ -771,4 +771,106 @@ router.post('/admin-update-agent-id', async (req, res) => {
   }
 })
 
+// 🎯 ELEVENLABS POST-CALL WEBHOOK – Persist detailed call analytics
+// This webhook is triggered by ElevenLabs after a call finishes
+router.post('/elevenlabs-post-call', async (req, res) => {
+  try {
+    const {
+      agent_id,
+      call_sid,
+      caller_id,
+      called_number,
+      analysis, // full ElevenLabs analysis payload (may be undefined)
+      ...rest
+    } = req.body
+
+    if (!call_sid) {
+      console.warn('[🎯 ELEVENLABS POST-CALL] Missing call_sid – ignoring')
+      return res.status(400).json({ error: 'call_sid required' })
+    }
+
+    console.log('[🎯 ELEVENLABS POST-CALL] 📝 Payload received for call', call_sid)
+
+    const normalizePhone = (num: string | null | undefined) =>
+      (num || '').replace(/[^0-9]/g, '')
+
+    // 1️⃣ Identify business by called_number (strict / digits-only) or by agent_id fallback
+    let business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: { agentConfig: true }
+    })
+
+    if (!business && called_number) {
+      const digits = normalizePhone(called_number)
+      business = await prisma.business.findFirst({
+        where: { twilioPhoneNumber: { endsWith: digits } },
+        include: { agentConfig: true }
+      })
+    }
+
+    if (!business && agent_id) {
+      business = await prisma.business.findFirst({
+        where: { agentConfig: { is: { elevenlabsAgentId: agent_id } } },
+        include: { agentConfig: true }
+      })
+    }
+
+    if (!business) {
+      console.error('[🎯 ELEVENLABS POST-CALL] ❌ No business found – payload will be logged only')
+      console.error('[🎯 ELEVENLABS POST-CALL] Payload:', req.body)
+      return res.status(202).json({ warning: 'business_not_found' })
+    }
+
+    // 2️⃣ Upsert Conversation by sessionId (= call_sid)
+    const conversation = await prisma.conversation.upsert({
+      where: { sessionId: call_sid },
+      update: {
+        endedAt: new Date(),
+        metadata: analysis ? analysis : req.body,
+        phoneNumber: caller_id ?? undefined,
+        messages: analysis?.conversation ? JSON.stringify(analysis.conversation) : undefined
+      },
+      create: {
+        businessId: business.id,
+        sessionId: call_sid,
+        messages: analysis?.conversation ? JSON.stringify(analysis.conversation) : '[]',
+        startedAt: new Date(),
+        endedAt: new Date(),
+        metadata: analysis ? analysis : req.body,
+        phoneNumber: caller_id ?? undefined
+      }
+    })
+
+    // 3️⃣ Upsert CallLog for visibility in dashboard
+    await prisma.callLog.upsert({
+      where: { callSid: call_sid },
+      update: {
+        content: analysis?.conversation_summary ?? undefined,
+        metadata: req.body,
+        status: 'COMPLETED'
+      },
+      create: {
+        callSid: call_sid,
+        businessId: business.id,
+        conversationId: conversation.id,
+        from: caller_id ?? 'unknown',
+        to: called_number ?? 'unknown',
+        source: 'elevenlabs',
+        metadata: req.body,
+        type: 'VOICE',
+        direction: 'INBOUND',
+        status: 'COMPLETED',
+        content: analysis?.conversation_summary ?? undefined
+      }
+    })
+
+    console.log('[🎯 ELEVENLABS POST-CALL] ✅ Call stored for business', business.name)
+
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('[🎯 ELEVENLABS POST-CALL] Error handling webhook:', error)
+    res.status(500).json({ error: 'post_call_processing_failed' })
+  }
+})
+
 export default router 
