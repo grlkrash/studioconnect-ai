@@ -205,6 +205,22 @@ The platform now leverages ElevenLabs' enterprise-grade Conversational AI platfo
 - **System Prompts**: Business-specific conversation patterns and escalation rules
 - **Call Transfer**: Native integration with Twilio for seamless human handoff
 
+#### Post-Call Analytics Webhook
+- **Endpoint**: `POST /api/voice/elevenlabs-post-call`
+- **Purpose**: Captures detailed call analytics and conversation data from ElevenLabs
+- **Configuration**: Set in ElevenLabs agent settings under "Post-call webhook URL"
+- **Data Captured**:
+  - Call duration and quality metrics
+  - Full conversation transcript with timestamps
+  - Sentiment analysis and conversation summary
+  - Action items and follow-up requirements
+  - Client satisfaction scores (if collected)
+- **Dashboard Integration**: All captured data is immediately available in:
+  - Call history tables
+  - Analytics dashboard with KPI cards
+  - Client interaction timelines
+  - Agent performance metrics
+
 #### Multi-Tenant Webhook Flow
 ```mermaid
 graph TD

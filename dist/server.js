@@ -65,6 +65,7 @@ const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes")
 const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
 const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
 const interactionRoutes_1 = __importDefault(require("./api/interactionRoutes"));
+const analyticsRoutes_1 = __importDefault(require("./api/analyticsRoutes"));
 const cron_1 = require("./services/projectSync/cron");
 const voiceHealthMonitor_1 = require("./monitor/voiceHealthMonitor");
 console.log("<<<<< STARTUP ENV VAR CHECK >>>>>");
@@ -288,6 +289,7 @@ app.use('/api/agent-config', agentConfigRoutes_1.default);
 app.use('/api/lead-questions', leadQuestionRoutes_1.default);
 app.use('/api/integrations', integrationRoutes_1.default);
 app.use('/api/interactions', interactionRoutes_1.default);
+app.use('/api/analytics', analyticsRoutes_1.default);
 app.use('/api/widget-config', widgetConfigRoutes_1.default);
 app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
 app.use('/api/healthz', healthzRoutes_1.healthzRouter);

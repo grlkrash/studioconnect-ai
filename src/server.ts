@@ -36,6 +36,7 @@ import integrationRoutes from './api/integrationRoutes'
 import webhookRoutes from './api/webhookRoutes'
 import callHistoryRoutes from './api/callHistoryRoutes'
 import interactionRoutes from './api/interactionRoutes'
+import analyticsRoutes from './api/analyticsRoutes'
 // TODO: Re-enable authRoutes import once TypeScript issues are resolved
 // import authRoutes from './api/authRoutes'
 import { startAsanaCron } from './services/projectSync/cron'
@@ -365,7 +366,8 @@ app.use('/api/clients', clientRoutes)
     // Removed conflicting calls route - dashboard handles this via Next.js API routes
     // app.use('/api/calls', callHistoryRoutes)
     app.use('/api/interactions', interactionRoutes)
-    app.use('/api/widget-config', widgetConfigRoutes)
+app.use('/api/analytics', analyticsRoutes)
+app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)
     app.use('/api/healthz', healthzRouter)
     

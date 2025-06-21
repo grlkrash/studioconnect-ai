@@ -512,3 +512,56 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Error Handling**: Comprehensive WebSocket error recovery
 
 *Built with ❤️ for Creative Agencies*
+
+## ➕ Onboarding a New Business & Voice Agent (Production)
+
+Follow **all** steps in order – missing any single item will break the phone flow.
+
+1. Database ⇢ Create Business
+   1. Open **Admin Dashboard → Businesses → Add**
+   2. Fill name, plan tier, primary domain, and **Twilio phone number** in E.164 (e.g. `+15135550123`).
+   3. Click **Save** – Prisma will create a `Business` and linked empty `AgentConfig` row.
+
+2. ElevenLabs ⇢ Create Agent
+   1. In the ElevenLabs console click **Create agent**.
+   2. Select **μ-law 8000 Hz** for **Input** *and* **Output** formats.
+   3. (Optional) Pick a premium voice. Leave *First message* & *System prompt* blank – these are overridden.
+   4. **Security tab**
+      • Toggle **Fetch conversation-initiation data** ON.
+      • Enable the override fields you want (`first_message`, `system_prompt`, `voice`, `text_only`).
+      • Recommended: leave **Require authentication** OFF.  If you must keep it ON, append `&xi_api_key=<KEY>` to the Twilio URL in step 4-b.
+   5. **Webhook URL** → `https://leads-support-agent.onrender.com/api/voice/elevenlabs-personalization`
+   6. Press **Save** and note the generated **agent_id** (e.g. `agent_01abc...`).
+
+3. Database ⇢ Link Agent ID
+   1. Run the helper script (or use psql/Prisma):
+      ```bash
+      npx ts-node src/scripts/setupElevenLabsAgent.ts <BUSINESS_ID> <AGENT_ID>
+      ```
+      This populates `AgentConfig.elevenlabsAgentId` and ensures defaults.
+
+4. Twilio ⇢ Point Number to ElevenLabs
+   1. Console → Phone Numbers → **Active numbers** → select the business number.
+   2. **Voice & Fax** → **A CALL COMES IN** webhook
+      • URL: `https://api.elevenlabs.io/v1/convai/conversation/phone_number?agent_id=<AGENT_ID>`
+      • Method: **POST**
+   3. Save changes.
+
+5. Smoke-Test
+   ```bash
+   curl -X POST \
+     https://leads-support-agent.onrender.com/api/voice/elevenlabs-personalization \
+     -H "Content-Type: application/json" \
+     -d '{"caller_id":"+15555550111","agent_id":"<AGENT_ID>","called_number":"+1XXXXXXXXXX","call_sid":"test_sid"}'
+   # → should return 200 with welcome_message/system_prompt
+   ```
+
+6. Live Call
+   • Dial the Twilio number from a mobile.  You should hear the business-specific greeting within ~2 seconds.
+
+Troubleshooting Checklist
+• 401 from ElevenLabs? → Turn OFF Require authentication or add `xi_api_key` query param.
+• "Application error" voice? → Confirm Twilio URL & agent_id.
+• No personalization? → Ensure webhook URL is reachable and business phone matches `twilioPhoneNumber`.
+
+> Automating onboarding?  Wrap steps 2–3 in `src/scripts/setupElevenLabsAgent.ts` inside your provisioning workflow.
