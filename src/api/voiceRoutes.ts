@@ -1479,4 +1479,108 @@ router.get('/check-aurora-config', async (req, res) => {
   }
 })
 
+// 🔧 ADMIN UPDATE - Fix Aurora Branding agent configuration
+router.post('/admin-fix-aurora-agent', async (req, res) => {
+  try {
+    console.log('[🔧 ADMIN FIX] Updating Aurora Branding agent configuration...')
+    
+    // Find Aurora Branding business
+    const business = await prisma.business.findFirst({
+      where: { name: { contains: 'Aurora' } },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.json({ error: 'Aurora Branding business not found' })
+    }
+    
+    console.log('[🔧 ADMIN FIX] Found business:', business.name)
+    
+    // Professional creative agency system prompt
+    const professionalSystemPrompt = `You are Maya, a professional AI Account Manager for Aurora Branding & Co, a premium creative agency specializing in brand strategy, web design, and marketing.
+
+PERSONALITY & ROLE:
+- Professional, knowledgeable, and solution-focused
+- Warm but business-appropriate tone
+- Project-centric mindset with creative industry expertise
+- Confident in discussing branding, design, and marketing services
+
+YOUR CORE CAPABILITIES:
+- Provide project status updates and timeline information
+- Answer questions about our creative services (branding, web design, marketing)
+- Qualify new leads and understand their project requirements
+- Schedule consultations with our creative team
+- Handle client inquiries professionally and efficiently
+
+CONVERSATION GUIDELINES:
+- Keep responses concise and actionable (2-3 sentences max)
+- Ask smart follow-up questions to understand needs
+- Use creative industry terminology appropriately
+- Always offer to connect with a team member for complex requests
+- Sound confident and knowledgeable about our services
+
+BUSINESS CONTEXT:
+- We're Aurora Branding & Co, a boutique creative agency
+- We specialize in brand identity, web design, and digital marketing
+- Our clients range from startups to established businesses
+- We pride ourselves on strategic, results-driven creative work
+
+ESCALATION TRIGGERS:
+- Detailed project scope discussions
+- Pricing and contract negotiations
+- Complex technical requirements
+- Creative strategy conversations
+- Urgent project issues
+
+Remember: You represent a premium creative agency. Every interaction should reflect our high standards and creative expertise. Be helpful, professional, and always ready to connect callers with our talented team when needed.`
+
+    // Professional welcome message
+    const professionalWelcomeMessage = `Hello! Thank you for calling Aurora Branding & Co. I'm Maya, your AI Account Manager. I'm here to help with your branding and creative projects, provide status updates, and connect you with our talented team. How can I assist you today?`
+    
+    // Update the agent configuration
+    if (business.agentConfig) {
+      await prisma.agentConfig.update({
+        where: { id: business.agentConfig.id },
+        data: {
+          personaPrompt: professionalSystemPrompt,
+          welcomeMessage: professionalWelcomeMessage,
+          voiceGreetingMessage: professionalWelcomeMessage,
+          agentName: 'Maya'
+        }
+      })
+      
+      console.log('[🔧 ADMIN FIX] ✅ Updated existing agent configuration')
+    } else {
+      // Create new agent configuration
+      await prisma.agentConfig.create({
+        data: {
+          businessId: business.id,
+          personaPrompt: professionalSystemPrompt,
+          welcomeMessage: professionalWelcomeMessage,
+          voiceGreetingMessage: professionalWelcomeMessage,
+          agentName: 'Maya',
+          elevenlabsVoice: 'pNInz6obpgDQGcFmaJgB'
+        }
+      })
+      
+      console.log('[🔧 ADMIN FIX] ✅ Created new agent configuration')
+    }
+    
+    res.json({
+      success: true,
+      message: 'Aurora Branding agent configuration updated successfully',
+      changes: {
+        agentName: 'Maya',
+        systemPromptLength: professionalSystemPrompt.length,
+        welcomeMessageLength: professionalWelcomeMessage.length,
+        voice: 'pNInz6obpgDQGcFmaJgB'
+      }
+    })
+    
+  } catch (error) {
+    console.error('[🔧 ADMIN FIX] Error:', error)
+    res.status(500).json({ error: 'Failed to update agent configuration' })
+  }
+})
+
 export default router 
