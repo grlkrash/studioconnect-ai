@@ -894,10 +894,35 @@ router.post('/admin-update-agent-id', async (req, res) => {
   }
 })
 
-// 🎯 ELEVENLABS POST-CALL WEBHOOK – Persist detailed call analytics
+// 🎯 ELEVENLABS POST-CALL WEBHOOK – Persist detailed call analytics with HMAC verification
 // This webhook is triggered by ElevenLabs after a call finishes
 router.post('/elevenlabs-post-call', async (req, res) => {
   try {
+    // 🔐 HMAC Signature Verification
+    const signature = req.headers['elevenlabs-signature'] as string
+    const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET
+    
+    if (webhookSecret && signature) {
+      const crypto = require('crypto')
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(JSON.stringify(req.body))
+        .digest('hex')
+      
+      const expectedHeader = `sha256=${expectedSignature}`
+      
+      if (signature !== expectedHeader) {
+        console.error('[🎯 ELEVENLABS POST-CALL] ❌ HMAC signature verification failed')
+        console.error('[🎯 ELEVENLABS POST-CALL] Expected:', expectedHeader)
+        console.error('[🎯 ELEVENLABS POST-CALL] Received:', signature)
+        return res.status(401).json({ error: 'Invalid signature' })
+      }
+      
+      console.log('[🎯 ELEVENLABS POST-CALL] ✅ HMAC signature verified')
+    } else if (webhookSecret) {
+      console.warn('[🎯 ELEVENLABS POST-CALL] ⚠️ No signature provided but secret configured')
+    }
+
     const {
       agent_id,
       call_sid,
