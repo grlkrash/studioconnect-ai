@@ -1271,4 +1271,42 @@ router.post('/elevenlabs-personalization-simple', (req, res) => {
   })
 })
 
+// 🔍 DEBUG ENDPOINT - Show actual agent configuration
+router.get('/debug-agent-config/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params
+    
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { 
+        agentConfig: true,
+        clients: {
+          select: { id: true, name: true, phone: true }
+        }
+      }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    console.log('[🔍 DEBUG AGENT CONFIG] Full business data:', JSON.stringify(business, null, 2))
+    
+    res.json({
+      business: {
+        id: business.id,
+        name: business.name,
+        twilioPhoneNumber: business.twilioPhoneNumber
+      },
+      agentConfig: business.agentConfig,
+      clientCount: business.clients.length,
+      clients: business.clients
+    })
+    
+  } catch (error) {
+    console.error('[🔍 DEBUG AGENT CONFIG] Error:', error)
+    res.status(500).json({ error: 'Debug failed' })
+  }
+})
+
 export default router 
