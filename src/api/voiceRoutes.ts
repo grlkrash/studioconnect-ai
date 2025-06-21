@@ -686,4 +686,56 @@ router.get('/debug-businesses', async (req, res) => {
   }
 })
 
+// 🔧 ADMIN ENDPOINT - Update ElevenLabs Agent ID (TEMPORARY)
+router.post('/admin-update-agent-id', async (req, res) => {
+  try {
+    const { businessId, elevenlabsAgentId } = req.body
+    
+    if (!businessId || !elevenlabsAgentId) {
+      return res.status(400).json({ error: 'businessId and elevenlabsAgentId are required' })
+    }
+    
+    console.log('[🔧 ADMIN] Updating ElevenLabs Agent ID:', { businessId, elevenlabsAgentId })
+    
+    // Find the business
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    if (!business.agentConfig) {
+      return res.status(404).json({ error: 'AgentConfig not found for this business' })
+    }
+    
+    // Update the ElevenLabs agent ID
+    const updatedAgentConfig = await prisma.agentConfig.update({
+      where: { id: business.agentConfig.id },
+      data: { elevenlabsAgentId }
+    })
+    
+    console.log('[🔧 ADMIN] Successfully updated ElevenLabs Agent ID')
+    
+    res.json({
+      success: true,
+      business: {
+        id: business.id,
+        name: business.name,
+        twilioPhoneNumber: business.twilioPhoneNumber
+      },
+      agentConfig: {
+        id: updatedAgentConfig.id,
+        elevenlabsAgentId: updatedAgentConfig.elevenlabsAgentId
+      }
+    })
+    
+  } catch (error) {
+    console.error('[🔧 ADMIN] Error updating ElevenLabs Agent ID:', error)
+    res.status(500).json({ error: 'Failed to update agent ID' })
+  }
+})
+
 export default router 
