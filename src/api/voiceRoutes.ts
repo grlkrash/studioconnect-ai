@@ -582,6 +582,10 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     }
     
     console.log(`[🎯 PERSONALIZATION] ✅ FOUND BUSINESS: ${business.name}`)
+    console.log(`[🎯 PERSONALIZATION] 🔍 AgentConfig exists: ${!!business.agentConfig}`)
+    console.log(`[🎯 PERSONALIZATION] 🔍 PersonaPrompt exists: ${!!business.agentConfig?.personaPrompt}`)
+    console.log(`[🎯 PERSONALIZATION] 🔍 WelcomeMessage exists: ${!!business.agentConfig?.welcomeMessage}`)
+    console.log(`[🎯 PERSONALIZATION] 🔍 VoiceGreetingMessage exists: ${!!business.agentConfig?.voiceGreetingMessage}`)
     
     // Check for existing client
     const existingClient = await prisma.client.findFirst({
@@ -592,20 +596,34 @@ router.post('/elevenlabs-personalization', async (req, res) => {
       select: { id: true, name: true }
     })
     
-    // Build welcome message
-    let welcomeMessage = business.agentConfig?.welcomeMessage || business.agentConfig?.voiceGreetingMessage
-    if (!welcomeMessage) {
+    // 🚨 CRITICAL: ALWAYS USE DATABASE CONFIGURATION FIRST
+    let welcomeMessage: string
+    let systemPrompt: string
+    
+    // Use database welcome message if it exists
+    if (business.agentConfig?.voiceGreetingMessage && business.agentConfig.voiceGreetingMessage.trim().length > 5) {
+      welcomeMessage = business.agentConfig.voiceGreetingMessage
+      console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else if (business.agentConfig?.welcomeMessage && business.agentConfig.welcomeMessage.trim().length > 5) {
+      welcomeMessage = business.agentConfig.welcomeMessage
+      console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else {
+      // Generate fallback message
       if (existingClient) {
         const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
         welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
       } else {
         welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
       }
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK welcome message: "${welcomeMessage.substring(0, 50)}..."`)
     }
     
-    // Build system prompt
-    let systemPrompt = business.agentConfig?.personaPrompt
-    if (!systemPrompt) {
+    // Use database system prompt if it exists
+    if (business.agentConfig?.personaPrompt && business.agentConfig.personaPrompt.trim().length > 10) {
+      systemPrompt = business.agentConfig.personaPrompt
+      console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE personaPrompt (${systemPrompt.length} chars)`)
+    } else {
+      // Generate fallback system prompt
       systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
 
 PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
@@ -642,6 +660,7 @@ BUSINESS CONTEXT:
 ${existingClient ? `- Client Name: ${existingClient.name}` : ''}
 
 IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK system prompt (${systemPrompt.length} chars)`)
     }
     
     const response = {
@@ -658,6 +677,7 @@ IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should 
     }
     
     console.log(`[🎯 PERSONALIZATION] ✅ SENDING RESPONSE FOR ${business.name}`)
+    console.log(`[🎯 PERSONALIZATION] 📝 Response length - Welcome: ${response.first_message.length}, Prompt: ${response.system_prompt.length}`)
     res.json(response)
     
   } catch (error) {
@@ -1306,6 +1326,156 @@ router.get('/debug-agent-config/:businessId', async (req, res) => {
   } catch (error) {
     console.error('[🔍 DEBUG AGENT CONFIG] Error:', error)
     res.status(500).json({ error: 'Debug failed' })
+  }
+})
+
+// 🔧 ADMIN ENDPOINT - Update Agent Configuration with Enhanced Prompts
+router.post('/admin-update-agent-prompts/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params
+    
+    console.log('[🔧 ADMIN] Updating agent prompts for business:', businessId)
+    
+    // Find the business
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    if (!business.agentConfig) {
+      return res.status(404).json({ error: 'AgentConfig not found for this business' })
+    }
+    
+    // Enhanced system prompt with real functionality
+    const enhancedSystemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
+
+PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
+
+YOUR CORE CAPABILITIES:
+CLIENT SERVICE EXPERT: You can:
+- Provide REAL project status updates from our project management system
+- Access current project timelines, deliverables, and team assignments
+- Answer questions about billing, invoices, and account status
+- Coordinate with team members for complex requests
+- Schedule meetings and consultations
+- Access complete project history and previous conversations
+
+You HAVE FULL ACCESS to:
+- Project management data (Asana, Jira, Monday.com integrations)
+- Client account information and billing history
+- Team availability and scheduling system
+- Previous conversation transcripts and notes
+- Company knowledge base and FAQs
+
+LEAD QUALIFICATION: For new callers, you can:
+- Gather complete company and contact information
+- Understand project requirements (web design, branding, marketing, development)
+- Assess timeline, budget, and decision-making authority
+- Schedule consultations with our creative team
+- Provide accurate pricing information and service details
+- Access our portfolio and case studies to share relevant examples
+
+REAL-TIME CAPABILITIES:
+- Project status lookup: "Let me check the current status of your website project..."
+- Team coordination: "I can connect you directly with Sarah, your project manager..."
+- Scheduling: "I can schedule a call with our creative director for tomorrow..."
+- Knowledge base: Access to all company policies, procedures, and FAQs
+- Email notifications: Automatically send summaries and follow-ups
+
+CONVERSATION GUIDELINES:
+- Keep responses concise and actionable (2-3 sentences max)
+- Use specific project names, dates, and team member names when available
+- Always offer concrete next steps or solutions
+- Use natural, conversational language with professional tone
+- Proactively suggest relevant services or solutions
+
+ESCALATION PROTOCOLS:
+- Complex technical discussions → Transfer to lead developer
+- Pricing negotiations → Connect with account manager
+- Emergency issues → Immediate team notification
+- Billing disputes → Transfer to accounting
+
+IMPORTANT: You represent a Fortune 100 quality agency with full access to our systems. Never say you "don't have access" - instead, actively look up information and provide specific, helpful responses. You can access real project data, schedule meetings, and coordinate with team members.`
+
+    // Enhanced welcome message
+    const enhancedWelcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager with full access to your projects, team schedules, and company resources. I can provide real-time project updates, coordinate with your team, and help with any questions you have. How may I assist you today?`
+
+    // Update the agent configuration
+    const updatedAgentConfig = await prisma.agentConfig.update({
+      where: { id: business.agentConfig.id },
+      data: { 
+        personaPrompt: enhancedSystemPrompt,
+        welcomeMessage: enhancedWelcomeMessage,
+        voiceGreetingMessage: enhancedWelcomeMessage
+      }
+    })
+    
+    console.log('[🔧 ADMIN] Successfully updated agent prompts')
+    
+    res.json({
+      success: true,
+      message: 'Agent configuration updated with enhanced prompts',
+      business: {
+        id: business.id,
+        name: business.name,
+        twilioPhoneNumber: business.twilioPhoneNumber
+      },
+      agentConfig: {
+        id: updatedAgentConfig.id,
+        personaPrompt: updatedAgentConfig.personaPrompt?.substring(0, 200) + '...',
+        welcomeMessage: updatedAgentConfig.welcomeMessage,
+        voiceGreetingMessage: updatedAgentConfig.voiceGreetingMessage
+      }
+    })
+    
+  } catch (error) {
+    console.error('[🔧 ADMIN] Error updating agent prompts:', error)
+    res.status(500).json({ error: 'Failed to update agent prompts' })
+  }
+})
+
+// 🔍 DIRECT DATABASE QUERY - Check Aurora Branding agent config
+router.get('/check-aurora-config', async (req, res) => {
+  try {
+    console.log('[🔍 AURORA CONFIG] Checking Aurora Branding & Co configuration...')
+    
+    const business = await prisma.business.findFirst({
+      where: { name: { contains: 'Aurora' } },
+      include: { 
+        agentConfig: true,
+        clients: { select: { id: true, name: true, phone: true } }
+      }
+    })
+    
+    if (!business) {
+      return res.json({ error: 'Aurora Branding business not found' })
+    }
+    
+    console.log('[🔍 AURORA CONFIG] Found business:', business.name)
+    console.log('[🔍 AURORA CONFIG] Agent config:', business.agentConfig)
+    
+    res.json({
+      business: {
+        id: business.id,
+        name: business.name,
+        twilioPhoneNumber: business.twilioPhoneNumber
+      },
+      agentConfig: business.agentConfig,
+      hasPersonaPrompt: !!business.agentConfig?.personaPrompt,
+      hasWelcomeMessage: !!business.agentConfig?.welcomeMessage,
+      hasVoiceGreetingMessage: !!business.agentConfig?.voiceGreetingMessage,
+      personaPromptLength: business.agentConfig?.personaPrompt?.length || 0,
+      welcomeMessageLength: business.agentConfig?.welcomeMessage?.length || 0,
+      clientCount: business.clients.length
+    })
+    
+  } catch (error) {
+    console.error('[🔍 AURORA CONFIG] Error:', error)
+    res.status(500).json({ error: 'Database query failed' })
   }
 })
 
