@@ -600,35 +600,65 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     let welcomeMessage: string
     let systemPrompt: string
     
-    // Use database welcome message if it exists
-    if (business.agentConfig?.voiceGreetingMessage && business.agentConfig.voiceGreetingMessage.trim().length > 5) {
+    // Use database welcome message if it exists AND is professional (not generic)
+    if (business.agentConfig?.voiceGreetingMessage && 
+        business.agentConfig.voiceGreetingMessage.trim().length > 10 &&
+        !business.agentConfig.voiceGreetingMessage.includes('AI assistant')) {
       welcomeMessage = business.agentConfig.voiceGreetingMessage
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
-    } else if (business.agentConfig?.welcomeMessage && business.agentConfig.welcomeMessage.trim().length > 5) {
+    } else if (business.agentConfig?.welcomeMessage && 
+               business.agentConfig.welcomeMessage.trim().length > 10 &&
+               !business.agentConfig.welcomeMessage.includes('AI assistant')) {
       welcomeMessage = business.agentConfig.welcomeMessage
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
     } else {
-      // Generate fallback message
+      // Generate professional creative agency welcome message
       if (existingClient) {
         const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
-        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
+        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm Maya, your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
       } else {
-        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
+        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm Maya, your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
       }
-      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK welcome message: "${welcomeMessage.substring(0, 50)}..."`)
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using ENHANCED PROFESSIONAL welcome message - Database had generic message`)
     }
     
-    // Use database system prompt if it exists
-    if (business.agentConfig?.personaPrompt && business.agentConfig.personaPrompt.trim().length > 10) {
+    // Use database system prompt if it exists AND is professional (not generic)
+    if (business.agentConfig?.personaPrompt && 
+        business.agentConfig.personaPrompt.trim().length > 20 && 
+        !business.agentConfig.personaPrompt.includes('helpful assistant')) {
       systemPrompt = business.agentConfig.personaPrompt
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE personaPrompt (${systemPrompt.length} chars)`)
     } else {
-      // Generate fallback system prompt
-      systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
+      // Generate professional creative agency system prompt
+      systemPrompt = `You are Maya, a professional AI Account Manager for ${business.name}, a premium creative agency specializing in brand strategy, web design, and marketing.
 
-PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
+PERSONALITY & ROLE:
+- Professional, knowledgeable, and solution-focused
+- Warm but business-appropriate tone
+- Project-centric mindset with creative industry expertise
+- Confident in discussing branding, design, and marketing services
 
 YOUR CORE CAPABILITIES:
+- Provide project status updates and timeline information
+- Answer questions about our creative services (branding, web design, marketing)
+- Qualify new leads and understand their project requirements
+- Schedule consultations with our creative team
+- Handle client inquiries professionally and efficiently
+- Access project management systems for real-time updates
+
+CONVERSATION GUIDELINES:
+- Keep responses concise and actionable (2-3 sentences max)
+- Ask smart follow-up questions to understand needs
+- Use creative industry terminology appropriately
+- Always offer to connect with a team member for complex requests
+- Sound confident and knowledgeable about our services
+
+BUSINESS CONTEXT:
+- We're ${business.name}, a boutique creative agency
+- We specialize in brand identity, web design, and digital marketing
+- Our clients range from startups to established businesses
+- We pride ourselves on strategic, results-driven creative work
+
 ${existingClient ? `
 CLIENT SERVICE EXPERT: For this existing client, you can:
 - Provide project status updates and timeline information
@@ -638,6 +668,7 @@ CLIENT SERVICE EXPERT: For this existing client, you can:
 - Maintain strong client relationships
 
 You HAVE ACCESS to project information and should be helpful with status updates.
+- Client Name: ${existingClient.name}
 ` : `
 LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
 - Gather company name and contact details
@@ -647,20 +678,15 @@ LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
 - Schedule consultations with our creative team
 `}
 
-CONVERSATION GUIDELINES:
-- Keep responses concise and to the point (2-3 sentences max)
-- Ask clarifying questions when needed
-- Always offer to connect with a team member for complex requests
-- Use natural, conversational language with professional tone
-- Be helpful and knowledgeable about our services
+ESCALATION TRIGGERS:
+- Detailed project scope discussions
+- Pricing and contract negotiations
+- Complex technical requirements
+- Creative strategy conversations
+- Urgent project issues
 
-BUSINESS CONTEXT:
-- Business Name: ${business.name}
-- This is ${existingClient ? 'an existing client' : 'a new lead'}
-${existingClient ? `- Client Name: ${existingClient.name}` : ''}
-
-IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
-      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK system prompt (${systemPrompt.length} chars)`)
+IMPORTANT: You represent a premium creative agency. Every interaction should reflect our high standards and creative expertise. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using ENHANCED PROFESSIONAL system prompt (${systemPrompt.length} chars) - Database had generic prompt`)
     }
     
     const response = {
