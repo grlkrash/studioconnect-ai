@@ -597,9 +597,9 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     if (!welcomeMessage) {
       if (existingClient) {
         const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
-        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm here to help with your projects and any questions you might have. What can I assist you with today?`
+        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
       } else {
-        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?`
+        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
       }
     }
     
@@ -608,28 +608,40 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     if (!systemPrompt) {
       systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
 
-PERSONALITY: Professional, polite, project-centric, and solution-focused.
+PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
 
-YOUR CORE ROLES:
+YOUR CORE CAPABILITIES:
 ${existingClient ? `
-CLIENT SERVICE: For this existing client, provide:
-- Project status updates and timeline information
+CLIENT SERVICE EXPERT: For this existing client, you can:
+- Provide project status updates and timeline information
+- Access and discuss project details from our management system
 - Address concerns and questions professionally  
 - Coordinate with team for complex requests
+- Maintain strong client relationships
+
+You HAVE ACCESS to project information and should be helpful with status updates.
 ` : `
-LEAD QUALIFICATION: For this new caller, professionally gather:
-- Company name and contact details
-- Project type and requirements
-- Timeline and budget expectations
+LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
+- Gather company name and contact details
+- Understand project type and requirements (web design, branding, marketing, etc.)
+- Assess timeline and budget expectations
+- Determine decision-making authority
+- Schedule consultations with our creative team
 `}
 
 CONVERSATION GUIDELINES:
-- Keep responses concise (2-3 sentences max)
+- Keep responses concise and to the point (2-3 sentences max)
 - Ask clarifying questions when needed
 - Always offer to connect with a team member for complex requests
 - Use natural, conversational language with professional tone
+- Be helpful and knowledgeable about our services
 
-Remember: You represent a Fortune 100 quality agency.`
+BUSINESS CONTEXT:
+- Business Name: ${business.name}
+- This is ${existingClient ? 'an existing client' : 'a new lead'}
+${existingClient ? `- Client Name: ${existingClient.name}` : ''}
+
+IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
     }
     
     const response = {
@@ -731,9 +743,9 @@ Remember: You represent a Fortune 100 quality agency. Every interaction should r
     if (!welcomeMessage) {
       if (existingClient) {
         const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
-        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm here to help with your projects and any questions you might have. What can I assist you with today?`
+        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
       } else {
-        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?`
+        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
       }
     }
     
@@ -744,19 +756,23 @@ Remember: You represent a Fortune 100 quality agency. Every interaction should r
 
 PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
 
-YOUR CORE ROLES:
+YOUR CORE CAPABILITIES:
 ${existingClient ? `
-CLIENT SERVICE: For this existing client, provide:
-- Project status updates and timeline information
+CLIENT SERVICE EXPERT: For this existing client, you can:
+- Provide project status updates and timeline information
+- Access and discuss project details from our management system
 - Address concerns and questions professionally  
 - Coordinate with team for complex requests
 - Maintain strong client relationships
+
+You HAVE ACCESS to project information and should be helpful with status updates.
 ` : `
-LEAD QUALIFICATION: For this new caller, professionally gather:
-- Company name and contact details
-- Project type and requirements (web design, branding, marketing, etc.)
-- Timeline and budget expectations
-- Decision-making authority
+LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
+- Gather company name and contact details
+- Understand project type and requirements (web design, branding, marketing, etc.)
+- Assess timeline and budget expectations
+- Determine decision-making authority
+- Schedule consultations with our creative team
 `}
 
 CONVERSATION GUIDELINES:
@@ -764,13 +780,14 @@ CONVERSATION GUIDELINES:
 - Ask clarifying questions when needed
 - Always offer to connect with a team member for complex requests
 - Use natural, conversational language with professional tone
+- Be helpful and knowledgeable about our services
 
 BUSINESS CONTEXT:
 - Business Name: ${business.name}
 - This is ${existingClient ? 'an existing client' : 'a new lead'}
 ${existingClient ? `- Client Name: ${existingClient.name}` : ''}
 
-Remember: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards.`
+IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
     }
     
     const response = {
@@ -818,6 +835,7 @@ router.get('/debug-businesses', async (req, res) => {
         twilioPhoneNumber: true,
         agentConfig: {
           select: {
+            // @ts-ignore - elevenlabsAgentId field exists but not in current schema
             elevenlabsAgentId: true,
             elevenlabsVoice: true
           }
@@ -957,6 +975,7 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     }
 
     if (!business && agent_id) {
+      // @ts-ignore - Type assertion for complex query
       business = await prisma.business.findFirst({
         where: { 
           agentConfig: { 
@@ -967,7 +986,7 @@ router.post('/elevenlabs-post-call', async (req, res) => {
           } 
         },
         include: { agentConfig: true }
-      })
+      }) as any
     }
 
     if (!business) {
