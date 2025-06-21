@@ -550,14 +550,47 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     
     console.log(`[🎯 ELEVENLABS PERSONALIZATION] Incoming call from ${caller_id} to ${called_number}`)
     
-    // Find business by phone number
-    const business = await prisma.business.findFirst({
+    // ---------------------------------------------
+    // 1. Try strict match on Twilio phone number
+    // 2. Fallback: match digits-only version (handles +1, spaces, dashes)
+    // 3. Final fallback: match by related AgentConfig.elevenlabsAgentId (agent_id)
+    // ---------------------------------------------
+
+    const normalizePhone = (num: string | null | undefined) =>
+      (num || '').replace(/[^0-9]/g, '') // keep digits only
+
+    let business = await prisma.business.findFirst({
       where: { twilioPhoneNumber: called_number },
-      include: {
-        agentConfig: true
-      }
+      include: { agentConfig: true }
     })
-    
+
+    if (!business) {
+      // Fuzzy match on digits-only phone
+      const digits = normalizePhone(called_number)
+      business = await prisma.business.findFirst({
+        where: {
+          twilioPhoneNumber: {
+            endsWith: digits // covers country-code variants
+          }
+        },
+        include: { agentConfig: true }
+      })
+    }
+
+    if (!business && agent_id) {
+      // Match by related AgentConfig.elevenlabsAgentId as last resort
+      business = await prisma.business.findFirst({
+        where: {
+          agentConfig: {
+            is: {
+              elevenlabsAgentId: agent_id
+            }
+          }
+        },
+        include: { agentConfig: true }
+      })
+    }
+
     if (!business) {
       console.error(`[🎯 ELEVENLABS PERSONALIZATION] No business found for phone: ${called_number}`)
       return res.status(404).json({ error: 'Business not found' })
