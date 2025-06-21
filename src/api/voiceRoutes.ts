@@ -542,6 +542,122 @@ router.post('/create-agent/:businessId', async (req, res) => {
   }
 })
 
+// 🎯 ELEVENLABS PERSONALIZATION WEBHOOK - MAIN ENDPOINT
+router.post('/elevenlabs-personalization', async (req, res) => {
+  try {
+    const { caller_id, agent_id, called_number, call_sid } = req.body
+    
+    console.log(`[🎯 PERSONALIZATION] ================================================`)
+    console.log(`[🎯 PERSONALIZATION] 📞 INCOMING CALL`)
+    console.log(`[🎯 PERSONALIZATION] 📞 Caller: ${caller_id}`)
+    console.log(`[🎯 PERSONALIZATION] 📞 Called: ${called_number}`)
+    console.log(`[🎯 PERSONALIZATION] 🤖 Agent: ${agent_id}`)
+    console.log(`[🎯 PERSONALIZATION] 📞 Call SID: ${call_sid}`)
+    console.log(`[🎯 PERSONALIZATION] ================================================`)
+
+    // Simple phone number matching
+    const normalizePhone = (num: string | null | undefined) =>
+      (num || '').replace(/[^0-9]/g, '')
+
+    let business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: { agentConfig: true }
+    })
+    
+    if (!business && called_number) {
+      const digits = normalizePhone(called_number)
+      business = await prisma.business.findFirst({
+        where: { twilioPhoneNumber: { endsWith: digits } },
+        include: { agentConfig: true }
+      })
+    }
+
+    if (!business) {
+      console.error(`[🎯 PERSONALIZATION] ❌ No business found for ${called_number}`)
+      return res.json({
+        first_message: "Hello! Thank you for calling Aurora Branding & Co. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?",
+        system_prompt: "You are a professional AI Account Manager for Aurora Branding & Co, a premium creative agency.",
+        voice_id: 'pNInz6obpgDQGcFmaJgB'
+      })
+    }
+    
+    console.log(`[🎯 PERSONALIZATION] ✅ FOUND BUSINESS: ${business.name}`)
+    
+    // Check for existing client
+    const existingClient = await prisma.client.findFirst({
+      where: { 
+        phone: caller_id,
+        businessId: business.id
+      },
+      select: { id: true, name: true }
+    })
+    
+    // Build welcome message
+    let welcomeMessage = business.agentConfig?.welcomeMessage || business.agentConfig?.voiceGreetingMessage
+    if (!welcomeMessage) {
+      if (existingClient) {
+        const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
+        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm here to help with your projects and any questions you might have. What can I assist you with today?`
+      } else {
+        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?`
+      }
+    }
+    
+    // Build system prompt
+    let systemPrompt = business.agentConfig?.personaPrompt
+    if (!systemPrompt) {
+      systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
+
+PERSONALITY: Professional, polite, project-centric, and solution-focused.
+
+YOUR CORE ROLES:
+${existingClient ? `
+CLIENT SERVICE: For this existing client, provide:
+- Project status updates and timeline information
+- Address concerns and questions professionally  
+- Coordinate with team for complex requests
+` : `
+LEAD QUALIFICATION: For this new caller, professionally gather:
+- Company name and contact details
+- Project type and requirements
+- Timeline and budget expectations
+`}
+
+CONVERSATION GUIDELINES:
+- Keep responses concise (2-3 sentences max)
+- Ask clarifying questions when needed
+- Always offer to connect with a team member for complex requests
+- Use natural, conversational language with professional tone
+
+Remember: You represent a Fortune 100 quality agency.`
+    }
+    
+    const response = {
+      first_message: welcomeMessage,
+      system_prompt: systemPrompt,
+      voice_id: business.agentConfig?.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1.0
+      }
+    }
+    
+    console.log(`[🎯 PERSONALIZATION] ✅ SENDING RESPONSE FOR ${business.name}`)
+    res.json(response)
+    
+  } catch (error) {
+    console.error('[🎯 PERSONALIZATION] ❌ ERROR:', error)
+    res.json({
+      first_message: "Hello! Thank you for calling. I'm your AI assistant. How may I help you today?",
+      system_prompt: "You are a professional AI assistant.",
+      voice_id: 'pNInz6obpgDQGcFmaJgB'
+    })
+  }
+})
+
 // 🎯 ELEVENLABS WEBHOOK FOR MULTI-TENANT PERSONALIZATION - SIMPLIFIED VERSION
 router.post('/elevenlabs-personalization-fixed', async (req, res) => {
   try {
