@@ -291,7 +291,7 @@ export class PostCallAnalyticsService {
     const since = new Date()
     since.setDate(since.getDate() - days)
 
-    const [totalCalls, callsWithAnalytics, avgDuration, avgSentiment] = await Promise.all([
+    const [totalCalls, callsWithAnalytics, callsWithMetadata] = await Promise.all([
       // Total calls
       prisma.callLog.count({
         where: {
@@ -311,37 +311,49 @@ export class PostCallAnalyticsService {
         }
       }),
 
-      // Average duration (from metadata)
-      prisma.callLog.aggregate({
+      // Get calls with metadata for manual averaging
+      prisma.callLog.findMany({
         where: {
           businessId,
           createdAt: { gte: since },
           source: 'elevenlabs',
-          metadata: { path: ['duration_seconds'], not: Prisma.JsonNull }
+          metadata: { path: ['step_2_recovery_plan'], equals: true }
         },
-        _avg: {
-          // We'll calculate this from metadata in application logic
-        }
-      }),
-
-      // Average sentiment (from metadata)
-      prisma.callLog.aggregate({
-        where: {
-          businessId,
-          createdAt: { gte: since },
-          source: 'elevenlabs',
-          metadata: { path: ['sentiment_score'], not: Prisma.JsonNull }
-        },
-        _avg: {
-          // We'll calculate this from metadata in application logic
-        }
+        select: { metadata: true },
+        take: 1000 // Limit for performance
       })
     ])
+
+    // Calculate averages from JSON metadata manually
+    let totalDuration = 0
+    let durationCount = 0
+    let totalSentiment = 0
+    let sentimentCount = 0
+
+    callsWithMetadata.forEach(call => {
+      const metadata = call.metadata as any
+      
+      if (metadata?.duration_seconds && typeof metadata.duration_seconds === 'number') {
+        totalDuration += metadata.duration_seconds
+        durationCount++
+      }
+      
+      if (metadata?.sentiment_score && typeof metadata.sentiment_score === 'number') {
+        totalSentiment += metadata.sentiment_score
+        sentimentCount++
+      }
+    })
+
+    const avgDuration = durationCount > 0 ? Math.round(totalDuration / durationCount) : 0
+    const avgSentiment = sentimentCount > 0 ? Math.round((totalSentiment / sentimentCount) * 100) / 100 : 0
 
     return {
       total_calls: totalCalls,
       calls_with_analytics: callsWithAnalytics,
       analytics_coverage: totalCalls > 0 ? Math.round((callsWithAnalytics / totalCalls) * 100) : 0,
+      avg_duration_seconds: avgDuration,
+      avg_sentiment_score: avgSentiment,
+      metadata_calls_analyzed: callsWithMetadata.length,
       period_days: days,
       generated_at: new Date().toISOString()
     }
