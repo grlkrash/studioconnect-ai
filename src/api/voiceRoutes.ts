@@ -1348,7 +1348,7 @@ router.post('/debug-webhook', async (req, res) => {
 
 // 🎯 STEP 2: WEBHOOK CONFIGURATION TEST - Verify Recovery Plan Implementation
 router.get('/webhook-test', async (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get('host')}`
+  const baseUrl = `https://${req.get('host')}`
   
   const testData = {
     current_production_url: baseUrl,
@@ -1426,12 +1426,38 @@ router.all('/webhook-debug', (req, res) => {
   })
 })
 
+// 🚨 CRITICAL PROBLEM IDENTIFIED - ElevenLabs NOT calling personalization webhook!
+let personalizationCallCount = 0
+
+// Track webhook calls for debugging
+router.use('/elevenlabs-personalization-working', (req, res, next) => {
+  personalizationCallCount++
+  console.log(`🚨 PERSONALIZATION WEBHOOK CALL #${personalizationCallCount}`)
+  console.log(`🚨 Method: ${req.method}`)
+  console.log(`🚨 Time: ${new Date().toISOString()}`)
+  console.log(`🚨 Headers:`, JSON.stringify(req.headers, null, 2))
+  console.log(`🚨 Body:`, JSON.stringify(req.body, null, 2))
+  next()
+})
+
+// Get personalization call count
+router.get('/personalization-call-count', (req, res) => {
+  res.json({
+    callCount: personalizationCallCount,
+    lastReset: new Date().toISOString(),
+    message: personalizationCallCount === 0 ? 
+      '🚨 ElevenLabs is NOT calling the personalization webhook!' :
+      `✅ Personalization webhook called ${personalizationCallCount} times`
+  })
+})
+
 // 🎯 WORKING PERSONALIZATION ENDPOINT - PRODUCTION READY
 router.post('/elevenlabs-personalization-working', async (req, res) => {
   try {
-    console.log('🎯🎯🎯 WORKING PERSONALIZATION WEBHOOK CALLED 🎯🎯🎯')
-    console.log('Headers:', JSON.stringify(req.headers, null, 2))
-    console.log('Body:', JSON.stringify(req.body, null, 2))
+    console.log('🔥🔥🔥 PERSONALIZATION WEBHOOK CALLED - MAYA CONFIGURATION 🔥🔥🔥')
+    console.log('🔥 Headers:', JSON.stringify(req.headers, null, 2))
+    console.log('🔥 Body:', JSON.stringify(req.body, null, 2))
+    console.log('🔥 Timestamp:', new Date().toISOString())
     
     const { caller_id, agent_id, called_number, call_sid } = req.body
     
@@ -2091,7 +2117,7 @@ router.get('/step3/monitoring-dashboard', async (req, res) => {
     try {
       // Check response time threshold (2000ms)
       if (avgDuration * 1000 > 2000 && callsLast24h > 10) {
-        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+        await fetch(`https://${req.get('host')}/api/voice/step3/performance-alert`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2106,7 +2132,7 @@ router.get('/step3/monitoring-dashboard', async (req, res) => {
       
       // Check success rate threshold (80%)
       if (successRate < 80 && callsLast24h > 10) {
-        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+        await fetch(`https://${req.get('host')}/api/voice/step3/performance-alert`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2122,7 +2148,7 @@ router.get('/step3/monitoring-dashboard', async (req, res) => {
       // Check memory usage
       const memoryUsageMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
       if (memoryUsageMB > 1000) {
-        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+        await fetch(`https://${req.get('host')}/api/voice/step3/performance-alert`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2966,7 +2992,7 @@ router.get('/webhook-config-report', async (req, res) => {
   try {
     console.log('🧪 WEBHOOK CONFIGURATION REPORT REQUESTED')
     
-    const baseUrl = `${req.protocol}://${req.get('host')}`
+    const baseUrl = `https://${req.get('host')}`
     
     // Get Aurora Branding business for testing
     const business = await prisma.business.findFirst({
@@ -3161,7 +3187,7 @@ router.get('/elevenlabs-integration-status', async (req, res) => {
   try {
     console.log('🚀 ELEVENLABS INTEGRATION STATUS CHECK REQUESTED')
     
-    const baseUrl = `${req.protocol}://${req.get('host')}`
+    const baseUrl = `https://${req.get('host')}`
     
     // Get Aurora Branding business
     const business = await prisma.business.findFirst({
