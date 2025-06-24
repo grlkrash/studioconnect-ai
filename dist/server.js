@@ -64,7 +64,6 @@ const agentConfigRoutes_1 = __importDefault(require("./api/agentConfigRoutes"));
 const leadQuestionRoutes_1 = __importDefault(require("./api/leadQuestionRoutes"));
 const integrationRoutes_1 = __importDefault(require("./api/integrationRoutes"));
 const webhookRoutes_1 = __importDefault(require("./api/webhookRoutes"));
-const interactionRoutes_1 = __importDefault(require("./api/interactionRoutes"));
 const analyticsRoutes_1 = __importDefault(require("./api/analyticsRoutes"));
 const cron_1 = require("./services/projectSync/cron");
 const voiceHealthMonitor_1 = require("./monitor/voiceHealthMonitor");
@@ -257,8 +256,9 @@ nextApp.prepare().then(() => {
     console.error('[DASHBOARD] Error preparing Next.js app:', err);
     nextError = err;
 });
-app.use('/admin/_next', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
-app.use('/admin/static', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
+app.use('/_next/static', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
+app.use('/admin/_next/static', express_1.default.static(path_1.default.join(dashboardDir, '.next/static')));
+app.use('/admin/static', express_1.default.static(path_1.default.join(dashboardDir, 'public')));
 app.all('/dashboard*', (req, res) => {
     const redirectUrl = req.url.replace('/dashboard', '/admin');
     console.log(`[DASHBOARD] Redirecting ${req.url} -> ${redirectUrl}`);
@@ -288,7 +288,6 @@ app.use('/api/business', businessRoutes_1.default);
 app.use('/api/agent-config', agentConfigRoutes_1.default);
 app.use('/api/lead-questions', leadQuestionRoutes_1.default);
 app.use('/api/integrations', integrationRoutes_1.default);
-app.use('/api/interactions', interactionRoutes_1.default);
 app.use('/api/analytics', analyticsRoutes_1.default);
 app.use('/api/widget-config', widgetConfigRoutes_1.default);
 app.use('/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);

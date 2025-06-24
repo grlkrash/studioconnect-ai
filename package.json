@@ -10,7 +10,7 @@
     "dev:api": "nodemon src/server.ts",
     "dev:dashboard": "npm --prefix dashboard run dev -- -p 3100",
     "build:api": "tsc",
-    "build": "npx prisma generate && npm --prefix dashboard run build && npm run build:api",
+    "build": "npx prisma generate && npm --prefix dashboard run prisma:generate && npm --prefix dashboard run build && npm run build:api",
     "postbuild": "mkdir -p dist/views && cp -R src/views/* dist/views/ && cp src/public/widget.js public/widget.js",
     "prestart": "(npx prisma migrate resolve --rolled-back 20250616234716_add_integration_fields || true) && (npx prisma migrate resolve --rolled-back 20250616233704_openai_voice_enum_extension || true) && npx prisma migrate deploy",
     "prestart:prod": "npx prisma migrate deploy",

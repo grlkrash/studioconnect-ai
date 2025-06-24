@@ -21,8 +21,10 @@ ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
 # Ensure production environment for optimized builds
 ENV NODE_ENV=production
-# Generate Prisma client and compile both API and dashboard
-RUN npm run build
+# Generate Prisma clients for both root and dashboard, then build
+RUN npx prisma generate \
+    && npm --prefix dashboard run prisma:generate \
+    && npm run build
 
 # Expose application port (Render will set PORT env variable)
 EXPOSE 3000
