@@ -1348,7 +1348,11 @@ router.post('/debug-webhook', async (req, res) => {
 
 // 🎯 STEP 2: WEBHOOK CONFIGURATION TEST - Verify Recovery Plan Implementation
 router.get('/webhook-test', async (req, res) => {
-  const baseUrl = `https://${req.get('host')}`
+  // Force HTTPS for webhook URLs (Render.com terminates SSL)
+  const host = req.get('host')
+  const baseUrl = host?.includes('onrender.com') || host?.includes('cincyaisolutions.com') ? 
+    `https://${host}` : 
+    `${req.protocol}://${host}`
   
   const testData = {
     current_production_url: baseUrl,
@@ -1432,11 +1436,15 @@ let personalizationCallCount = 0
 // Track webhook calls for debugging
 router.use('/elevenlabs-personalization-working', (req, res, next) => {
   personalizationCallCount++
-  console.log(`🚨 PERSONALIZATION WEBHOOK CALL #${personalizationCallCount}`)
+  console.log(`🚨🚨🚨 PERSONALIZATION WEBHOOK CALL #${personalizationCallCount} 🚨🚨🚨`)
   console.log(`🚨 Method: ${req.method}`)
   console.log(`🚨 Time: ${new Date().toISOString()}`)
+  console.log(`🚨 URL: ${req.url}`)
+  console.log(`🚨 Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`)
+  console.log(`🚨 User-Agent: ${req.get('user-agent')}`)
   console.log(`🚨 Headers:`, JSON.stringify(req.headers, null, 2))
   console.log(`🚨 Body:`, JSON.stringify(req.body, null, 2))
+  console.log(`🚨🚨🚨 END WEBHOOK CALL #${personalizationCallCount} 🚨🚨🚨`)
   next()
 })
 
@@ -1454,7 +1462,13 @@ router.get('/personalization-call-count', (req, res) => {
 // 🎯 WORKING PERSONALIZATION ENDPOINT - PRODUCTION READY
 router.post('/elevenlabs-personalization-working', async (req, res) => {
   try {
-    console.log('🔥🔥🔥 PERSONALIZATION WEBHOOK CALLED - MAYA CONFIGURATION 🔥🔥🔥')
+    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
+    console.log('🔥 ELEVENLABS PERSONALIZATION WEBHOOK CALLED - MAYA CONFIGURATION')
+    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
+    console.log('🔥 Method:', req.method)
+    console.log('🔥 URL:', req.url)
+    console.log('🔥 Full URL:', `${req.protocol}://${req.get('host')}${req.originalUrl}`)
+    console.log('🔥 User-Agent:', req.get('user-agent'))
     console.log('🔥 Headers:', JSON.stringify(req.headers, null, 2))
     console.log('🔥 Body:', JSON.stringify(req.body, null, 2))
     console.log('🔥 Timestamp:', new Date().toISOString())
@@ -1524,9 +1538,17 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
       }
     }
     
-    console.log('🎯 Final response being sent to ElevenLabs:', JSON.stringify(response, null, 2))
+    console.log('🔥🔥🔥 FINAL RESPONSE BEING SENT TO ELEVENLABS 🔥🔥🔥')
+    console.log('🔥 Response Object:', JSON.stringify(response, null, 2))
+    console.log('🔥 First Message Preview:', response.first_message?.substring(0, 100))
+    console.log('🔥 System Prompt Preview:', response.system_prompt?.substring(0, 100))
+    console.log('🔥 Voice ID:', response.voice_id)
+    console.log('🔥🔥🔥 SENDING RESPONSE NOW 🔥🔥🔥')
     
     res.json(response)
+    
+    console.log('🔥 ✅ RESPONSE SENT TO ELEVENLABS SUCCESSFULLY')
+    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
     
   } catch (error) {
     console.error('🎯 Personalization error:', error)
@@ -2992,7 +3014,11 @@ router.get('/webhook-config-report', async (req, res) => {
   try {
     console.log('🧪 WEBHOOK CONFIGURATION REPORT REQUESTED')
     
-    const baseUrl = `https://${req.get('host')}`
+    // Force HTTPS for webhook URLs (Render.com terminates SSL)
+    const host = req.get('host')
+    const baseUrl = host?.includes('onrender.com') || host?.includes('cincyaisolutions.com') ? 
+      `https://${host}` : 
+      `${req.protocol}://${host}`
     
     // Get Aurora Branding business for testing
     const business = await prisma.business.findFirst({
@@ -3187,7 +3213,11 @@ router.get('/elevenlabs-integration-status', async (req, res) => {
   try {
     console.log('🚀 ELEVENLABS INTEGRATION STATUS CHECK REQUESTED')
     
-    const baseUrl = `https://${req.get('host')}`
+    // Force HTTPS for webhook URLs (Render.com terminates SSL)
+    const host = req.get('host')
+    const baseUrl = host?.includes('onrender.com') || host?.includes('cincyaisolutions.com') ? 
+      `https://${host}` : 
+      `${req.protocol}://${host}`
     
     // Get Aurora Branding business
     const business = await prisma.business.findFirst({
