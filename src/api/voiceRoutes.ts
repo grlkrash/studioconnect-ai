@@ -2519,4 +2519,50 @@ router.post('/step3/test-alert', async (req, res) => {
   }
 })
 
+// 🔧 ADMIN ENDPOINT - Update Aurora Branding notification email
+router.post('/admin-update-notification-email', async (req, res) => {
+  try {
+    console.log('[🔧 ADMIN] Updating Aurora Branding notification email...')
+    
+    // Find Aurora Branding business
+    const business = await prisma.business.findFirst({
+      where: { name: { contains: 'Aurora' } },
+      select: { id: true, name: true, notificationEmails: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Aurora Branding business not found' })
+    }
+    
+    console.log('[🔧 ADMIN] Found business:', business.name)
+    console.log('[🔧 ADMIN] Current notification emails:', business.notificationEmails)
+    
+    // Update with correct notification email
+    const updated = await prisma.business.update({
+      where: { id: business.id },
+      data: {
+        notificationEmails: ['sonia@cincyaisolutions.com']
+      },
+      select: { id: true, name: true, notificationEmails: true }
+    })
+    
+    console.log('[🔧 ADMIN] ✅ Successfully updated notification emails!')
+    
+    res.json({
+      success: true,
+      message: 'Notification email updated successfully',
+      business: {
+        id: updated.id,
+        name: updated.name,
+        previousEmails: business.notificationEmails,
+        newEmails: updated.notificationEmails
+      }
+    })
+    
+  } catch (error) {
+    console.error('[🔧 ADMIN] Error updating notification email:', error)
+    res.status(500).json({ error: 'Failed to update notification email' })
+  }
+})
+
 export default router 

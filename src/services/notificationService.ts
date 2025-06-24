@@ -705,10 +705,11 @@ export async function sendStep3Alert(alertData: {
       }
     }
     
-    // Fallback to system admin if no business emails found
+    // Fallback to configured admin email if no business emails found
     if (recipients.length === 0) {
-      recipients = ['admin@studioconnect.ai'] // Default system admin
-      console.log('[🎯 STEP 3] Using fallback system admin email')
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.FROM_EMAIL || 'admin@studioconnect.ai'
+      recipients = [adminEmail]
+      console.log('[🎯 STEP 3] Using fallback admin email:', adminEmail)
     }
 
     const fromEmail = process.env.FROM_EMAIL || '"StudioConnect AI Alerts" <alerts@studioconnect.ai>'

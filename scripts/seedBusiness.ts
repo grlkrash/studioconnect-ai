@@ -19,8 +19,8 @@ async function seedBusiness() {
         name: 'StudioConnect AI',
         businessType: 'CREATIVE',
         planTier: 'PRO',
-        notificationEmail: 'admin@studioconnect.ai',
-        notificationEmails: ['admin@studioconnect.ai'],
+        notificationEmail: 'sonia@cincyaisolutions.com',
+        notificationEmails: ['sonia@cincyaisolutions.com'],
         timezone: 'America/New_York',
         businessHours: {
           monday: { open: '09:00', close: '17:00', closed: false },
