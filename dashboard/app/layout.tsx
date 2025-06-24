@@ -1,18 +1,12 @@
-import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { SidebarProvider } from "@/components/ui/sidebar"
-import { BusinessProvider } from "@/context/business-context"
-import { AppSidebar } from "@/components/app-sidebar"
-import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "StudioConnect AI - Dashboard",
-  description: "AI-powered account manager for creative agencies",
-    generator: 'v0.dev'
+  title: "StudioConnect AI Dashboard",
+  description: "Business dashboard for StudioConnect AI",
 }
 
 export default function RootLayout({
@@ -23,15 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <BusinessProvider>
-        <SidebarProvider>
-          <div className="flex min-h-screen w-full">
-            <AppSidebar />
-            <main className="flex-1 overflow-auto">{children}</main>
-          </div>
-          <Toaster />
-        </SidebarProvider>
-        </BusinessProvider>
+        <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+          {children}
+        </div>
       </body>
     </html>
   )

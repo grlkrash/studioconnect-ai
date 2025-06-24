@@ -918,8 +918,11 @@ export async function getProjectStatusIntelligence(
 
     // If no active integrations, don't attempt project lookups
     if (activeIntegrations.length === 0) {
-      console.log(`[🎯 PROJECT INTELLIGENCE] No active PM integrations - skipping project intelligence`);
-      return null; // Fall back to regular AI response
+      console.log(`[🎯 PROJECT INTELLIGENCE] No active PM integrations - being honest about limitations`);
+      return {
+        reply: "I don't currently have access to live project management data. Our project management integrations are still being set up. Let me connect you with your project manager who can provide you with detailed, up-to-date project status information right away.",
+        projectFound: false
+      };
     }
 
     // 🎯 ENHANCED PROJECT STATUS DETECTION PATTERNS 🎯
@@ -972,7 +975,7 @@ export async function getProjectStatusIntelligence(
 
     // 🎯 INTELLIGENT PROJECT SEARCH WITH MULTIPLE STRATEGIES 🎯
     
-    // Only search projects that have been synced from PM tools
+    // Only search projects that have been synced from PM tools AND have recent sync data
     let project = await prisma.project.findFirst({
       where: {
         businessId,
