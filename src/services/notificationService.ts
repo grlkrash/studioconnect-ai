@@ -661,3 +661,164 @@ export async function sendCallSummaryEmail(
     console.error('[NotificationService] Failed to send call summary email', err)
   }
 }
+
+/**
+ * 🎯 STEP 3: ENTERPRISE MONITORING ALERT EMAIL
+ * Sends critical system alerts via email using existing SendGrid setup
+ */
+export async function sendStep3Alert(alertData: {
+  alertType: string
+  severity: string
+  metric: number
+  threshold: number
+  businessId: string
+  systemStatus: {
+    memoryUsage: number
+    uptime: number
+    nodeVersion: string
+  }
+}): Promise<void> {
+  try {
+    if (!transporter) {
+      console.error('[🎯 STEP 3] Email transporter not initialized - cannot send alert')
+      return
+    }
+
+    console.log('[🎯 STEP 3] Sending alert email:', alertData.alertType, alertData.severity)
+
+    // Get notification recipients from business configuration
+    let recipients: string[] = []
+    
+    if (alertData.businessId && alertData.businessId !== 'system') {
+      try {
+        const business = await prisma.business.findUnique({
+          where: { id: alertData.businessId },
+          select: { notificationEmails: true, name: true }
+        })
+        
+        if (business?.notificationEmails?.length) {
+          recipients = business.notificationEmails
+          console.log('[🎯 STEP 3] Using business notification emails:', recipients)
+        }
+      } catch (err) {
+        console.error('[🎯 STEP 3] Error fetching business emails:', err)
+      }
+    }
+    
+    // Fallback to system admin if no business emails found
+    if (recipients.length === 0) {
+      recipients = ['admin@studioconnect.ai'] // Default system admin
+      console.log('[🎯 STEP 3] Using fallback system admin email')
+    }
+
+    const fromEmail = process.env.FROM_EMAIL || '"StudioConnect AI Alerts" <alerts@studioconnect.ai>'
+    const subject = `🚨 ${alertData.severity} Alert: ${alertData.alertType} - StudioConnect AI`
+
+    // Create rich HTML alert email
+    const htmlBody = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .alert-header { 
+            background-color: ${alertData.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b'}; 
+            color: white; 
+            padding: 20px; 
+            border-radius: 8px 8px 0 0; 
+            text-align: center;
+          }
+          .alert-content { 
+            background-color: white; 
+            padding: 20px; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 0 0 8px 8px;
+          }
+          .metric-box {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid ${alertData.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b'};
+          }
+          .system-info {
+            background-color: #f8fafc;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 12px;
+          }
+          ul { list-style-type: none; padding-left: 0; }
+          li { margin-bottom: 8px; }
+          strong { color: #374151; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="alert-header">
+            <h1 style="margin: 0;">🚨 ${alertData.severity} System Alert</h1>
+            <p style="margin: 10px 0 0 0; font-size: 18px;">${alertData.alertType}</p>
+          </div>
+          
+          <div class="alert-content">
+            <p><strong>Alert Details:</strong></p>
+            
+            <div class="metric-box">
+              <h3 style="margin: 0 0 10px 0; color: ${alertData.severity === 'CRITICAL' ? '#dc2626' : '#d97706'};">
+                Performance Threshold Exceeded
+              </h3>
+              <ul>
+                <li><strong>Metric Value:</strong> ${alertData.metric}</li>
+                <li><strong>Threshold:</strong> ${alertData.threshold}</li>
+                <li><strong>Alert Type:</strong> ${alertData.alertType}</li>
+                <li><strong>Severity:</strong> ${alertData.severity}</li>
+                <li><strong>Business ID:</strong> ${alertData.businessId}</li>
+                <li><strong>Timestamp:</strong> ${new Date().toLocaleString()}</li>
+              </ul>
+            </div>
+
+            <div class="system-info">
+              <h4 style="margin: 0 0 10px 0;">System Status</h4>
+              <ul>
+                <li><strong>Memory Usage:</strong> ${Math.round(alertData.systemStatus.memoryUsage / 1024 / 1024)} MB</li>
+                <li><strong>Uptime:</strong> ${Math.round(alertData.systemStatus.uptime / 3600)} hours</li>
+                <li><strong>Node Version:</strong> ${alertData.systemStatus.nodeVersion}</li>
+                <li><strong>Environment:</strong> ${process.env.NODE_ENV || 'unknown'}</li>
+                <li><strong>Service URL:</strong> ${process.env.APP_PRIMARY_URL || 'https://leads-support-agent.onrender.com'}</li>
+              </ul>
+            </div>
+
+            <p><strong>Recommended Actions:</strong></p>
+            <ul>
+              <li>• Check the monitoring dashboard: <a href="${process.env.APP_PRIMARY_URL || 'https://leads-support-agent.onrender.com'}/api/voice/step3/monitoring-dashboard">View Dashboard</a></li>
+              <li>• Review system health: <a href="${process.env.APP_PRIMARY_URL || 'https://leads-support-agent.onrender.com'}/api/voice/step3/enterprise-health">Health Check</a></li>
+              <li>• Verify failover status: <a href="${process.env.APP_PRIMARY_URL || 'https://leads-support-agent.onrender.com'}/api/voice/step3/failover-status">Failover Status</a></li>
+            </ul>
+
+            <p>This alert was generated by the Step 3 Enterprise Monitoring system.</p>
+            <p><strong>StudioConnect AI Monitoring Team</strong></p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Send alert to all recipients
+    for (const recipient of recipients) {
+      await transporter.sendMail({
+        from: fromEmail,
+        to: recipient,
+        subject,
+        html: htmlBody
+      })
+    }
+
+    console.log(`[🎯 STEP 3] ✅ Alert email sent to ${recipients.length} recipients:`, recipients.join(', '))
+
+  } catch (error) {
+    console.error('[🎯 STEP 3] ❌ Failed to send alert email:', error)
+    throw error
+  }
+}

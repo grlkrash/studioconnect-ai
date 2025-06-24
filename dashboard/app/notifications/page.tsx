@@ -224,6 +224,43 @@ export default function NotificationsPage() {
     })
   }
 
+  // Step 3 Alert Test Function
+  const handleTestStep3Alert = async () => {
+    try {
+      const testEmail = emails[0] || "admin@example.com"
+      
+      const response = await fetch("/api/voice/step3/test-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailAddress: testEmail,
+          alertType: "TEST_MONITORING_ALERT",
+          severity: "CRITICAL"
+        })
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Step 3 Alert Test Sent! 🎯",
+          description: `Critical alert test email sent to ${testEmail}. Check your inbox.`,
+        })
+      } else {
+        const errorData = await response.json()
+        toast({
+          title: "Alert Test Failed",
+          description: errorData.details || "Failed to send test alert",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Alert Test Error",
+        description: "Network error while sending test alert",
+        variant: "destructive"
+      })
+    }
+  }
+
   const handleAddEmail = () => {
     const trimmed = emailInput.trim()
     if (!trimmed) return
@@ -299,10 +336,15 @@ export default function NotificationsPage() {
               <p className="text-slate-600">Configure where you receive notifications when new clients are captured</p>
             </div>
           </div>
-          <Button onClick={handleTestNotification}>
-            <TestTube className="w-4 h-4 mr-2" />
-            Send Test
-          </Button>
+          <div className="flex space-x-2">
+            <Button onClick={handleTestNotification}>
+              <TestTube className="w-4 h-4 mr-2" />
+              Send Test
+            </Button>
+            <Button onClick={handleTestStep3Alert} variant="outline">
+              🎯 Test Step 3 Alert
+            </Button>
+          </div>
         </div>
 
         {/* Quick Stats */}

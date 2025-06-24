@@ -1968,6 +1968,59 @@ router.get('/step3/monitoring-dashboard', async (req, res) => {
       compliance: monitoringData.compliance.overallStatus
     })
     
+    // 🚨 AUTOMATIC ALERT TRIGGERING BASED ON THRESHOLDS
+    try {
+      // Check response time threshold (2000ms)
+      if (avgDuration * 1000 > 2000 && callsLast24h > 10) {
+        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alertType: 'SLOW_RESPONSE_TIME',
+            severity: avgDuration * 1000 > 5000 ? 'CRITICAL' : 'HIGH',
+            metric: Math.round(avgDuration * 1000),
+            threshold: 2000,
+            businessId: 'system'
+          })
+        }).catch(err => console.error('[🎯 STEP 3] Alert trigger failed:', err))
+      }
+      
+      // Check success rate threshold (80%)
+      if (successRate < 80 && callsLast24h > 10) {
+        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alertType: 'LOW_SUCCESS_RATE',
+            severity: successRate < 50 ? 'CRITICAL' : 'HIGH',
+            metric: Math.round(successRate),
+            threshold: 80,
+            businessId: 'system'
+          })
+        }).catch(err => console.error('[🎯 STEP 3] Alert trigger failed:', err))
+      }
+      
+      // Check memory usage
+      const memoryUsageMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+      if (memoryUsageMB > 1000) {
+        await fetch(`${req.protocol}://${req.get('host')}/api/voice/step3/performance-alert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alertType: 'HIGH_MEMORY_USAGE',
+            severity: memoryUsageMB > 1500 ? 'CRITICAL' : 'HIGH',
+            metric: memoryUsageMB,
+            threshold: 1000,
+            businessId: 'system'
+          })
+        }).catch(err => console.error('[🎯 STEP 3] Alert trigger failed:', err))
+      }
+      
+      console.log('[🎯 STEP 3] ✅ Automatic alert checks completed')
+    } catch (alertError) {
+      console.error('[🎯 STEP 3] Error in automatic alerting:', alertError)
+    }
+    
     res.json(monitoringData)
     
   } catch (error) {
@@ -2025,13 +2078,31 @@ router.post('/step3/performance-alert', async (req, res) => {
       }
     })
     
-    // 🚨 STEP 3 ALERTING LOGIC
-    if (severity === 'CRITICAL') {
-      console.error(`[🚨 STEP 3 CRITICAL ALERT] ${alertType}: Metric ${metric} exceeded threshold ${threshold}`)
+    // 🚨 STEP 3 ALERTING LOGIC - INTEGRATED WITH EXISTING SENDGRID
+    if (severity === 'CRITICAL' || severity === 'HIGH') {
+      console.error(`[🚨 STEP 3 ${severity} ALERT] ${alertType}: Metric ${metric} exceeded threshold ${threshold}`)
       
-      // TODO: Send to Slack, PagerDuty, email, etc.
-      // await sendSlackAlert({ alertType, severity, metric, threshold })
-      // await sendEmailAlert({ alertType, severity, metric, threshold })
+      // Import and use existing notification service
+      const { sendStep3Alert } = await import('../services/notificationService')
+      
+      try {
+        await sendStep3Alert({
+          alertType,
+          severity,
+          metric,
+          threshold,
+          businessId: businessId || 'system',
+          systemStatus: {
+            memoryUsage: process.memoryUsage().heapUsed,
+            uptime: process.uptime(),
+            nodeVersion: process.version
+          }
+        })
+        
+        console.log(`[🎯 STEP 3] ✅ ${severity} alert email sent successfully`)
+      } catch (emailError) {
+        console.error(`[🎯 STEP 3] ❌ Failed to send alert email:`, emailError)
+      }
     }
     
     res.json({
@@ -2039,7 +2110,8 @@ router.post('/step3/performance-alert', async (req, res) => {
       alertId: alert.id,
       timestamp: new Date().toISOString(),
       step: 'step_3_alert_processed',
-      message: `${severity} alert for ${alertType} has been logged and processed`
+      message: `${severity} alert for ${alertType} has been logged and processed`,
+      emailSent: (severity === 'CRITICAL' || severity === 'HIGH')
     })
     
   } catch (error) {
@@ -2393,5 +2465,58 @@ async function checkStep2Implementation() {
     }
   }
 }
+
+// 🧪 STEP 3 TESTING ENDPOINT - Test Alert Email with SendGrid
+router.post('/step3/test-alert', async (req, res) => {
+  try {
+    console.log('[🧪 STEP 3 TEST] Testing alert email system...')
+    
+    const { emailAddress, alertType, severity } = req.body
+    
+    // Use provided email or default to system admin
+    const testEmail = emailAddress || process.env.ADMIN_EMAIL || 'admin@studioconnect.ai'
+    
+    // Import notification service
+    const { sendStep3Alert } = await import('../services/notificationService')
+    
+    // Send test alert
+    await sendStep3Alert({
+      alertType: alertType || 'TEST_ALERT',
+      severity: severity || 'CRITICAL',
+      metric: 9999,
+      threshold: 1000,
+      businessId: 'test-business',
+      systemStatus: {
+        memoryUsage: process.memoryUsage().heapUsed,
+        uptime: process.uptime(),
+        nodeVersion: process.version
+      }
+    })
+    
+    console.log('[🧪 STEP 3 TEST] ✅ Test alert sent successfully to:', testEmail)
+    
+    res.json({
+      success: true,
+      message: 'Test alert email sent successfully',
+      recipient: testEmail,
+      timestamp: new Date().toISOString(),
+      testData: {
+        alertType: alertType || 'TEST_ALERT',
+        severity: severity || 'CRITICAL',
+        metric: 9999,
+        threshold: 1000
+      }
+    })
+    
+  } catch (error) {
+    console.error('[🧪 STEP 3 TEST] ❌ Test alert failed:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Test alert failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    })
+  }
+})
 
 export default router 
