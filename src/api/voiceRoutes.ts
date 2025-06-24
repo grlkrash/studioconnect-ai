@@ -4091,18 +4091,40 @@ Remember: You represent ${business.name} - maintain high professional standards 
       console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
     }
     
-    // Build dynamic variables for ElevenLabs
-    const dynamicVariables: Record<string, string> = {}
+    // Build comprehensive dynamic variables for ElevenLabs
+    const agentName = business.agentConfig?.agentName || 'Maya'
+    const clientName = existingClient?.name || 'valued caller'
+    const clientStatus = existingClient ? 'existing' : 'new'
+    const clientType = existingClient ? 'returning_client' : 'new_prospect'
     
-    if (existingClient && existingClient.name) {
-      dynamicVariables.customer_name = existingClient.name
-      dynamicVariables.customer_status = "existing"
-    } else {
-      dynamicVariables.customer_status = "new"
+    const dynamicVariables: Record<string, string> = {
+      // Business Information
+      business_name: business.name,
+      company_name: business.name,
+      business_type: business.businessType || 'OTHER',
+      
+      // Agent Information  
+      agent_name: agentName,
+      agent_title: 'AI Account Manager',
+      
+      // Caller Information
+      caller_phone: caller_id || 'unknown',
+      caller_id: caller_id || 'unknown',
+      client_status: clientStatus,
+      client_name: clientName,
+      client_type: clientType,
+      
+      // Call Context
+      called_number: called_number || 'unknown',
+      agent_id: agent_id || 'unknown',
+      call_timestamp: new Date().toISOString(),
+      
+             // Configuration Status
+       support_available: 'yes',
+       has_custom_greeting: business.agentConfig?.voiceGreetingMessage ? 'true' : 'false',
+       has_persona: business.agentConfig?.personaPrompt ? 'true' : 'false',
+       voice_configured: business.agentConfig?.elevenlabsVoice ? 'true' : 'false'
     }
-    
-    dynamicVariables.business_name = business.name
-    dynamicVariables.caller_phone = caller_id || "unknown"
     
     // Build the correct ElevenLabs response format
     const response = {
@@ -4129,8 +4151,9 @@ Remember: You represent ${business.name} - maintain high professional standards 
     console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ SENDING CORRECT FORMAT RESPONSE`)
     console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Welcome message length: ${welcomeMessage.length}`)
     console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 System prompt length: ${systemPrompt.length}`)
-    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Dynamic variables:`, Object.keys(dynamicVariables))
     console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Voice ID: ${response.conversation_config_override.tts.voice_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Dynamic variables: [${Object.keys(dynamicVariables).map(k => `'${k}'`).join(', ')}]`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📤 FULL RESPONSE:`, JSON.stringify(response, null, 2))
     
     res.json(response)
     

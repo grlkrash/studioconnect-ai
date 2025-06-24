@@ -1,8 +1,8 @@
 "use client"
 
-import React, { createContext, useContext, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import useSWR from 'swr'
+import { createContext, useContext } from "react"
+import { useRouter } from "next/navigation"
+import useSWR from "swr"
 
 interface BusinessContextValue {
   businessId?: string
@@ -18,7 +18,7 @@ async function fetcher(url: string) {
   
   // If unauthorized, redirect to login
   if (response.status === 401) {
-    window.location.href = '/admin/login'
+    window.location.href = '/login'
     throw new Error('Unauthorized')
   }
   
@@ -36,10 +36,10 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     userId: string
     role: string
     business: any
-  }>('/admin/api/auth/me', fetcher, {
+  }>('/api/auth/me', fetcher, {
     onError: (err) => {
       if (err.message === 'Unauthorized') {
-        router.push('/admin/login')
+        router.push('/login')
       }
     }
   })
@@ -54,6 +54,10 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
   return <BusinessContext.Provider value={value}>{children}</BusinessContext.Provider>
 }
 
-export function useBusiness() {
-  return useContext(BusinessContext)
+export const useBusiness = () => {
+  const context = useContext(BusinessContext)
+  if (context === undefined) {
+    throw new Error('useBusiness must be used within a BusinessProvider')
+  }
+  return context
 } 

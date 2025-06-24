@@ -615,6 +615,18 @@ async function getProjectStatusIntelligence(message, businessId) {
     if (!businessId)
         return null;
     try {
+        const activeIntegrations = await db_1.prisma.integration.findMany({
+            where: {
+                businessId,
+                isEnabled: true,
+                syncStatus: 'CONNECTED'
+            }
+        });
+        console.log(`[🎯 PROJECT INTELLIGENCE] Active integrations: ${activeIntegrations.length}`);
+        if (activeIntegrations.length === 0) {
+            console.log(`[🎯 PROJECT INTELLIGENCE] No active PM integrations - skipping project intelligence`);
+            return null;
+        }
         const statusPatterns = [
             /(status|update|progress|where\s+(are\s+)?we|how\s+is|what'?s\s+the\s+status)\s+(of|on|for|with)?\s*(.{3,})/i,
             /(can\s+you\s+)?((check|give\s+me|tell\s+me|provide)\s+)?(an?\s+)?(update|status|progress)\s+(on|for|about|regarding)\s*(.{3,})/i,
@@ -648,11 +660,13 @@ async function getProjectStatusIntelligence(message, businessId) {
         let project = await db_1.prisma.project.findFirst({
             where: {
                 businessId,
-                name: { equals: projectQuery, mode: 'insensitive' }
+                name: { equals: projectQuery, mode: 'insensitive' },
+                pmToolId: { not: null },
+                lastSyncedAt: { not: null }
             },
             select: {
                 id: true, name: true, status: true, details: true,
-                assignee: true, dueDate: true, lastSyncedAt: true,
+                assignee: true, dueDate: true, lastSyncedAt: true, pmTool: true,
                 client: { select: { name: true } }
             }
         });
@@ -660,11 +674,13 @@ async function getProjectStatusIntelligence(message, businessId) {
             project = await db_1.prisma.project.findFirst({
                 where: {
                     businessId,
-                    name: { contains: projectQuery, mode: 'insensitive' }
+                    name: { contains: projectQuery, mode: 'insensitive' },
+                    pmToolId: { not: null },
+                    lastSyncedAt: { not: null }
                 },
                 select: {
                     id: true, name: true, status: true, details: true,
-                    assignee: true, dueDate: true, lastSyncedAt: true,
+                    assignee: true, dueDate: true, lastSyncedAt: true, pmTool: true,
                     client: { select: { name: true } }
                 }
             });
@@ -678,88 +694,85 @@ async function getProjectStatusIntelligence(message, businessId) {
                 project = await db_1.prisma.project.findFirst({
                     where: {
                         businessId,
-                        OR: wordConditions
+                        OR: wordConditions,
+                        pmToolId: { not: null },
+                        lastSyncedAt: { not: null }
                     },
                     select: {
                         id: true, name: true, status: true, details: true,
-                        assignee: true, dueDate: true, lastSyncedAt: true,
+                        assignee: true, dueDate: true, lastSyncedAt: true, pmTool: true,
                         client: { select: { name: true } }
                     }
                 });
             }
         }
         if (!project) {
-            const client = await db_1.prisma.client.findFirst({
+            console.log(`[🎯 PROJECT INTELLIGENCE] No synced project found for: "${projectQuery}"`);
+            const syncedProjects = await db_1.prisma.project.findMany({
                 where: {
                     businessId,
-                    name: { contains: projectQuery, mode: 'insensitive' }
+                    pmToolId: { not: null },
+                    lastSyncedAt: { not: null }
                 },
-                select: {
-                    name: true,
-                    projects: {
-                        select: {
-                            id: true, name: true, status: true, details: true,
-                            assignee: true, dueDate: true, lastSyncedAt: true,
-                            client: { select: { name: true } }
-                        },
-                        orderBy: { updatedAt: 'desc' },
-                        take: 1
-                    }
-                }
-            });
-            if (client && client.projects.length > 0) {
-                project = client.projects[0];
-            }
-        }
-        if (!project) {
-            console.log(`[🎯 PROJECT INTELLIGENCE] No project found for: "${projectQuery}"`);
-            const availableProjects = await db_1.prisma.project.findMany({
-                where: { businessId },
-                select: { name: true, status: true },
-                orderBy: { updatedAt: 'desc' },
+                select: { name: true, status: true, pmTool: true },
+                orderBy: { lastSyncedAt: 'desc' },
                 take: 5
             });
-            if (availableProjects.length > 0) {
-                const projectList = availableProjects
-                    .map(p => { var _a; return `• ${p.name} (${((_a = p.status) === null || _a === void 0 ? void 0 : _a.toLowerCase().replace(/_/g, ' ')) || 'active'})`; })
+            if (syncedProjects.length > 0) {
+                const projectList = syncedProjects
+                    .map(p => { var _a; return `• ${p.name} (${((_a = p.status) === null || _a === void 0 ? void 0 : _a.toLowerCase().replace(/_/g, ' ')) || 'active'}) - ${p.pmTool || 'PM Tool'}`; })
                     .join('\n');
                 return {
-                    reply: `I couldn't find a project matching "${projectQuery}". Here are your current active projects:\n\n${projectList}\n\nCould you please specify which project you'd like an update on?`,
+                    reply: `I couldn't find a project matching "${projectQuery}" in our connected project management tools. Here are your current projects:\n\n${projectList}\n\nCould you please specify which project you'd like an update on, or would you like me to connect you with your project manager?`,
                     projectFound: false
                 };
             }
             else {
                 return {
-                    reply: `I couldn't find a project matching "${projectQuery}". It's possible the project hasn't been synced yet, or it might be under a different name. Could you provide the exact project name, or would you like me to connect you with your project manager?`,
+                    reply: `I don't have access to current project data at the moment. This could be because our project management integration is still syncing, or there may be a temporary connection issue. Let me connect you with your project manager who can provide you with the most up-to-date project information.`,
                     projectFound: false
                 };
             }
         }
-        try {
-            await (0, projectStatusService_1.refreshProjectStatus)(project.id);
-            const updatedProject = await db_1.prisma.project.findUnique({
-                where: { id: project.id },
-                select: {
-                    id: true, name: true, status: true, details: true,
-                    assignee: true, dueDate: true, lastSyncedAt: true,
-                    client: { select: { name: true } }
+        const lastSync = project.lastSyncedAt ? new Date(project.lastSyncedAt) : null;
+        const isStale = !lastSync || (Date.now() - lastSync.getTime()) > 24 * 60 * 60 * 1000;
+        if (isStale) {
+            console.log(`[🎯 PROJECT INTELLIGENCE] Project data is stale, attempting refresh...`);
+            try {
+                await (0, projectStatusService_1.refreshProjectStatus)(project.id);
+                const updatedProject = await db_1.prisma.project.findUnique({
+                    where: { id: project.id },
+                    select: {
+                        id: true, name: true, status: true, details: true,
+                        assignee: true, dueDate: true, lastSyncedAt: true, pmTool: true,
+                        client: { select: { name: true } }
+                    }
+                });
+                if (updatedProject) {
+                    project = updatedProject;
+                    console.log(`[🎯 PROJECT INTELLIGENCE] ✅ Successfully refreshed project data`);
                 }
-            });
-            if (updatedProject)
-                project = updatedProject;
-        }
-        catch (refreshError) {
-            console.warn('[🎯 PROJECT INTELLIGENCE] Could not refresh project status:', refreshError);
+            }
+            catch (refreshError) {
+                console.warn('[🎯 PROJECT INTELLIGENCE] Could not refresh project status:', refreshError);
+                if (isStale) {
+                    return {
+                        reply: `I found the project "${project.name}" but the information may not be current due to a sync issue with our project management system. Let me connect you with your project manager who can provide you with the most up-to-date status.`,
+                        projectFound: true
+                    };
+                }
+            }
         }
         const statusText = ((_a = project.status) === null || _a === void 0 ? void 0 : _a.toLowerCase().replace(/_/g, ' ')) || 'in progress';
         const projectName = project.name;
         const clientName = (_b = project.client) === null || _b === void 0 ? void 0 : _b.name;
+        const pmTool = project.pmTool || 'project management system';
         let response = '';
         if (matchType === 'timeline') {
-            response = `Regarding the timeline for ${projectName}`;
+            response = `Based on our ${pmTool} data, here's the timeline for ${projectName}`;
         }
         else {
-            response = `Here's the current status of ${projectName}`;
+            response = `According to our ${pmTool} integration, here's the current status of ${projectName}`;
         }
         if (clientName) {
             response += ` for ${clientName}`;
@@ -793,14 +806,17 @@ async function getProjectStatusIntelligence(message, businessId) {
             const syncDate = new Date(project.lastSyncedAt);
             const syncAgo = Math.round((Date.now() - syncDate.getTime()) / (1000 * 60));
             if (syncAgo < 60) {
-                response += `\n*Information updated ${syncAgo} minutes ago*`;
+                response += `\n*Data synced from ${pmTool} ${syncAgo} minutes ago*`;
+            }
+            else if (syncAgo < 1440) {
+                response += `\n*Data synced from ${pmTool} ${Math.round(syncAgo / 60)} hours ago*`;
             }
             else {
-                response += `\n*Information updated ${Math.round(syncAgo / 60)} hours ago*`;
+                response += `\n*Data synced from ${pmTool} ${Math.round(syncAgo / 1440)} days ago - let me connect you with your project manager for the latest updates*`;
             }
         }
-        response += `\n\nIs there anything specific about this project you'd like me to help you with?`;
-        console.log(`[🎯 PROJECT INTELLIGENCE] ✅ Generated status response for project: ${projectName}`);
+        response += `\n\nWould you like me to connect you with your project manager for more detailed information, or is there anything specific about this project I can help you with?`;
+        console.log(`[🎯 PROJECT INTELLIGENCE] ✅ Generated verified status response for project: ${projectName}`);
         return {
             reply: response,
             projectFound: true
@@ -809,7 +825,7 @@ async function getProjectStatusIntelligence(message, businessId) {
     catch (error) {
         console.error('[🎯 PROJECT INTELLIGENCE] ❌ Error in project status intelligence:', error);
         return {
-            reply: 'I apologize, but I\'m having trouble accessing project information at the moment. Let me connect you with your project manager who can provide you with a detailed status update.',
+            reply: 'I apologize, but I\'m having trouble accessing our project management system at the moment. Let me connect you with your project manager who can provide you with a detailed status update right away.',
             projectFound: false
         };
     }

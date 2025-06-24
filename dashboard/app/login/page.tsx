@@ -22,7 +22,7 @@ export default function LoginPage() {
     setError('')
 
     try {
-      const response = await fetch('/admin/api/auth/login', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -31,16 +31,17 @@ export default function LoginPage() {
         credentials: 'include'
       })
 
+      const data = await response.json()
+
       if (response.ok) {
-        const data = await response.json()
-        // Set the token in a cookie (this should be done by the server)
-        router.push('/admin/')
+        // Login successful - redirect to dashboard
+        router.push('/')
         router.refresh()
       } else {
-        const data = await response.json()
         setError(data.error || 'Login failed')
       }
     } catch (err) {
+      console.error('Login error:', err)
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)

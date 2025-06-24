@@ -6,11 +6,12 @@ import { NextRequest, NextResponse } from 'next/server'
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
-  // Skip middleware for static files and API routes
+  // Skip middleware for static files, API routes, and favicon
   if (
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon.ico') ||
-    pathname.startsWith('/static/')
+    pathname.startsWith('/static/') ||
+    pathname.startsWith('/api/')
   ) {
     return NextResponse.next()
   }
@@ -32,13 +33,17 @@ export function middleware(request: NextRequest) {
   // Check for authentication token
   const token = request.cookies.get('token')?.value
   
-  // If no token and not on login page, redirect to login
-  if (!token && pathname !== '/login') {
-    const loginUrl = new URL('/admin/login', request.url)
+  // Public paths that don't require authentication
+  const publicPaths = ['/login']
+  const isPublicPath = publicPaths.includes(pathname)
+  
+  // If no token and trying to access protected route, redirect to login
+  if (!token && !isPublicPath) {
+    const loginUrl = new URL('/login', request.url)
     return NextResponse.redirect(loginUrl)
   }
   
-  // If has token and on login page, redirect to dashboard
+  // If has token and on login page, redirect to dashboard root
   if (token && pathname === '/login') {
     const dashboardUrl = new URL('/', request.url)
     return NextResponse.redirect(dashboardUrl)
@@ -47,13 +52,12 @@ export function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-// This config ensures the middleware runs on all pages and API routes
-// within the dashboard, excluding static assets.
+// This config ensures the middleware runs on all pages within the dashboard
 export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - api routes
+     * - api routes (starting with /api/)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
