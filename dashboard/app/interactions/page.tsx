@@ -138,8 +138,8 @@ export default function InteractionsPage() {
       })
 
       const [interactionsRes, analyticsRes] = await Promise.all([
-        fetch(`/api/interactions?${params}`, { credentials: 'include' }),
-        fetch(`/api/analytics/interactions?${params}`, { credentials: 'include' })
+        fetch(`/admin/api/interactions?${params}`, { credentials: 'include' }),
+        fetch(`/admin/api/analytics/interactions?${params}`, { credentials: 'include' })
       ])
 
       if (interactionsRes.ok) {

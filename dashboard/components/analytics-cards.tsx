@@ -62,7 +62,7 @@ export function AnalyticsCards() {
   useEffect(() => {
     async function fetchAnalyticsData() {
       try {
-        const response = await fetch('/api/analytics/summary', { credentials: 'include' })
+        const response = await fetch('/admin/api/analytics/summary', { credentials: 'include' })
         if (response.ok) {
           const analytics = await response.json()
           setData({

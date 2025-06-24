@@ -94,7 +94,7 @@ export function DashboardCards() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        const response = await fetch('/api/dashboard-status', { credentials: 'include' })
+        const response = await fetch('/admin/api/dashboard-status', { credentials: 'include' })
         if (response.ok) {
           const status = await response.json()
           setData({

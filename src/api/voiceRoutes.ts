@@ -9,6 +9,27 @@ import { elevenLabsAgent } from '../services/elevenlabsConversationalAgent'
 import { Prisma } from '@prisma/client'
 
 const router = Router()
+
+// Extend Request interface to include rawBody
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: string | Buffer
+    }
+  }
+}
+
+// 🚨 CRITICAL: Raw body middleware for HMAC verification
+router.use('/elevenlabs-post-call', (req, res, next) => {
+  let data = ''
+  req.on('data', chunk => {
+    data += chunk
+  })
+  req.on('end', () => {
+    req.rawBody = data
+    next()
+  })
+})
 const { VoiceResponse } = twilio.twiml
 
 // Validate Twilio signatures (only in production)
@@ -885,7 +906,10 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     if (webhookSecret && signature) {
       try {
         const crypto = require('crypto')
-        const rawBody = JSON.stringify(req.body)
+        // ElevenLabs sends raw JSON body - we need to use the original body
+        const rawBody = req.rawBody ? 
+          (typeof req.rawBody === 'string' ? req.rawBody : req.rawBody.toString()) : 
+          JSON.stringify(req.body)
         
         // Parse ElevenLabs signature format: t=timestamp,v0=signature
         const sigParts = signature.split(',')
@@ -898,22 +922,24 @@ router.post('/elevenlabs-post-call', async (req, res) => {
         })
         
         if (timestamp && receivedSig) {
-          // Create signed payload: timestamp + raw body
-          const signedPayload = timestamp + rawBody
+          // ElevenLabs signature format: timestamp + "." + raw_body
+          const signedPayload = `${timestamp}.${rawBody}`
           const expectedSig = crypto
             .createHmac('sha256', webhookSecret)
-            .update(signedPayload)
+            .update(signedPayload, 'utf8')
             .digest('hex')
           
           console.log('[🎯 STEP 2] HMAC Signature verification:')
           console.log('[🎯 STEP 2] - Expected:', expectedSig)
           console.log('[🎯 STEP 2] - Received:', receivedSig)
           console.log('[🎯 STEP 2] - Timestamp:', timestamp)
+          console.log('[🎯 STEP 2] - Payload length:', rawBody.length)
           
-          if (receivedSig === expectedSig) {
+          if (crypto.timingSafeEqual(Buffer.from(receivedSig, 'hex'), Buffer.from(expectedSig, 'hex'))) {
             console.log('[🎯 STEP 2] ✅ SECURITY PASSED - HMAC signature verified')
           } else {
             console.error('[🎯 STEP 2] ❌ HMAC verification failed - but continuing for debugging')
+            console.error('[🎯 STEP 2] - Raw body preview:', rawBody.substring(0, 200))
           }
         } else {
           console.error('[🎯 STEP 2] ❌ Invalid signature format')
@@ -1459,50 +1485,135 @@ router.get('/personalization-call-count', (req, res) => {
   })
 })
 
-// 🎯 WORKING PERSONALIZATION ENDPOINT - PRODUCTION READY
+// 🎯 BULLETPROOF PERSONALIZATION WEBHOOK - PRODUCTION READY
 router.post('/elevenlabs-personalization-working', async (req, res) => {
   try {
-    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
-    console.log('🔥 ELEVENLABS PERSONALIZATION WEBHOOK CALLED - MAYA CONFIGURATION')
-    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
-    console.log('🔥 Method:', req.method)
-    console.log('🔥 URL:', req.url)
-    console.log('🔥 Full URL:', `${req.protocol}://${req.get('host')}${req.originalUrl}`)
-    console.log('🔥 User-Agent:', req.get('user-agent'))
-    console.log('🔥 Headers:', JSON.stringify(req.headers, null, 2))
-    console.log('🔥 Body:', JSON.stringify(req.body, null, 2))
-    console.log('🔥 Timestamp:', new Date().toISOString())
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
+    console.log('🎯🔥 ELEVENLABS PERSONALIZATION WEBHOOK CALLED - BULLETPROOF CONFIGURATION 🔥🎯')
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
+    console.log('🎯🔥 THIS IS THE CRITICAL WEBHOOK THAT MUST BE CONFIGURED IN ELEVENLABS 🔥🎯')
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
     
-    const { caller_id, agent_id, called_number, call_sid } = req.body
+    // Log request details
+    console.log('🎯 REQUEST DETAILS:')
+    console.log('🎯 - Method:', req.method)
+    console.log('🎯 - URL:', req.url)
+    console.log('🎯 - Full URL:', `${req.protocol}://${req.get('host')}${req.originalUrl}`)
+    console.log('🎯 - User-Agent:', req.get('user-agent'))
+    console.log('🎯 - Content-Type:', req.get('content-type'))
+    console.log('🎯 - Headers:', JSON.stringify(req.headers, null, 2))
+    console.log('🎯 - Body:', JSON.stringify(req.body, null, 2))
+    console.log('🎯 - Timestamp:', new Date().toISOString())
     
-    // Simple phone number matching
-    let business = await prisma.business.findFirst({
-      where: { twilioPhoneNumber: called_number },
-      include: { agentConfig: true }
-    })
+    const { caller_id, agent_id, called_number, call_sid, conversation_id } = req.body
     
-    if (!business && called_number) {
-      const digits = called_number.replace(/[^0-9]/g, '')
+    console.log('🎯 CALL PARAMETERS:')
+    console.log('🎯 - Caller ID:', caller_id || 'MISSING')
+    console.log('🎯 - Agent ID:', agent_id || 'MISSING')
+    console.log('🎯 - Called Number:', called_number || 'MISSING') 
+    console.log('🎯 - Call SID:', call_sid || 'MISSING')
+    console.log('🎯 - Conversation ID:', conversation_id || 'MISSING')
+    
+    // BULLETPROOF BUSINESS LOOKUP
+    console.log('🎯 STARTING BULLETPROOF BUSINESS LOOKUP...')
+    
+    let business = null
+    
+    // Strategy 1: Direct match
+    if (called_number) {
+      console.log('🎯 Strategy 1: Direct phone match for:', called_number)
       business = await prisma.business.findFirst({
-        where: { twilioPhoneNumber: { endsWith: digits } },
+        where: { twilioPhoneNumber: called_number },
         include: { agentConfig: true }
       })
+      
+      if (business) {
+        console.log('🎯 ✅ DIRECT MATCH FOUND:', business.name)
+      }
+    }
+    
+    // Strategy 2: Normalized digits match
+    if (!business && called_number) {
+      const digits = called_number.replace(/[^0-9]/g, '')
+      console.log('🎯 Strategy 2: Normalized digits match for:', digits)
+      
+      business = await prisma.business.findFirst({
+        where: { 
+          OR: [
+            { twilioPhoneNumber: { endsWith: digits } },
+            { twilioPhoneNumber: { contains: digits } }
+          ]
+        },
+        include: { agentConfig: true }
+      })
+      
+      if (business) {
+        console.log('🎯 ✅ NORMALIZED MATCH FOUND:', business.name)
+      }
+    }
+    
+    // Strategy 3: Agent ID match (if available)
+    if (!business && agent_id) {
+      console.log('🎯 Strategy 3: Agent ID match for:', agent_id)
+      
+      business = await prisma.business.findFirst({
+        where: { 
+          agentConfig: {
+            elevenlabsAgentId: agent_id
+          }
+        },
+        include: { agentConfig: true }
+      })
+      
+      if (business) {
+        console.log('🎯 ✅ AGENT ID MATCH FOUND:', business.name)
+      }
     }
 
+    // CONSTRUCT BULLETPROOF RESPONSE
     let response
     if (business?.agentConfig) {
-      console.log(`🎯 Found business: ${business.name}`)
-      console.log(`🎯 Has personaPrompt: ${!!business.agentConfig.personaPrompt}`)
-      console.log(`🎯 Has voiceGreetingMessage: ${!!business.agentConfig.voiceGreetingMessage}`)
-      console.log(`🎯 PersonaPrompt length: ${business.agentConfig.personaPrompt?.length || 0}`)
-      console.log(`🎯 VoiceGreetingMessage length: ${business.agentConfig.voiceGreetingMessage?.length || 0}`)
+      console.log('🎯 ✅ BUSINESS FOUND - CONSTRUCTING CUSTOM CONFIGURATION')
+      console.log('🎯 - Business Name:', business.name)
+      console.log('🎯 - Business ID:', business.id)
+      console.log('🎯 - Agent Config Present:', !!business.agentConfig)
+      console.log('🎯 - Has Persona Prompt:', !!business.agentConfig.personaPrompt)
+      console.log('🎯 - Has Voice Greeting:', !!business.agentConfig.voiceGreetingMessage)
+      console.log('🎯 - Has Welcome Message:', !!business.agentConfig.welcomeMessage)
+      console.log('🎯 - ElevenLabs Voice:', business.agentConfig.elevenlabsVoice)
+      console.log('🎯 - ElevenLabs Agent ID:', business.agentConfig.elevenlabsAgentId)
       
-      const firstMessage = business.agentConfig.voiceGreetingMessage || 
-                          business.agentConfig.welcomeMessage || 
-                          "Hello! Thank you for calling. How can I help you today?"
+      // Build welcome message priority: voiceGreetingMessage > welcomeMessage > default
+      const firstMessage = business.agentConfig.voiceGreetingMessage ||
+                           business.agentConfig.welcomeMessage ||
+                           `Hello! Thank you for calling ${business.name}. I'm Maya, your AI Account Manager. How can I help you today?`
       
-      const systemPrompt = business.agentConfig.personaPrompt || 
-                          "You are a professional AI assistant. Please help the caller with their inquiry."
+      // Build system prompt with business context
+      const systemPrompt = business.agentConfig.personaPrompt ||
+                          `You are Maya, a professional AI Account Manager for ${business.name}. You help with project updates, client questions, and connecting people to the right team members. Be helpful, professional, and solution-focused.`
+      
+      // Check for existing client
+      let isExistingClient = false
+      let clientName = ''
+      
+      if (caller_id) {
+        try {
+          const client = await prisma.client.findFirst({
+            where: {
+              businessId: business.id,
+              phone: caller_id
+            }
+          })
+          
+          if (client) {
+            isExistingClient = true
+            clientName = client.name
+            console.log('🎯 ✅ EXISTING CLIENT IDENTIFIED:', clientName)
+          }
+        } catch (clientError) {
+          console.warn('🎯 ⚠️ Error checking for existing client:', clientError)
+        }
+      }
       
       response = {
         first_message: firstMessage,
@@ -1514,19 +1625,34 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
           style: 0.3,
           use_speaker_boost: true,
           speed: 1.0
+        },
+        // Additional context for ElevenLabs (ElevenLabs supports variables)
+        variables: {
+          business_name: business.name,
+          business_id: business.id,
+          caller_id: caller_id || '',
+          is_existing_client: isExistingClient,
+          client_name: clientName,
+          call_sid: call_sid || '',
+          conversation_id: conversation_id || ''
         }
       }
       
-      console.log(`🎯 ACTUAL RESPONSE BEING SENT:`)
-      console.log(`🎯 First Message: "${firstMessage}"`)
-      console.log(`🎯 System Prompt: "${systemPrompt.substring(0, 100)}..."`)
-      console.log(`🎯 Voice ID: ${response.voice_id}`)
+      console.log('🎯 ✅ CUSTOM CONFIGURATION BUILT FOR:', business.name)
+      console.log('🎯 - First Message Length:', response.first_message.length)
+      console.log('🎯 - System Prompt Length:', response.system_prompt.length)
+      console.log('🎯 - Voice ID:', response.voice_id)
+      console.log('🎯 - Has Variables:', !!response.variables)
       
     } else {
-      console.log(`🎯 No business found for ${called_number}, using default`)
+      console.log('🎯 ❌ NO BUSINESS FOUND - USING DEFAULT CONFIGURATION')
+      console.log('🎯 - Called Number:', called_number)
+      console.log('🎯 - Agent ID:', agent_id)
+      console.log('🎯 - This should NOT happen in production!')
+      
       response = {
-        first_message: "Hello! Thank you for calling. I'm your AI assistant. How can I help you today?",
-        system_prompt: "You are a professional AI assistant for a premium creative agency. Keep responses concise and helpful.",
+        first_message: "Hello! Thank you for calling. I'm your AI assistant and I'm here to help. How can I assist you today?",
+        system_prompt: "You are a professional AI assistant for a premium creative agency. Be helpful, professional, and solution-focused. Ask clarifying questions to understand their needs.",
         voice_id: 'pNInz6obpgDQGcFmaJgB',
         voice_settings: {
           stability: 0.45,
@@ -1538,20 +1664,30 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
       }
     }
     
-    console.log('🔥🔥🔥 FINAL RESPONSE BEING SENT TO ELEVENLABS 🔥🔥🔥')
-    console.log('🔥 Response Object:', JSON.stringify(response, null, 2))
-    console.log('🔥 First Message Preview:', response.first_message?.substring(0, 100))
-    console.log('🔥 System Prompt Preview:', response.system_prompt?.substring(0, 100))
-    console.log('🔥 Voice ID:', response.voice_id)
-    console.log('🔥🔥🔥 SENDING RESPONSE NOW 🔥🔥🔥')
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
+    console.log('🎯🔥 FINAL RESPONSE BEING SENT TO ELEVENLABS 🔥🎯')
+    console.log('📋 Response Object:', JSON.stringify(response, null, 2))
+    console.log('🎯 - First Message Preview:', response.first_message?.substring(0, 100) + '...')
+    console.log('🎯 - System Prompt Preview:', response.system_prompt?.substring(0, 100) + '...')
+    console.log('🎯 - Voice ID:', response.voice_id)
+    console.log('🎯 - Variables:', response.variables || 'None')
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
     
+    // Set proper response headers
+    res.setHeader('Content-Type', 'application/json')
+    res.setHeader('Cache-Control', 'no-cache')
+    
+    // Send response to ElevenLabs
     res.json(response)
     
-    console.log('🔥 ✅ RESPONSE SENT TO ELEVENLABS SUCCESSFULLY')
-    console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥')
+    console.log('🎯 ✅ PERSONALIZATION RESPONSE SENT TO ELEVENLABS SUCCESSFULLY')
+    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
     
   } catch (error) {
-    console.error('🎯 Personalization error:', error)
+    console.error('🎯💥 PERSONALIZATION ERROR:', error)
+    console.error('🎯💥 ERROR STACK:', error instanceof Error ? error.stack : 'No stack trace')
+    
+    // Send fallback response
     res.json({
       first_message: "Hello! Thank you for calling. How can I help you today?",
       system_prompt: "You are a professional AI assistant.",
@@ -1563,6 +1699,212 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
         use_speaker_boost: true,
         speed: 1.0
       }
+    })
+  }
+})
+
+// 🚨 CRITICAL CONFIGURATION STATUS ENDPOINT
+router.get('/elevenlabs-config-status', async (req, res) => {
+  try {
+    console.log('🚨 ELEVENLABS CONFIGURATION STATUS CHECK REQUESTED')
+    
+    // Force HTTPS for webhook URLs (Render.com terminates SSL)
+    const host = req.get('host')
+    const baseUrl = host?.includes('onrender.com') || host?.includes('cincyaisolutions.com') ? 
+      `https://${host}` : 
+      `${req.protocol}://${host}`
+    
+    // Get Aurora Branding business for testing
+    const business = await prisma.business.findFirst({
+      where: { 
+        OR: [
+          { name: { contains: 'Aurora', mode: 'insensitive' } },
+          { twilioPhoneNumber: '+15138487161' }
+        ]
+      },
+      include: { agentConfig: true }
+    })
+    
+    const status = {
+      timestamp: new Date().toISOString(),
+      baseUrl,
+      
+      // 🚨 CRITICAL WEBHOOK URLS
+      webhookUrls: {
+        personalization: `${baseUrl}/api/voice/elevenlabs-personalization-working`,
+        postCall: `${baseUrl}/api/voice/elevenlabs-post-call`,
+        debug: `${baseUrl}/api/voice/webhook-debug`
+      },
+      
+      // 🏢 BUSINESS CONFIGURATION
+      businessFound: !!business,
+      businessConfig: business ? {
+        id: business.id,
+        name: business.name,
+        twilioPhoneNumber: business.twilioPhoneNumber,
+        hasAgentConfig: !!business.agentConfig,
+        agentConfig: business.agentConfig ? {
+          agentName: business.agentConfig.agentName,
+          hasPersonaPrompt: !!business.agentConfig.personaPrompt,
+          personaPromptLength: business.agentConfig.personaPrompt?.length || 0,
+          hasVoiceGreeting: !!business.agentConfig.voiceGreetingMessage,
+          voiceGreetingLength: business.agentConfig.voiceGreetingMessage?.length || 0,
+          hasWelcomeMessage: !!business.agentConfig.welcomeMessage,
+          welcomeMessageLength: business.agentConfig.welcomeMessage?.length || 0,
+          elevenlabsVoice: business.agentConfig.elevenlabsVoice,
+          elevenlabsAgentId: business.agentConfig.elevenlabsAgentId
+        } : null
+      } : null,
+      
+      // 🔧 ENVIRONMENT CHECK
+      environment: {
+        webhookSecretConfigured: !!process.env.ELEVENLABS_WEBHOOK_SECRET,
+        nodeEnv: process.env.NODE_ENV,
+        renderDeployment: !!host?.includes('onrender.com')
+      },
+      
+      // 🎯 TEST PAYLOAD FOR ELEVENLABS
+      testPayload: {
+        caller_id: '+15136120566',
+        called_number: '+15138487161',
+        agent_id: 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+        call_sid: 'test-' + Date.now(),
+        conversation_id: 'test-conv-' + Date.now()
+      },
+      
+      // 🚨 CRITICAL INSTRUCTIONS
+      elevenlabsInstructions: {
+        agentId: 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+        steps: [
+          '🚨 CRITICAL: Go to ElevenLabs Dashboard (https://elevenlabs.io/app/conversational-ai)',
+          '🔧 Find your agent with ID: agent_01jy6ztt6mf5jaa266qj8b7asz',
+          '⚙️ Click "Edit Agent" or "Settings"',
+          '📞 In "Conversation Configuration" section:',
+          `   - Set "Personalization webhook" to: ${baseUrl}/api/voice/elevenlabs-personalization-working`,
+          `   - Set "Post-call webhook" to: ${baseUrl}/api/voice/elevenlabs-post-call`,
+          '💾 SAVE the configuration',
+          '📞 Test by calling: +15138487161',
+          '🔍 Check logs for webhook calls with the 🎯💥 markers'
+        ],
+        webhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET || 'NOT_SET'
+      }
+    }
+    
+    console.log('🚨 Configuration status generated')
+    console.log('🚨 Business found:', status.businessFound)
+    console.log('🚨 Personalization URL:', status.webhookUrls.personalization)
+    console.log('🚨 Agent Config:', !!status.businessConfig?.hasAgentConfig)
+    
+    res.json(status)
+    
+  } catch (error) {
+    console.error('🚨 Configuration status error:', error)
+    res.status(500).json({
+      error: 'Configuration status check failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+
+// 🧪 MANUAL TEST ENDPOINT FOR PERSONALIZATION WEBHOOK
+router.post('/test-personalization-webhook-manual', async (req, res) => {
+  try {
+    console.log('🧪 MANUAL WEBHOOK TEST TRIGGERED')
+    console.log('🧪 Test payload:', JSON.stringify(req.body, null, 2))
+    
+    const testPayload = {
+      caller_id: '+15136120566',
+      called_number: '+15138487161',
+      agent_id: 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+      call_sid: 'manual-test-' + Date.now(),
+      conversation_id: 'test-conv-' + Date.now(),
+      ...req.body
+    }
+    
+    console.log('🧪 Final test payload:', testPayload)
+    
+    // Create mock request to our webhook
+    const mockReq = {
+      method: 'POST',
+      url: '/api/voice/elevenlabs-personalization-working',
+      get: (header: string) => header === 'host' ? req.get('host') : 'Manual-Test/1.0',
+      protocol: req.protocol,
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': 'Manual-Test/1.0'
+      },
+      body: testPayload
+    }
+    
+    const mockRes = {
+      setHeader: () => {},
+      json: (data: any) => data
+    }
+    
+    // Find business for the test
+    const business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: testPayload.called_number },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({
+        error: 'No business found for phone number',
+        calledNumber: testPayload.called_number,
+        testPayload
+      })
+    }
+    
+    // Build expected response
+    const expectedResponse = {
+      first_message: business.agentConfig?.voiceGreetingMessage ||
+                    business.agentConfig?.welcomeMessage ||
+                    `Hello! Thank you for calling ${business.name}. I'm Maya, your AI Account Manager. How can I help you today?`,
+      system_prompt: business.agentConfig?.personaPrompt ||
+                    `You are Maya, a professional AI Account Manager for ${business.name}. You help with project updates, client questions, and connecting people to the right team members. Be helpful, professional, and solution-focused.`,
+      voice_id: business.agentConfig?.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1.0
+      },
+      variables: {
+        business_name: business.name,
+        business_id: business.id,
+        caller_id: testPayload.caller_id,
+        is_existing_client: false,
+        client_name: '',
+        call_sid: testPayload.call_sid,
+        conversation_id: testPayload.conversation_id
+      }
+    }
+    
+    console.log('🧪 Test successful - business found:', business.name)
+    
+    res.json({
+      success: true,
+      testPayload,
+      businessFound: true,
+      businessName: business.name,
+      hasAgentConfig: !!business.agentConfig,
+      expectedResponse,
+      instructions: [
+        '✅ This test shows what the webhook SHOULD return',
+        '🔧 Configure this URL in ElevenLabs:',
+        `   ${req.protocol}://${req.get('host')}/api/voice/elevenlabs-personalization-working`,
+        '📞 Then test by calling: +15138487161',
+        '🔍 Check logs for the 🎯💥 markers'
+      ]
+    })
+    
+  } catch (error) {
+    console.error('🧪 Manual test error:', error)
+    res.status(500).json({
+      error: 'Manual test failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 })

@@ -106,8 +106,8 @@ export default function NotificationsPage() {
     ;(async () => {
       try {
         const [emailRes, phoneRes] = await Promise.all([
-          fetch("/api/business/notification-emails", { credentials: "include" }),
-          fetch("/api/business/notification-phone", { credentials: "include" })
+          fetch("/admin/api/business/notification-emails", { credentials: "include" }),
+          fetch("/admin/api/business/notification-phone", { credentials: "include" })
         ])
         
         if (emailRes.ok) {
@@ -171,7 +171,7 @@ export default function NotificationsPage() {
       if (channelId === 'email') {
         // Save email address using existing email API
         const emailArray = channel.settings.address ? [channel.settings.address] : []
-        const res = await fetch("/api/business/notification-emails", {
+        const res = await fetch("/admin/api/business/notification-emails", {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -186,7 +186,7 @@ export default function NotificationsPage() {
         }
       } else if (channelId === 'sms') {
         // Save phone number using existing phone API
-        const res = await fetch("/api/business/notification-phone", {
+        const res = await fetch("/admin/api/business/notification-phone", {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -229,7 +229,7 @@ export default function NotificationsPage() {
     try {
       const testEmail = emails[0] || "admin@example.com"
       
-      const response = await fetch("/api/voice/step3/test-alert", {
+      const response = await fetch("/admin/api/voice/step3/test-alert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -275,7 +275,7 @@ export default function NotificationsPage() {
 
   const handleSaveEmails = async () => {
     try {
-      const res = await fetch("/api/business/notification-emails", {
+      const res = await fetch("/admin/api/business/notification-emails", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -305,7 +305,7 @@ export default function NotificationsPage() {
       return
     }
     try {
-      const res = await fetch("/api/business/notification-phone", {
+      const res = await fetch("/admin/api/business/notification-phone", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

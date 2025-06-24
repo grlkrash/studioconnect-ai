@@ -110,13 +110,13 @@ export default function IntegrationsPage() {
   // No additional state needed for OAuth flows
 
   const handleConnectAsanaOAuth = () => {
-    window.location.href = "/api/integrations/asana/oauth-start"
+    window.location.href = "/admin/api/integrations/asana/oauth-start"
   }
 
   const fetchIntegrations = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch("/api/integrations")
+      const res = await fetch("/admin/api/integrations")
       const json = await res.json()
       const records: IntegrationRecord[] = json.integrations || []
 
@@ -176,16 +176,16 @@ export default function IntegrationsPage() {
 
   // Helpers
   const handleConnectMondayOAuth = () => {
-    window.location.href = '/api/integrations/monday/oauth-start'
+    window.location.href = '/admin/api/integrations/monday/oauth-start'
   }
 
   const handleConnectJiraOAuth = () => {
-    window.location.href = '/api/integrations/jira/oauth-start'
+    window.location.href = '/admin/api/integrations/jira/oauth-start'
   }
 
   const handleDisconnect = async (prov: ProviderKey) => {
     try {
-      const res = await fetch(`/api/integrations/${prov.toLowerCase()}`, { method: "DELETE" })
+      const res = await fetch(`/admin/api/integrations/${prov.toLowerCase()}`, { method: "DELETE" })
       if (!res.ok) throw new Error(await res.text())
       toast({ title: `${PROVIDERS_META[prov].name} disconnected` })
       fetchIntegrations()
@@ -196,7 +196,7 @@ export default function IntegrationsPage() {
 
   const handleTestConnection = async (prov: ProviderKey) => {
     try {
-      const res = await fetch(`/api/integrations/${prov.toLowerCase()}/test`, { method: 'POST' })
+      const res = await fetch(`/admin/api/integrations/${prov.toLowerCase()}/test`, { method: 'POST' })
       const json = await res.json()
       if (json.ok) toast({ title: `${PROVIDERS_META[prov].name} connection verified` })
       else throw new Error('Provider returned error')
@@ -207,7 +207,7 @@ export default function IntegrationsPage() {
 
   const handleSyncNow = async (prov: ProviderKey) => {
     try {
-      const res = await fetch(`/api/integrations/${prov.toLowerCase()}/sync`, { method: 'POST' })
+      const res = await fetch(`/admin/api/integrations/${prov.toLowerCase()}/sync`, { method: 'POST' })
       if (!res.ok) throw new Error(await res.text())
       toast({ title: `${PROVIDERS_META[prov].name} synced successfully` })
       fetchIntegrations()
@@ -218,7 +218,7 @@ export default function IntegrationsPage() {
 
   const handleToggleEnabled = async (prov: ProviderKey, enabled: boolean) => {
     try {
-      const res = await fetch(`/api/integrations/${prov.toLowerCase()}`, {
+      const res = await fetch(`/admin/api/integrations/${prov.toLowerCase()}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isEnabled: enabled }),

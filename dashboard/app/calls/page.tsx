@@ -135,8 +135,8 @@ export default function CallsPage() {
       })
 
       const [callsRes, analyticsRes] = await Promise.all([
-        fetch(`/api/calls?${params}`, { credentials: 'include' }),
-        fetch(`/api/analytics/calls?${params}`, { credentials: 'include' })
+        fetch(`/admin/api/calls?${params}`, { credentials: 'include' }),
+        fetch(`/admin/api/analytics/calls?${params}`, { credentials: 'include' })
       ])
 
       if (callsRes.ok) {

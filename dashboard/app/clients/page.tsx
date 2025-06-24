@@ -33,7 +33,7 @@ export default function ClientsPage() {
   useEffect(() => {
     async function fetchClients() {
       try {
-        const response = await fetch('/api/clients', { credentials: 'include' })
+        const response = await fetch('/admin/api/clients', { credentials: 'include' })
         if (!response.ok) {
           throw new Error('Failed to fetch clients')
         }

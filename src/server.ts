@@ -37,8 +37,7 @@ import webhookRoutes from './api/webhookRoutes'
 import callHistoryRoutes from './api/callHistoryRoutes'
 import interactionRoutes from './api/interactionRoutes'
 import analyticsRoutes from './api/analyticsRoutes'
-// TODO: Re-enable authRoutes import once TypeScript issues are resolved
-// import authRoutes from './api/authRoutes'
+import authRoutes from './api/authRoutes'
 import { startAsanaCron } from './services/projectSync/cron'
 import { voiceHealthMonitor } from './monitor/voiceHealthMonitor'
 
@@ -354,8 +353,8 @@ app.get('/test-calls', (req: Request, res: Response) => {
 // 2. Mount API routes
 // (chat route mounted earlier to avoid 404 during Next.js prepare)
 // app.use('/api/chat', chatRoutes)
-// TODO: Re-enable authRoutes once TypeScript import issues are resolved
-// app.use('/api/auth', authRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/admin/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/clients', clientRoutes)
     app.use('/api/projects', projectRoutes)
@@ -364,14 +363,28 @@ app.use('/api/clients', clientRoutes)
     app.use('/api/agent-config', agentConfigRoutes)
     app.use('/api/lead-questions', leadQuestionRoutes)
     app.use('/api/integrations', integrationRoutes)
-    // Removed conflicting calls route - dashboard handles this via Next.js API routes
-    // app.use('/api/calls', callHistoryRoutes)
-    // Interactions route moved to dashboard Next.js API routes
-    // app.use('/api/interactions', interactionRoutes)
+    app.use('/api/calls', callHistoryRoutes)
+    app.use('/api/interactions', interactionRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)
     app.use('/api/healthz', healthzRouter)
+    
+    // Admin API routes (for dashboard)
+    app.use('/admin/api/admin', adminRoutes)
+    app.use('/admin/api/clients', clientRoutes)
+    app.use('/admin/api/projects', projectRoutes)
+    app.use('/admin/api/knowledge-base', knowledgeBaseRoutes)
+    app.use('/admin/api/business', businessRoutes)
+    app.use('/admin/api/agent-config', agentConfigRoutes)
+    app.use('/admin/api/lead-questions', leadQuestionRoutes)
+    app.use('/admin/api/integrations', integrationRoutes)
+    app.use('/admin/api/calls', callHistoryRoutes)
+    app.use('/admin/api/interactions', interactionRoutes)
+    app.use('/admin/api/analytics', analyticsRoutes)
+    app.use('/admin/api/widget-config', widgetConfigRoutes)
+    app.use('/admin/api/elevenlabs', elevenLabsRouter)
+    app.use('/admin/api/healthz', healthzRouter)
     
     // Legacy health check endpoints
     app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))

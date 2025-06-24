@@ -23,7 +23,7 @@ export function StatsOverview() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const response = await fetch('/api/analytics/summary', { credentials: 'include' })
+        const response = await fetch('/admin/api/analytics/summary', { credentials: 'include' })
         if (response.ok) {
           const data = await response.json()
           setStats({
