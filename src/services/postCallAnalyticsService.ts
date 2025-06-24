@@ -317,7 +317,7 @@ export class PostCallAnalyticsService {
           businessId,
           createdAt: { gte: since },
           source: 'elevenlabs',
-          metadata: { path: ['duration_seconds'], not: null }
+          metadata: { path: ['duration_seconds'], not: Prisma.JsonNull }
         },
         _avg: {
           // We'll calculate this from metadata in application logic
@@ -330,7 +330,7 @@ export class PostCallAnalyticsService {
           businessId,
           createdAt: { gte: since },
           source: 'elevenlabs',
-          metadata: { path: ['sentiment_score'], not: null }
+          metadata: { path: ['sentiment_score'], not: Prisma.JsonNull }
         },
         _avg: {
           // We'll calculate this from metadata in application logic
