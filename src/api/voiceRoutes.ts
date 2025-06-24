@@ -596,97 +596,33 @@ router.post('/elevenlabs-personalization', async (req, res) => {
       select: { id: true, name: true }
     })
     
-    // 🚨 CRITICAL: ALWAYS USE DATABASE CONFIGURATION FIRST
+    // 🚨 STEP 1 FIX: DATABASE IS THE SINGLE SOURCE OF TRUTH
     let welcomeMessage: string
     let systemPrompt: string
     
-    // Use database welcome message if it exists AND is professional (not generic)
-    if (business.agentConfig?.voiceGreetingMessage && 
-        business.agentConfig.voiceGreetingMessage.trim().length > 10 &&
-        !business.agentConfig.voiceGreetingMessage.includes('AI assistant')) {
+    // ALWAYS use database configuration first - no conditional overrides
+    if (business.agentConfig?.voiceGreetingMessage) {
       welcomeMessage = business.agentConfig.voiceGreetingMessage
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
-    } else if (business.agentConfig?.welcomeMessage && 
-               business.agentConfig.welcomeMessage.trim().length > 10 &&
-               !business.agentConfig.welcomeMessage.includes('AI assistant')) {
+    } else if (business.agentConfig?.welcomeMessage) {
       welcomeMessage = business.agentConfig.welcomeMessage
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
     } else {
-      // Generate professional creative agency welcome message
-      if (existingClient) {
-        const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
-        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm Maya, your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
-      } else {
-        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm Maya, your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
-      }
-      console.log(`[🎯 PERSONALIZATION] ⚠️ Using ENHANCED PROFESSIONAL welcome message - Database had generic message`)
+      // CRITICAL ERROR: No welcome message configured
+      console.error(`[🎯 PERSONALIZATION] 🚨 CRITICAL: Business ${business.name} (ID: ${business.id}) has NO welcome message configured in database`)
+      welcomeMessage = "Hello. How can I help?"
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK welcome message - MISCONFIGURATION DETECTED`)
     }
     
-    // Use database system prompt if it exists AND is professional (not generic)
-    if (business.agentConfig?.personaPrompt && 
-        business.agentConfig.personaPrompt.trim().length > 20 && 
-        !business.agentConfig.personaPrompt.includes('helpful assistant')) {
+    // ALWAYS use database system prompt first - no conditional overrides
+    if (business.agentConfig?.personaPrompt) {
       systemPrompt = business.agentConfig.personaPrompt
       console.log(`[🎯 PERSONALIZATION] ✅ Using DATABASE personaPrompt (${systemPrompt.length} chars)`)
     } else {
-      // Generate professional creative agency system prompt
-      systemPrompt = `You are Maya, a professional AI Account Manager for ${business.name}, a premium creative agency specializing in brand strategy, web design, and marketing.
-
-PERSONALITY & ROLE:
-- Professional, knowledgeable, and solution-focused
-- Warm but business-appropriate tone
-- Project-centric mindset with creative industry expertise
-- Confident in discussing branding, design, and marketing services
-
-YOUR CORE CAPABILITIES:
-- Provide project status updates and timeline information
-- Answer questions about our creative services (branding, web design, marketing)
-- Qualify new leads and understand their project requirements
-- Schedule consultations with our creative team
-- Handle client inquiries professionally and efficiently
-- Access project management systems for real-time updates
-
-CONVERSATION GUIDELINES:
-- Keep responses concise and actionable (2-3 sentences max)
-- Ask smart follow-up questions to understand needs
-- Use creative industry terminology appropriately
-- Always offer to connect with a team member for complex requests
-- Sound confident and knowledgeable about our services
-
-BUSINESS CONTEXT:
-- We're ${business.name}, a boutique creative agency
-- We specialize in brand identity, web design, and digital marketing
-- Our clients range from startups to established businesses
-- We pride ourselves on strategic, results-driven creative work
-
-${existingClient ? `
-CLIENT SERVICE EXPERT: For this existing client, you can:
-- Provide project status updates and timeline information
-- Access and discuss project details from our management system
-- Address concerns and questions professionally  
-- Coordinate with team for complex requests
-- Maintain strong client relationships
-
-You HAVE ACCESS to project information and should be helpful with status updates.
-- Client Name: ${existingClient.name}
-` : `
-LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
-- Gather company name and contact details
-- Understand project type and requirements (web design, branding, marketing, etc.)
-- Assess timeline and budget expectations
-- Determine decision-making authority
-- Schedule consultations with our creative team
-`}
-
-ESCALATION TRIGGERS:
-- Detailed project scope discussions
-- Pricing and contract negotiations
-- Complex technical requirements
-- Creative strategy conversations
-- Urgent project issues
-
-IMPORTANT: You represent a premium creative agency. Every interaction should reflect our high standards and creative expertise. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
-      console.log(`[🎯 PERSONALIZATION] ⚠️ Using ENHANCED PROFESSIONAL system prompt (${systemPrompt.length} chars) - Database had generic prompt`)
+      // CRITICAL ERROR: No system prompt configured  
+      console.error(`[🎯 PERSONALIZATION] 🚨 CRITICAL: Business ${business.name} (ID: ${business.id}) has NO system prompt configured in database`)
+      systemPrompt = "You are a professional AI assistant. Please help the caller with their inquiry."
+      console.log(`[🎯 PERSONALIZATION] ⚠️ Using FALLBACK system prompt - MISCONFIGURATION DETECTED`)
     }
     
     const response = {
@@ -784,56 +720,33 @@ Remember: You represent a Fortune 100 quality agency. Every interaction should r
       select: { id: true, name: true }
     })
     
-    // Build welcome message
-    let welcomeMessage = business.agentConfig?.welcomeMessage || business.agentConfig?.voiceGreetingMessage
-    if (!welcomeMessage) {
-      if (existingClient) {
-        const clientName = existingClient.name ? existingClient.name.split(' ')[0] : 'there'
-        welcomeMessage = `Hello ${clientName}! Thank you for calling ${business.name}. I'm your dedicated AI Account Manager, and I'm here to help with your projects, provide status updates, and answer any questions you might have. What can I assist you with today?`
-      } else {
-        welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your professional AI Account Manager, and I specialize in helping with creative services, project inquiries, and connecting you with our talented team. How may I assist you today?`
-      }
+    // 🚨 STEP 1 FIX: DATABASE IS THE SINGLE SOURCE OF TRUTH  
+    let welcomeMessage: string
+    
+    // ALWAYS use database configuration first - no conditional overrides
+    if (business.agentConfig?.voiceGreetingMessage) {
+      welcomeMessage = business.agentConfig.voiceGreetingMessage
+      console.log(`[🎯 PERSONALIZATION FIXED] ✅ Using DATABASE voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else if (business.agentConfig?.welcomeMessage) {
+      welcomeMessage = business.agentConfig.welcomeMessage
+      console.log(`[🎯 PERSONALIZATION FIXED] ✅ Using DATABASE welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else {
+      // CRITICAL ERROR: No welcome message configured
+      console.error(`[🎯 PERSONALIZATION FIXED] 🚨 CRITICAL: Business ${business.name} (ID: ${business.id}) has NO welcome message configured in database`)
+      welcomeMessage = "Hello. How can I help?"
+      console.log(`[🎯 PERSONALIZATION FIXED] ⚠️ Using FALLBACK welcome message - MISCONFIGURATION DETECTED`)
     }
     
-    // Build system prompt
-    let systemPrompt = business.agentConfig?.personaPrompt
-    if (!systemPrompt) {
-      systemPrompt = `You are a professional AI Account Manager for ${business.name}, a premium creative agency.
-
-PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
-
-YOUR CORE CAPABILITIES:
-${existingClient ? `
-CLIENT SERVICE EXPERT: For this existing client, you can:
-- Provide project status updates and timeline information
-- Access and discuss project details from our management system
-- Address concerns and questions professionally  
-- Coordinate with team for complex requests
-- Maintain strong client relationships
-
-You HAVE ACCESS to project information and should be helpful with status updates.
-` : `
-LEAD QUALIFICATION SPECIALIST: For this new caller, professionally:
-- Gather company name and contact details
-- Understand project type and requirements (web design, branding, marketing, etc.)
-- Assess timeline and budget expectations
-- Determine decision-making authority
-- Schedule consultations with our creative team
-`}
-
-CONVERSATION GUIDELINES:
-- Keep responses concise and to the point (2-3 sentences max)
-- Ask clarifying questions when needed
-- Always offer to connect with a team member for complex requests
-- Use natural, conversational language with professional tone
-- Be helpful and knowledgeable about our services
-
-BUSINESS CONTEXT:
-- Business Name: ${business.name}
-- This is ${existingClient ? 'an existing client' : 'a new lead'}
-${existingClient ? `- Client Name: ${existingClient.name}` : ''}
-
-IMPORTANT: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards. Never say you "don't have access" to information - instead, offer to help find the answer or connect them with the right team member.`
+    // ALWAYS use database system prompt first - no conditional overrides
+    let systemPrompt: string
+    if (business.agentConfig?.personaPrompt) {
+      systemPrompt = business.agentConfig.personaPrompt
+      console.log(`[🎯 PERSONALIZATION FIXED] ✅ Using DATABASE personaPrompt (${systemPrompt.length} chars)`)
+    } else {
+      // CRITICAL ERROR: No system prompt configured  
+      console.error(`[🎯 PERSONALIZATION FIXED] 🚨 CRITICAL: Business ${business.name} (ID: ${business.id}) has NO system prompt configured in database`)
+      systemPrompt = "You are a professional AI assistant. Please help the caller with their inquiry."
+      console.log(`[🎯 PERSONALIZATION FIXED] ⚠️ Using FALLBACK system prompt - MISCONFIGURATION DETECTED`)
     }
     
     const response = {
@@ -1606,6 +1519,92 @@ Remember: You represent a premium creative agency. Every interaction should refl
   } catch (error) {
     console.error('[🔧 ADMIN FIX] Error:', error)
     res.status(500).json({ error: 'Failed to update agent configuration' })
+  }
+})
+
+// 🔧 STEP 1 VERIFICATION ENDPOINT - Test database-first configuration
+router.get('/verify-step1-fix/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params
+    
+    console.log('[🔧 STEP 1 VERIFICATION] Testing database-first configuration...')
+    
+    const business = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    // Simulate the fixed personalization logic
+    let welcomeMessage: string
+    let systemPrompt: string
+    let hasWelcomeMessage = false
+    let hasSystemPrompt = false
+    
+    // Test welcome message logic
+    if (business.agentConfig?.voiceGreetingMessage) {
+      welcomeMessage = business.agentConfig.voiceGreetingMessage
+      hasWelcomeMessage = true
+      console.log(`[🔧 STEP 1 VERIFICATION] ✅ Would use DATABASE voiceGreetingMessage`)
+    } else if (business.agentConfig?.welcomeMessage) {
+      welcomeMessage = business.agentConfig.welcomeMessage
+      hasWelcomeMessage = true
+      console.log(`[🔧 STEP 1 VERIFICATION] ✅ Would use DATABASE welcomeMessage`)
+    } else {
+      welcomeMessage = "Hello. How can I help?"
+      console.log(`[🔧 STEP 1 VERIFICATION] ⚠️ Would use FALLBACK welcome message - MISCONFIGURATION`)
+    }
+    
+    // Test system prompt logic
+    if (business.agentConfig?.personaPrompt) {
+      systemPrompt = business.agentConfig.personaPrompt
+      hasSystemPrompt = true
+      console.log(`[🔧 STEP 1 VERIFICATION] ✅ Would use DATABASE personaPrompt`)
+    } else {
+      systemPrompt = "You are a professional AI assistant. Please help the caller with their inquiry."
+      console.log(`[🔧 STEP 1 VERIFICATION] ⚠️ Would use FALLBACK system prompt - MISCONFIGURATION`)
+    }
+    
+    const verification = {
+      businessName: business.name,
+      businessId: business.id,
+      step1Status: 'IMPLEMENTED',
+      databaseFirst: true,
+      configuration: {
+        welcomeMessage: {
+          source: hasWelcomeMessage ? 'DATABASE' : 'FALLBACK',
+          configured: hasWelcomeMessage,
+          length: welcomeMessage.length,
+          preview: welcomeMessage.substring(0, 100) + (welcomeMessage.length > 100 ? '...' : '')
+        },
+        systemPrompt: {
+          source: hasSystemPrompt ? 'DATABASE' : 'FALLBACK', 
+          configured: hasSystemPrompt,
+          length: systemPrompt.length,
+          preview: systemPrompt.substring(0, 200) + (systemPrompt.length > 200 ? '...' : '')
+        }
+      },
+      recommendations: [] as string[]
+    }
+    
+    if (!hasWelcomeMessage) {
+      verification.recommendations.push('Configure voiceGreetingMessage or welcomeMessage in agentConfig')
+    }
+    
+    if (!hasSystemPrompt) {
+      verification.recommendations.push('Configure personaPrompt in agentConfig')
+    }
+    
+    console.log('[🔧 STEP 1 VERIFICATION] Verification complete:', verification.configuration)
+    
+    res.json(verification)
+    
+  } catch (error) {
+    console.error('[🔧 STEP 1 VERIFICATION] Error:', error)
+    res.status(500).json({ error: 'Verification failed' })
   }
 })
 
