@@ -1472,16 +1472,19 @@ router.use('/elevenlabs-personalization-working', (req, res, next) => {
 
 // 🎯 BULLETPROOF PERSONALIZATION WEBHOOK - PRODUCTION READY
 router.post('/elevenlabs-personalization-working', async (req, res) => {
+  personalizationCallCount++
+  
   try {
     const { caller_id, agent_id, called_number, call_sid } = req.body
     
-    console.log(`[🎯💥 PERSONALIZATION] ================================================`)
-    console.log(`[🎯💥 PERSONALIZATION] 📞 INCOMING CALL`)
-    console.log(`[🎯💥 PERSONALIZATION] 📞 Caller: ${caller_id}`)
-    console.log(`[🎯💥 PERSONALIZATION] 📞 Called: ${called_number}`)
-    console.log(`[🎯💥 PERSONALIZATION] 🤖 Agent: ${agent_id}`)
-    console.log(`[🎯💥 PERSONALIZATION] 📞 Call SID: ${call_sid}`)
-    console.log(`[🎯💥 PERSONALIZATION] ================================================`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ================================================`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 INCOMING CALL`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Caller: ${caller_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Called: ${called_number}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 🤖 Agent: ${agent_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Call SID: ${call_sid}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📊 Request body:`, JSON.stringify(req.body, null, 2))
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ================================================`)
 
     // Clean phone number helper function
     const normalizePhone = (num: string | null | undefined) =>
@@ -1514,16 +1517,21 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
       })
       
       if (business) {
-        console.log(`[🎯💥 PERSONALIZATION] ✅ Found business via Agent ID: ${business.name}`)
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Found business via Agent ID: ${business.name}`)
       }
     }
 
     if (!business) {
-      console.error(`[🎯💥 PERSONALIZATION] ❌ NO BUSINESS FOUND for called_number: ${called_number}, agent_id: ${agent_id}`)
+      console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ NO BUSINESS FOUND for called_number: ${called_number}, agent_id: ${agent_id}`)
       
-      // Return ElevenLabs' expected format for fallback
-      return res.json({
+      // 🚨 CORRECT FORMAT per official ElevenLabs docs
+      const fallbackResponse = {
         type: "conversation_initiation_client_data",
+        dynamic_variables: {
+          business_name: "Creative Agency",
+          caller_phone: caller_id || "unknown",
+          client_status: "unknown"
+        },
         conversation_config_override: {
           agent: {
             prompt: {
@@ -1535,13 +1543,14 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
           tts: {
             voice_id: "pNInz6obpgDQGcFmaJgB"
           }
-        },
-        dynamic_variables: {},
-        custom_llm_extra_body: {}
-      })
+        }
+      }
+      
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📤 SENDING OLD FORMAT FALLBACK:`, JSON.stringify(fallbackResponse, null, 2))
+      return res.json(fallbackResponse)
     }
     
-    console.log(`[🎯💥 PERSONALIZATION] ✅ FOUND BUSINESS: ${business.name}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ FOUND BUSINESS: ${business.name}`)
     
     // Check for existing client to personalize greeting
     let existingClient = null
@@ -1555,7 +1564,7 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
       })
       
       if (existingClient) {
-        console.log(`[🎯💥 PERSONALIZATION] ✅ EXISTING CLIENT: ${existingClient.name}`)
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ EXISTING CLIENT: ${existingClient.name}`)
       }
     }
     
@@ -1563,20 +1572,20 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
     let welcomeMessage: string
     if (business.agentConfig?.voiceGreetingMessage) {
       welcomeMessage = business.agentConfig.voiceGreetingMessage
-      console.log(`[🎯💥 PERSONALIZATION] ✅ Using voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
     } else if (business.agentConfig?.welcomeMessage) {
       welcomeMessage = business.agentConfig.welcomeMessage
-      console.log(`[🎯💥 PERSONALIZATION] ✅ Using welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
     } else {
       welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant. How can I help you today?`
-      console.log(`[🎯💥 PERSONALIZATION] ⚠️ Using generated welcome message`)
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated welcome message`)
     }
     
     // Build the system prompt from database configuration
     let systemPrompt: string
     if (business.agentConfig?.personaPrompt) {
       systemPrompt = business.agentConfig.personaPrompt
-      console.log(`[🎯💥 PERSONALIZATION] ✅ Using personaPrompt (${systemPrompt.length} chars)`)
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using personaPrompt (${systemPrompt.length} chars)`)
     } else {
       systemPrompt = `You are a professional AI assistant for ${business.name}.
 
@@ -1596,25 +1605,17 @@ COMMUNICATION STYLE:
 - Be helpful and solution-focused
 
 Remember: You represent ${business.name} - maintain high professional standards in every interaction.`
-      console.log(`[🎯💥 PERSONALIZATION] ⚠️ Using generated system prompt`)
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
     }
     
-    // Build dynamic variables for ElevenLabs
-    const dynamicVariables: Record<string, string> = {}
-    
-    if (existingClient && existingClient.name) {
-      dynamicVariables.customer_name = existingClient.name
-      dynamicVariables.customer_status = "existing"
-    } else {
-      dynamicVariables.customer_status = "new"
-    }
-    
-    dynamicVariables.business_name = business.name
-    dynamicVariables.caller_phone = caller_id || "unknown"
-    
-    // Build the correct ElevenLabs response format
+    // 🚨 CRITICAL FIX: Use CORRECT NEW FORMAT per official ElevenLabs docs
     const response = {
       type: "conversation_initiation_client_data",
+      dynamic_variables: {
+        business_name: business.name,
+        caller_phone: caller_id || "unknown",
+        client_status: existingClient ? "existing" : "new"
+      },
       conversation_config_override: {
         agent: {
           prompt: {
@@ -1626,28 +1627,29 @@ Remember: You represent ${business.name} - maintain high professional standards 
         tts: {
           voice_id: business.agentConfig?.elevenlabsVoice || "pNInz6obpgDQGcFmaJgB"
         }
-      },
-      dynamic_variables: dynamicVariables,
-      custom_llm_extra_body: {
-        temperature: 0.7,
-        max_tokens: 200
       }
     }
     
-    console.log(`[🎯💥 PERSONALIZATION] ✅ SENDING CORRECT FORMAT RESPONSE`)
-    console.log(`[🎯💥 PERSONALIZATION] 📝 Welcome message length: ${welcomeMessage.length}`)
-    console.log(`[🎯💥 PERSONALIZATION] 📝 System prompt length: ${systemPrompt.length}`)
-    console.log(`[🎯💥 PERSONALIZATION] 📝 Dynamic variables:`, Object.keys(dynamicVariables))
-    console.log(`[🎯💥 PERSONALIZATION] 📝 Voice ID: ${response.conversation_config_override.tts.voice_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ SENDING CORRECT FORMAT RESPONSE`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Welcome message length: ${welcomeMessage.length}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 System prompt length: ${systemPrompt.length}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Voice ID: ${response.conversation_config_override.tts.voice_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Dynamic variables:`, Object.keys(response.dynamic_variables))
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📤 FULL RESPONSE:`, JSON.stringify(response, null, 2))
     
     res.json(response)
     
   } catch (error) {
-    console.error('[🎯💥 PERSONALIZATION] ❌ CRITICAL ERROR:', error)
+    console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ CRITICAL ERROR:`, error)
     
     // Always return valid ElevenLabs format even on error
-    res.json({
+    const errorResponse = {
       type: "conversation_initiation_client_data",
+      dynamic_variables: {
+        business_name: "Agency",
+        caller_phone: "unknown",
+        client_status: "unknown"
+      },
       conversation_config_override: {
         agent: {
           prompt: {
@@ -1659,10 +1661,11 @@ Remember: You represent ${business.name} - maintain high professional standards 
         tts: {
           voice_id: "pNInz6obpgDQGcFmaJgB"
         }
-      },
-      dynamic_variables: {},
-      custom_llm_extra_body: {}
-    })
+      }
+    }
+    
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📤 ERROR RESPONSE:`, JSON.stringify(errorResponse, null, 2))
+    res.json(errorResponse)
   }
 })
 
