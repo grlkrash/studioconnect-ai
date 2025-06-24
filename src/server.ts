@@ -315,8 +315,9 @@ nextApp.prepare().then(() => {
 })
 
 // Serve dashboard static assets
-app.use('/admin/_next', express.static(path.join(dashboardDir, '.next/static')))
-app.use('/admin/static', express.static(path.join(dashboardDir, '.next/static')))
+app.use('/_next/static', express.static(path.join(dashboardDir, '.next/static')))
+app.use('/admin/_next/static', express.static(path.join(dashboardDir, '.next/static')))
+app.use('/admin/static', express.static(path.join(dashboardDir, 'public')))
 
 // Redirect /dashboard/* to /admin/*
 app.all('/dashboard*', (req: Request, res: Response) => {
@@ -365,7 +366,8 @@ app.use('/api/clients', clientRoutes)
     app.use('/api/integrations', integrationRoutes)
     // Removed conflicting calls route - dashboard handles this via Next.js API routes
     // app.use('/api/calls', callHistoryRoutes)
-    app.use('/api/interactions', interactionRoutes)
+    // Interactions route moved to dashboard Next.js API routes
+    // app.use('/api/interactions', interactionRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/widget-config', widgetConfigRoutes)
     app.use('/api/elevenlabs', elevenLabsRouter)

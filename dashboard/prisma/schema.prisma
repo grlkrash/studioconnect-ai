@@ -1,0 +1,343 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+model Business {
+  id                      String          @id @default(cuid())
+  name                    String
+  businessType            BusinessType    @default(OTHER)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  notificationEmail       String?
+  notificationPhoneNumber String?
+  planTier                PlanTier        @default(PRO)
+  twilioPhoneNumber       String?         @unique
+  businessHours           Json?
+  timezone                String?
+  logoUrl                 String?
+  brandColors             Json?
+  /// *
+  /// * One or more email addresses that will receive notifications (comma-separated
+  /// * string array in Postgres). Replaces the old single `notificationEmail`
+  /// * field but we keep the original for backward-compat until data is migrated.
+  notificationEmails      String[]        @default([])
+  agentConfig             AgentConfig?
+  callLogs                CallLog[]
+  clients                 Client[]
+  conversations           Conversation[]
+  integrations            Integration[]
+  knowledgeBase           KnowledgeBase[]
+  leads                   Lead[]
+  projects                Project[]
+  users                   User[]
+  atlassianAccounts       AtlassianAccount[]
+
+  @@map("businesses")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  role          UserRole @default(USER)
+  businessId    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  assignedLeads Lead[]
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
+
+model AgentConfig {
+  id                           String                @id @default(cuid())
+  businessId                   String                @unique
+  agentName                    String                @default("AI Assistant")
+  personaPrompt                String                @default("You are a helpful and friendly assistant.")
+  welcomeMessage               String                @default("Hello! How can I help you today?")
+  colorTheme                   Json                  @default("{\"primary\": \"#0ea5e9\", \"secondary\": \"#64748b\"}")
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+  leadCaptureCompletionMessage String?
+  voiceCompletionMessage       String?
+  voiceEmergencyMessage        String?
+  voiceEndCallMessage          String?
+  voiceGreetingMessage         String?
+  openaiModel                  String                @default("tts-1")
+  useOpenaiTts                 Boolean               @default(true)
+  openaiVoice                  OpenAiVoice           @default(NOVA)
+  ttsProvider                  String                @default("openai")
+  voiceSettings                Json?
+  widgetTheme                  Json?                 @default("{}")
+  elevenlabsVoice              String?               @default("pNInz6obpgDQGcFmaJgB")
+  elevenlabsModel              String?               @default("eleven_turbo_v2_5")
+  elevenlabsAgentId            String?               // ElevenLabs Conversational AI Agent ID
+  business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  questions                    LeadCaptureQuestion[]
+
+  @@map("agent_configs")
+}
+
+model LeadCaptureQuestion {
+  id                      String         @id @default(cuid())
+  configId                String
+  questionText            String
+  expectedFormat          ExpectedFormat @default(TEXT)
+  order                   Int
+  isRequired              Boolean        @default(true)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  mapsToLeadField         String?
+  isEssentialForEmergency Boolean        @default(false)
+  config                  AgentConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, order])
+  @@map("lead_capture_questions")
+}
+
+model KnowledgeBase {
+  id         String                 @id @default(cuid())
+  businessId String
+  content    String
+  sourceURL  String?
+  embedding  Unsupported("vector")?
+  metadata   Json?                  @default("{}")
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  projectId  String?
+  business   Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  project    Project?               @relation(fields: [projectId], references: [id])
+
+  @@index([businessId, projectId])
+  @@map("knowledge_base")
+}
+
+model Lead {
+  id                     String       @id @default(cuid())
+  businessId             String
+  capturedData           Json
+  conversationTranscript String?
+  status                 LeadStatus   @default(NEW)
+  contactEmail           String?
+  contactPhone           String?
+  contactName            String?
+  notes                  String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  priority               LeadPriority @default(NORMAL)
+  address                String?
+  assignedToUserId       String?
+  clientId               String?
+  assignedTo             User?        @relation(fields: [assignedToUserId], references: [id])
+  business               Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client                 Client?      @relation(fields: [clientId], references: [id])
+
+  @@map("leads")
+}
+
+model Conversation {
+  id          String    @id @default(cuid())
+  businessId  String
+  sessionId   String    @unique
+  messages    Json      @default("[]")
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  leadId      String?
+  clientId    String?
+  createdAt   DateTime  @default(now())
+  metadata    Json?     @default("{}")
+  phoneNumber String?
+  updatedAt   DateTime  @updatedAt
+  callLogs    CallLog[]
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client      Client?   @relation(fields: [clientId], references: [id])
+
+  @@map("conversations")
+}
+
+model CallLog {
+  id             String        @id @default(cuid())
+  businessId     String
+  callSid        String        @unique
+  from           String
+  to             String
+  source         String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  content        String?
+  conversationId String
+  type           CallType
+  direction      CallDirection
+  status         CallStatus
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("call_logs")
+}
+
+model Client {
+  id            String         @id @default(cuid())
+  businessId    String
+  name          String
+  email         String?
+  phone         String?
+  externalId    String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  leads         Lead[]
+  projects      Project[]
+
+  @@map("clients")
+}
+
+model Project {
+  id                   String          @id @default(cuid())
+  businessId           String
+  clientId             String
+  name                 String
+  status               String
+  details              String?
+  pmToolId             String?        @map("pm_tool_id")
+  pmTool               String?        @map("pm_tool")
+  assignee             String?        @map("assignee")
+  dueDate              DateTime?      @map("due_date")
+  lastSyncedAt         DateTime?
+  externalId           String?         @unique
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  knowledgeBaseEntries KnowledgeBase[]
+  business             Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client               Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([pmToolId, businessId], name: "pmToolId_businessId")
+  @@unique([businessId, pmToolId], name: "businessId_pmToolId")
+  @@map("projects")
+}
+
+model Integration {
+  id            String   @id @default(cuid())
+  businessId    String
+  provider      String   @map("type")
+  apiKey        String?
+  webhookSecret String?
+  webhookId     String?
+  credentials   Json?
+  syncStatus    SyncStatus?  @default(CONNECTED)
+  settings      Json?
+  isEnabled     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, provider], name: "businessId_provider")
+  @@map("integrations")
+}
+
+enum OpenAiVoice {
+  ALLOY
+  ECHO
+  FABLE
+  ONYX
+  NOVA
+  SHIMMER
+  ASH
+  BALLAD
+  CORAL
+  SAGE
+  VERSE
+}
+
+enum BusinessType {
+  BRANDING
+  WEB_DESIGN
+  MARKETING
+  DIGITAL
+  CREATIVE
+  DESIGN_AGENCY
+  ANIMATION_STUDIO
+  VFX_STUDIO
+  PRODUCTION_STUDIO
+  OTHER
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum PlanTier {
+  PRO
+  ENTERPRISE
+}
+
+enum ExpectedFormat {
+  TEXT
+  EMAIL
+  PHONE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CLOSED
+}
+
+enum LeadPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallType {
+  VOICE
+  CHAT
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  BUSY
+  NO_ANSWER
+  CANCELED
+}
+
+enum SyncStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+model AtlassianAccount {
+  id          String   @id @default(uuid())
+  businessId  String
+  accountId   String   @unique
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  Business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
