@@ -575,8 +575,8 @@ router.post('/elevenlabs-personalization', async (req, res) => {
     if (!business) {
       console.error(`[🎯 PERSONALIZATION] ❌ No business found for ${called_number}`)
       return res.json({
-        first_message: "Hello! Thank you for calling Aurora Branding & Co. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?",
-        system_prompt: "You are a professional AI Account Manager for Aurora Branding & Co, a premium creative agency.",
+        first_message: "Hello! Thank you for calling. I'm your AI assistant, and I'm here to help with any questions about our services and projects. How may I assist you today?",
+        system_prompt: "You are a professional AI assistant for a premium creative agency. Be helpful, professional, and courteous.",
         voice_id: 'pNInz6obpgDQGcFmaJgB'
       })
     }
@@ -684,10 +684,10 @@ router.post('/elevenlabs-personalization-fixed', async (req, res) => {
 
     if (!business) {
       console.error(`[🎯 PERSONALIZATION FIXED] ❌ No business found for ${called_number}`)
-      // Return Aurora Branding & Co default since we know it exists
+      // Return generic professional default
       return res.json({
-        first_message: "Hello! Thank you for calling Aurora Branding & Co. I'm your AI assistant, and I'm here to help with any questions about our creative services and projects. How may I assist you today?",
-        system_prompt: `You are a professional AI Account Manager for Aurora Branding & Co, a premium creative agency.
+        first_message: "Hello! Thank you for calling. I'm your AI assistant, and I'm here to help with any questions about our services and projects. How may I assist you today?",
+        system_prompt: `You are a professional AI assistant for a premium creative agency.
 
 PERSONALITY: Professional, polite, project-centric, and solution-focused. You sound natural and conversational while maintaining business professionalism.
 
@@ -697,7 +697,7 @@ CONVERSATION GUIDELINES:
 - Always offer to connect with a team member for complex requests
 - Use natural, conversational language with professional tone
 
-Remember: You represent a Fortune 100 quality agency. Every interaction should reflect premium service standards.`,
+Remember: You represent a quality agency. Every interaction should reflect professional service standards.`,
         voice_id: 'pNInz6obpgDQGcFmaJgB',
         voice_settings: {
           stability: 0.45,
@@ -873,7 +873,7 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     console.log('[🎯 STEP 2] Raw payload received:', JSON.stringify(req.body, null, 2))
     console.log('[🎯 STEP 2] Headers received:', JSON.stringify(req.headers, null, 2))
     
-    // 🔐 STEP 2.2: OPTIONAL HMAC SIGNATURE VERIFICATION (Allow without for now)
+    // 🔐 STEP 2.2: ELEVENLABS HMAC SIGNATURE VERIFICATION
     const signature = req.headers['elevenlabs-signature'] as string
     const webhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET
     
@@ -881,41 +881,69 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     console.log('[🎯 STEP 2] - Webhook secret configured:', !!webhookSecret)
     console.log('[🎯 STEP 2] - Signature provided:', !!signature)
     
-    // Only verify HMAC if both secret and signature are present
+    // ElevenLabs uses format: t=timestamp,v0=signature
     if (webhookSecret && signature) {
-      const crypto = require('crypto')
-      const rawBody = JSON.stringify(req.body)
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(rawBody)
-        .digest('hex')
-      
-      const expectedHeader = `sha256=${expectedSignature}`
-      
-      console.log('[🎯 STEP 2] HMAC Signature verification:')
-      console.log('[🎯 STEP 2] - Expected:', expectedHeader)
-      console.log('[🎯 STEP 2] - Received:', signature)
-      
-      if (signature !== expectedHeader) {
-        console.error('[🎯 STEP 2] ❌ HMAC verification failed - but continuing for debugging')
-        console.error('[🎯 STEP 2] This indicates a security misconfiguration')
-      } else {
-        console.log('[🎯 STEP 2] ✅ SECURITY PASSED - HMAC signature verified')
+      try {
+        const crypto = require('crypto')
+        const rawBody = JSON.stringify(req.body)
+        
+        // Parse ElevenLabs signature format: t=timestamp,v0=signature
+        const sigParts = signature.split(',')
+        let timestamp = ''
+        let receivedSig = ''
+        
+        sigParts.forEach(part => {
+          if (part.startsWith('t=')) timestamp = part.substring(2)
+          if (part.startsWith('v0=')) receivedSig = part.substring(3)
+        })
+        
+        if (timestamp && receivedSig) {
+          // Create signed payload: timestamp + raw body
+          const signedPayload = timestamp + rawBody
+          const expectedSig = crypto
+            .createHmac('sha256', webhookSecret)
+            .update(signedPayload)
+            .digest('hex')
+          
+          console.log('[🎯 STEP 2] HMAC Signature verification:')
+          console.log('[🎯 STEP 2] - Expected:', expectedSig)
+          console.log('[🎯 STEP 2] - Received:', receivedSig)
+          console.log('[🎯 STEP 2] - Timestamp:', timestamp)
+          
+          if (receivedSig === expectedSig) {
+            console.log('[🎯 STEP 2] ✅ SECURITY PASSED - HMAC signature verified')
+          } else {
+            console.error('[🎯 STEP 2] ❌ HMAC verification failed - but continuing for debugging')
+          }
+        } else {
+          console.error('[🎯 STEP 2] ❌ Invalid signature format')
+        }
+      } catch (sigError) {
+        console.error('[🎯 STEP 2] ❌ HMAC verification error:', sigError)
       }
     } else {
       console.warn('[🎯 STEP 2] ⚠️ PROCEEDING WITHOUT HMAC VERIFICATION')
-      console.warn('[🎯 STEP 2] Configure ELEVENLABS_WEBHOOK_SECRET for production security')
     }
 
-    // 🎯 STEP 2.3: PAYLOAD VALIDATION
-    const { call_sid } = req.body
+    // 🎯 STEP 2.3: PAYLOAD VALIDATION - Handle ElevenLabs nested structure
+    const { data } = req.body
+    let call_sid = req.body.call_sid
+    
+    // ElevenLabs nests call_sid in data.metadata.phone_call.call_sid
+    if (!call_sid && data?.metadata?.phone_call?.call_sid) {
+      call_sid = data.metadata.phone_call.call_sid
+      console.log('[🎯 STEP 2] ✅ Found call_sid in nested structure:', call_sid)
+    }
     
     if (!call_sid) {
       console.error('[🎯 STEP 2] ❌ INVALID PAYLOAD: Missing required call_sid')
+      console.error('[🎯 STEP 2] Payload structure:', Object.keys(req.body))
+      console.error('[🎯 STEP 2] Data structure:', data ? Object.keys(data) : 'No data field')
       return res.status(400).json({ 
         error: 'call_sid is required in webhook payload',
         step: 'step_2_payload_validation',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        received_keys: Object.keys(req.body)
       })
     }
 
@@ -924,20 +952,24 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     // 🎯 STEP 2.4: ANALYTICS PROCESSING - Extract and process call data
     console.log('[🎯 STEP 2] 📊 PROCESSING CALL ANALYTICS...')
     
+    // Handle ElevenLabs nested payload structure
     const {
-      agent_id,
-      caller_id,
-      called_number,
-      conversation_id,
-      analysis,
-      conversation_summary,
-      conversation,
-      duration_seconds,
-      call_status,
-      sentiment_score,
-      action_success,
-      satisfaction_score
+      agent_id = data?.agent_id,
+      conversation_id = data?.conversation_id,
+      analysis = data?.analysis,
+      transcript = data?.transcript,
+      conversation_summary = analysis?.transcript_summary,
+      duration_seconds = data?.metadata?.call_duration_secs,
+      call_status = data?.status,
+      termination_reason = data?.metadata?.termination_reason,
+      sentiment_score = analysis?.sentiment_score,
+      action_success = analysis?.action_success,
+      satisfaction_score = analysis?.satisfaction_score
     } = req.body
+    
+    // Extract phone numbers from nested structure
+    const caller_id = data?.metadata?.phone_call?.external_number || data?.conversation_initiation_client_data?.dynamic_variables?.system__caller_id
+    const called_number = data?.metadata?.phone_call?.agent_number || data?.conversation_initiation_client_data?.dynamic_variables?.system__called_number
 
     console.log('[🎯 STEP 2] 📊 Extracted Call Data:')
     console.log('[🎯 STEP 2] - Call SID:', call_sid)
@@ -946,8 +978,8 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     console.log('[🎯 STEP 2] - Called Number:', called_number)
     console.log('[🎯 STEP 2] - Duration:', duration_seconds, 'seconds')
     console.log('[🎯 STEP 2] - Has Analysis:', !!analysis)
-    console.log('[🎯 STEP 2] - Has Conversation:', !!conversation)
-    console.log('[🎯 STEP 2] - Sentiment Score:', sentiment_score)
+    console.log('[🎯 STEP 2] - Has Transcript:', !!transcript)
+    console.log('[🎯 STEP 2] - Termination Reason:', termination_reason)
 
     // Business identification using multiple strategies
     const normalizePhone = (num: string | null | undefined) =>
@@ -1002,8 +1034,8 @@ router.post('/elevenlabs-post-call', async (req, res) => {
     // 💾 STEP 2.5: DATABASE PERSISTENCE - Bulletproof upsert operations
     console.log('[🎯 STEP 2] 💾 STARTING DATABASE PERSISTENCE...')
 
-    // Process conversation data
-    const conversationData = conversation ? conversation : (analysis?.conversation ? analysis.conversation : [])
+    // Process conversation data - use transcript from ElevenLabs
+    const conversationData = transcript || []
     
     // Upsert Conversation record
     console.log('[🎯 STEP 2] 📝 Upserting Conversation record...')
@@ -1045,6 +1077,7 @@ router.post('/elevenlabs-post-call', async (req, res) => {
         metadata: {
           ...req.body,
           duration_seconds,
+          termination_reason,
           sentiment_score,
           action_success,
           satisfaction_score,
@@ -1063,6 +1096,7 @@ router.post('/elevenlabs-post-call', async (req, res) => {
         metadata: {
           ...req.body,
           duration_seconds,
+          termination_reason,
           sentiment_score,
           action_success,
           satisfaction_score,
@@ -1098,7 +1132,10 @@ router.post('/elevenlabs-post-call', async (req, res) => {
         has_transcript: !!conversationData.length,
         has_summary: !!(conversation_summary || analysis?.conversation_summary),
         duration_seconds,
+        termination_reason,
         sentiment_score,
+        action_success,
+        satisfaction_score,
         records_updated: ['conversation', 'callLog']
       },
       system_status: {
@@ -1417,29 +1454,51 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
       console.log(`🎯 Found business: ${business.name}`)
       console.log(`🎯 Has personaPrompt: ${!!business.agentConfig.personaPrompt}`)
       console.log(`🎯 Has voiceGreetingMessage: ${!!business.agentConfig.voiceGreetingMessage}`)
+      console.log(`🎯 PersonaPrompt length: ${business.agentConfig.personaPrompt?.length || 0}`)
+      console.log(`🎯 VoiceGreetingMessage length: ${business.agentConfig.voiceGreetingMessage?.length || 0}`)
+      
+      const firstMessage = business.agentConfig.voiceGreetingMessage || 
+                          business.agentConfig.welcomeMessage || 
+                          "Hello! Thank you for calling. How can I help you today?"
+      
+      const systemPrompt = business.agentConfig.personaPrompt || 
+                          "You are a professional AI assistant. Please help the caller with their inquiry."
       
       response = {
-        first_message: business.agentConfig.voiceGreetingMessage || 
-                      business.agentConfig.welcomeMessage || 
-                      "Hello! Thank you for calling. How can I help you today?",
-        system_prompt: business.agentConfig.personaPrompt || 
-                      "You are a professional AI assistant. Please help the caller with their inquiry.",
-        voice_id: business.agentConfig.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB'
+        first_message: firstMessage,
+        system_prompt: systemPrompt,
+        voice_id: business.agentConfig.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
+        voice_settings: {
+          stability: 0.45,
+          similarity_boost: 0.85,
+          style: 0.3,
+          use_speaker_boost: true,
+          speed: 1.0
+        }
       }
+      
+      console.log(`🎯 ACTUAL RESPONSE BEING SENT:`)
+      console.log(`🎯 First Message: "${firstMessage}"`)
+      console.log(`🎯 System Prompt: "${systemPrompt.substring(0, 100)}..."`)
+      console.log(`🎯 Voice ID: ${response.voice_id}`)
+      
     } else {
       console.log(`🎯 No business found for ${called_number}, using default`)
       response = {
-        first_message: "Hello! Thank you for calling Aurora Branding & Co. I'm your AI assistant. How can I help you today?",
-        system_prompt: "You are Maya, a professional AI Account Manager for Aurora Branding & Co, a premium creative agency. Keep responses concise and helpful.",
-        voice_id: 'pNInz6obpgDQGcFmaJgB'
+        first_message: "Hello! Thank you for calling. I'm your AI assistant. How can I help you today?",
+        system_prompt: "You are a professional AI assistant for a premium creative agency. Keep responses concise and helpful.",
+        voice_id: 'pNInz6obpgDQGcFmaJgB',
+        voice_settings: {
+          stability: 0.45,
+          similarity_boost: 0.85,
+          style: 0.3,
+          use_speaker_boost: true,
+          speed: 1.0
+        }
       }
     }
     
-    console.log('🎯 Sending response:', {
-      first_message: response.first_message.substring(0, 50) + '...',
-      system_prompt: response.system_prompt.substring(0, 50) + '...',
-      voice_id: response.voice_id
-    })
+    console.log('🎯 Final response being sent to ElevenLabs:', JSON.stringify(response, null, 2))
     
     res.json(response)
     
@@ -1448,7 +1507,14 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
     res.json({
       first_message: "Hello! Thank you for calling. How can I help you today?",
       system_prompt: "You are a professional AI assistant.",
-      voice_id: 'pNInz6obpgDQGcFmaJgB'
+      voice_id: 'pNInz6obpgDQGcFmaJgB',
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1.0
+      }
     })
   }
 })
@@ -1696,8 +1762,8 @@ ESCALATION TRIGGERS:
 
 Remember: You represent a premium creative agency. Every interaction should reflect our high standards and creative expertise. Be helpful, professional, and always ready to connect callers with our talented team when needed.`
 
-    // Professional welcome message
-    const professionalWelcomeMessage = `Hello! Thank you for calling Aurora Branding & Co. I'm Maya, your AI Account Manager. I'm here to help with your branding and creative projects, provide status updates, and connect you with our talented team. How can I assist you today?`
+    // Professional welcome message  
+    const professionalWelcomeMessage = `Hello! Thank you for calling ${business.name}. I'm Maya, your AI Account Manager. I'm here to help with your branding and creative projects, provide status updates, and connect you with our talented team. How can I assist you today?`
     
     // Update the agent configuration
     if (business.agentConfig) {
@@ -2615,6 +2681,103 @@ router.post('/admin-update-notification-email', async (req, res) => {
   } catch (error) {
     console.error('[🔧 ADMIN] Error updating notification email:', error)
     res.status(500).json({ error: 'Failed to update notification email' })
+  }
+})
+
+// 🎯 ELEVENLABS AGENT CONFIGURATION ENDPOINT - FOR AGENT DASHBOARD
+// Use this URL in your ElevenLabs agent configuration as the "Personalization webhook"
+router.post('/elevenlabs-agent-config', async (req, res) => {
+  try {
+    console.log('🎯🔧 ELEVENLABS AGENT CONFIG WEBHOOK CALLED 🔧🎯')
+    console.log('Headers:', JSON.stringify(req.headers, null, 2))
+    console.log('Body:', JSON.stringify(req.body, null, 2))
+    
+    const { caller_id, agent_id, called_number, call_sid } = req.body
+    
+    console.log(`🎯 Processing agent configuration for:`)
+    console.log(`🎯 - Agent ID: ${agent_id}`) 
+    console.log(`🎯 - Called Number: ${called_number}`)
+    console.log(`🎯 - Caller ID: ${caller_id}`)
+    console.log(`🎯 - Call SID: ${call_sid}`)
+    
+    // Find business by phone number
+    let business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: { agentConfig: true }
+    })
+    
+    if (!business && called_number) {
+      const digits = called_number.replace(/[^0-9]/g, '')
+      console.log(`🎯 Trying fallback lookup with digits: ${digits}`)
+      business = await prisma.business.findFirst({
+        where: { twilioPhoneNumber: { endsWith: digits } },
+        include: { agentConfig: true }
+      })
+    }
+
+    if (business?.agentConfig) {
+      console.log(`🎯 ✅ FOUND BUSINESS: ${business.name}`)
+      console.log(`🎯 ✅ Agent Configuration Exists: YES`)
+      console.log(`🎯 ✅ Persona Prompt Length: ${business.agentConfig.personaPrompt?.length || 0} chars`)
+      console.log(`🎯 ✅ Voice Greeting Length: ${business.agentConfig.voiceGreetingMessage?.length || 0} chars`)
+      
+      const response = {
+        first_message: business.agentConfig.voiceGreetingMessage || 
+                      business.agentConfig.welcomeMessage || 
+                      `Hello! Thank you for calling ${business.name}. How can I help you today?`,
+        system_prompt: business.agentConfig.personaPrompt || 
+                      `You are a professional AI assistant for ${business.name}. Be helpful and courteous.`,
+        voice_id: business.agentConfig.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
+        voice_settings: {
+          stability: 0.45,
+          similarity_boost: 0.85,
+          style: 0.3,
+          use_speaker_boost: true,
+          speed: 1.0
+        }
+      }
+      
+      console.log(`🎯 📤 SENDING AGENT CONFIGURATION:`)
+      console.log(`🎯 📤 First Message: "${response.first_message.substring(0, 100)}..."`)
+      console.log(`🎯 📤 System Prompt: "${response.system_prompt.substring(0, 100)}..."`)
+      console.log(`🎯 📤 Voice ID: ${response.voice_id}`)
+      
+      res.json(response)
+      
+    } else {
+      console.log(`🎯 ❌ NO BUSINESS FOUND for ${called_number}`)
+      console.log(`🎯 ❌ Sending fallback configuration`)
+      
+      const fallbackResponse = {
+        first_message: "Hello! Thank you for calling. I'm your AI assistant. How can I help you today?",
+        system_prompt: "You are a professional AI assistant. Be helpful, courteous, and professional in all interactions.",
+        voice_id: 'pNInz6obpgDQGcFmaJgB',
+        voice_settings: {
+          stability: 0.45,
+          similarity_boost: 0.85,
+          style: 0.3,
+          use_speaker_boost: true,
+          speed: 1.0
+        }
+      }
+      
+      res.json(fallbackResponse)
+    }
+    
+  } catch (error) {
+    console.error('🎯 ❌ AGENT CONFIG ERROR:', error)
+    res.json({
+      first_message: "Hello! Thank you for calling. How can I help you today?",
+      system_prompt: "You are a professional AI assistant.",
+      voice_id: 'pNInz6obpgDQGcFmaJgB',
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1.0
+      }
+    })
   }
 })
 
