@@ -1524,14 +1524,28 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
     if (!business) {
       console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ NO BUSINESS FOUND for called_number: ${called_number}, agent_id: ${agent_id}`)
       
-      // 🚨 CORRECT FORMAT per official ElevenLabs docs
+      // 🚨 CORRECT FORMAT per official ElevenLabs docs with enhanced dynamic variables
+      const fallbackDynamicVariables = {
+        business_name: "Creative Agency",
+        company_name: "Creative Agency",
+        caller_phone: caller_id || "unknown",
+        caller_id: caller_id || "unknown",
+        client_status: "unknown",
+        client_name: "valued caller",
+        client_type: "unknown",
+        called_number: called_number || "unknown",
+        agent_id: agent_id || "unknown",
+        call_timestamp: new Date().toISOString(),
+        business_type: "creative_agency",
+        support_available: "yes",
+        has_custom_greeting: false,
+        has_persona: false,
+        voice_configured: false
+      }
+
       const fallbackResponse = {
         type: "conversation_initiation_client_data",
-        dynamic_variables: {
-          business_name: "Creative Agency",
-          caller_phone: caller_id || "unknown",
-          client_status: "unknown"
-        },
+        dynamic_variables: fallbackDynamicVariables,
         conversation_config_override: {
           agent: {
             prompt: {
@@ -1543,6 +1557,10 @@ router.post('/elevenlabs-personalization-working', async (req, res) => {
           tts: {
             voice_id: "pNInz6obpgDQGcFmaJgB"
           }
+        },
+        custom_llm_extra_body: {
+          temperature: 0.7,
+          max_tokens: 200
         }
       }
       
@@ -1608,14 +1626,40 @@ Remember: You represent ${business.name} - maintain high professional standards 
       console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
     }
     
+    // 🎯 ENHANCED DYNAMIC VARIABLES per official ElevenLabs docs
+    const dynamicVariables = {
+      // Core business information
+      business_name: business.name,
+      company_name: business.name, // Alternative variable name
+      
+      // Caller information
+      caller_phone: caller_id || "unknown",
+      caller_id: caller_id || "unknown", // Alternative variable name
+      client_status: existingClient ? "existing" : "new",
+      
+      // Client-specific data if available
+      client_name: existingClient?.name || "valued caller",
+      client_type: existingClient ? "returning_client" : "new_prospect",
+      
+      // Call context
+      called_number: called_number,
+      agent_id: agent_id,
+      call_timestamp: new Date().toISOString(),
+      
+      // Business context
+      business_type: business.businessType || "creative_agency",
+      support_available: "yes",
+      
+      // Personalization flags
+      has_custom_greeting: !!business.agentConfig?.voiceGreetingMessage,
+      has_persona: !!business.agentConfig?.personaPrompt,
+      voice_configured: !!business.agentConfig?.elevenlabsVoice
+    }
+
     // 🚨 CRITICAL FIX: Use CORRECT NEW FORMAT per official ElevenLabs docs
     const response = {
       type: "conversation_initiation_client_data",
-      dynamic_variables: {
-        business_name: business.name,
-        caller_phone: caller_id || "unknown",
-        client_status: existingClient ? "existing" : "new"
-      },
+      dynamic_variables: dynamicVariables,
       conversation_config_override: {
         agent: {
           prompt: {
@@ -1627,6 +1671,10 @@ Remember: You represent ${business.name} - maintain high professional standards 
         tts: {
           voice_id: business.agentConfig?.elevenlabsVoice || "pNInz6obpgDQGcFmaJgB"
         }
+      },
+      custom_llm_extra_body: {
+        temperature: 0.7,
+        max_tokens: 200
       }
     }
     
@@ -1642,14 +1690,28 @@ Remember: You represent ${business.name} - maintain high professional standards 
   } catch (error) {
     console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ CRITICAL ERROR:`, error)
     
-    // Always return valid ElevenLabs format even on error
+    // Always return valid ElevenLabs format even on error with comprehensive dynamic variables
+    const errorDynamicVariables = {
+      business_name: "Agency",
+      company_name: "Agency",
+      caller_phone: "unknown",
+      caller_id: "unknown",
+      client_status: "error",
+      client_name: "valued caller",
+      client_type: "unknown",
+      called_number: "unknown",
+      agent_id: "unknown",
+      call_timestamp: new Date().toISOString(),
+      business_type: "agency",
+      support_available: "yes",
+      has_custom_greeting: false,
+      has_persona: false,
+      voice_configured: false
+    }
+
     const errorResponse = {
       type: "conversation_initiation_client_data",
-      dynamic_variables: {
-        business_name: "Agency",
-        caller_phone: "unknown",
-        client_status: "unknown"
-      },
+      dynamic_variables: errorDynamicVariables,
       conversation_config_override: {
         agent: {
           prompt: {
@@ -1661,6 +1723,10 @@ Remember: You represent ${business.name} - maintain high professional standards 
         tts: {
           voice_id: "pNInz6obpgDQGcFmaJgB"
         }
+      },
+      custom_llm_extra_body: {
+        temperature: 0.7,
+        max_tokens: 200
       }
     }
     
