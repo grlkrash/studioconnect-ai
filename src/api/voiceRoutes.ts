@@ -4101,7 +4101,7 @@ Remember: You represent ${business.name} - maintain high professional standards 
       // Business Information
       business_name: business.name,
       company_name: business.name,
-      business_type: business.businessType || 'OTHER',
+      business_type: business.businessType || 'creative_agency',
       
       // Agent Information  
       agent_name: agentName,
@@ -4178,6 +4178,119 @@ Remember: You represent ${business.name} - maintain high professional standards 
       dynamic_variables: {},
       custom_llm_extra_body: {}
     })
+  }
+})
+
+// 🎯 ELEVENLABS AGENT CONFIGURATION GENERATOR
+router.get('/elevenlabs-agent-config-template', async (req, res) => {
+  try {
+    console.log('[🎯 AGENT CONFIG] Generating ElevenLabs agent configuration template...')
+    
+    // Get business configuration
+    const business = await prisma.business.findFirst({
+      where: { name: { contains: 'Aurora' } },
+      include: { agentConfig: true }
+    })
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' })
+    }
+    
+    const agentName = business.agentConfig?.agentName || 'Maya'
+    const systemPrompt = business.agentConfig?.personaPrompt || 'You are a professional AI assistant.'
+    const welcomeMessage = business.agentConfig?.voiceGreetingMessage || business.agentConfig?.welcomeMessage || 'Hello! How can I help you?'
+    
+    const template = {
+      agent_settings: {
+        name: `${business.name} AI Account Manager`,
+        description: `Professional AI Account Manager for ${business.name}`,
+        
+        // System prompt with dynamic variables
+        system_prompt: `${systemPrompt}
+
+DYNAMIC CONTEXT:
+- You are {{agent_name}} ({{agent_title}}) for {{business_name}}
+- Current caller: {{client_name}} ({{client_status}} client)
+- Phone: {{caller_phone}} → {{called_number}}
+- Business type: {{business_type}}
+- Support available: {{support_available}}
+
+Use this context to personalize responses appropriately.`,
+        
+        // First message with dynamic variables
+        first_message: `Hello! Thank you for calling {{business_name}}. I'm {{agent_name}}, your {{agent_title}}. I'm here to help with your projects and provide updates. How can I assist you today, {{client_name}}?`,
+        
+        // Transfer configuration
+        transfer_settings: {
+          phone_number: '+15136120566',
+          max_wait_time: 15, // seconds
+          wait_message: 'Please hold while I connect you with our {{agent_title}}...',
+          no_answer_action: 'return_to_agent',
+          context_collection: false, // CRITICAL: Don't ask client for context
+          auto_context: `Transfer from {{agent_name}} regarding {{business_name}} inquiry. Caller: {{client_name}} ({{client_status}} client) - {{caller_phone}}.`
+        },
+        
+        // Voice settings for better intonation
+        voice_settings: {
+          voice_id: business.agentConfig?.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
+          stability: 0.5,
+          similarity_boost: 0.8,
+          style: 0.3,
+          use_speaker_boost: true,
+          speed: 1.0
+        },
+        
+        // VAD settings for natural conversation
+        vad_settings: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 800, // Reduced from 1200ms
+          interruption_sensitivity: 'medium'
+        }
+      },
+      
+      available_variables: [
+        'agent_name', 'agent_title', 'business_name', 'company_name', 'business_type',
+        'caller_phone', 'caller_id', 'client_status', 'client_name', 'client_type',
+        'called_number', 'agent_id', 'call_timestamp', 'support_available',
+        'has_custom_greeting', 'has_persona', 'voice_configured'
+      ],
+      
+      webhook_urls: {
+        personalization: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-personalization-working`,
+        post_call: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-post-call`
+      },
+      
+      configuration_steps: [
+        '1. Go to ElevenLabs Dashboard → Conversational AI → Your Agent',
+        '2. Update System Prompt with the template above (includes dynamic variables)',
+        '3. Update First Message with the template above (includes dynamic variables)', 
+        '4. Set Transfer phone to +15136120566',
+        '5. Set Transfer wait time to 15 seconds',
+        '6. DISABLE "Ask client for transfer context"',
+        '7. Set auto-context message for transfers',
+        '8. Configure VAD settings as shown above',
+        '9. Set personalization webhook URL',
+        '10. Set post-call webhook URL',
+        '11. Save configuration and test'
+      ],
+      
+      critical_fixes: [
+        '❌ DISABLE context collection in transfer settings',
+        '🎵 Use ElevenLabs VAD (not custom)',
+        '⏱️ Reduce silence detection to 800ms',
+        '📞 Set transfer wait to 15 seconds max',
+        '🎯 Use {{agent_name}} variable in prompts',
+        '🔄 Enable personalization webhook'
+      ]
+    }
+    
+    res.json(template)
+    
+  } catch (error) {
+    console.error('[🎯 AGENT CONFIG] Error:', error)
+    res.status(500).json({ error: 'Failed to generate configuration template' })
   }
 })
 
