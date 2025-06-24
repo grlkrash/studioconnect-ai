@@ -77,9 +77,9 @@ router.get('/me', authMiddleware, (req: Request, res: Response) => {
 });
 
 // Get dashboard status - used by Next.js dashboard
-router.get('/dashboard-status', async (req, res) => {
+router.get('/dashboard-status', authMiddleware, async (req, res) => {
   try {
-    const businessId = req.query.businessId as string || req.user?.businessId;
+    const businessId = req.user?.businessId;
     
     if (!businessId) {
       return res.status(400).json({ error: 'Business ID required' });

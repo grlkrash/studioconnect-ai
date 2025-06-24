@@ -1,10 +1,20 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 // This middleware checks for the Global Privacy Control (GPC) signal
 // as outlined in the compliance roadmap (Task C-1c).
 // See: https://globalprivacycontrol.org/
 export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  
+  // Skip middleware for static files and API routes
+  if (
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/favicon.ico') ||
+    pathname.startsWith('/static/')
+  ) {
+    return NextResponse.next()
+  }
+
   // Check for the GPC header.
   const gpcHeader = request.headers.get('Sec-GPC')
 
@@ -19,6 +29,21 @@ export function middleware(request: NextRequest) {
     // being saved asynchronously.
   }
 
+  // Check for authentication token
+  const token = request.cookies.get('token')?.value
+  
+  // If no token and not on login page, redirect to login
+  if (!token && pathname !== '/login') {
+    const loginUrl = new URL('/admin/login', request.url)
+    return NextResponse.redirect(loginUrl)
+  }
+  
+  // If has token and on login page, redirect to dashboard
+  if (token && pathname === '/login') {
+    const dashboardUrl = new URL('/', request.url)
+    return NextResponse.redirect(dashboardUrl)
+  }
+
   return NextResponse.next()
 }
 
@@ -27,11 +52,12 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except:
+     * - api routes
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
 } 

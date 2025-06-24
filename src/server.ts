@@ -325,8 +325,17 @@ app.all('/dashboard*', (req: Request, res: Response) => {
   res.redirect(301, redirectUrl)
 })
 
-// Handle all admin routes with Next.js
-app.all('/admin*', (req: Request, res: Response) => {
+// Handle all admin routes with Next.js (except API routes)
+app.all('/admin', (req: Request, res: Response) => {
+  res.redirect('/admin/')
+})
+
+app.all('/admin/*', (req: Request, res: Response, next) => {
+  // Skip API routes - let them be handled by the API router
+  if (req.path.startsWith('/admin/api/')) {
+    return next()
+  }
+  
   if (nextError) {
     return res.status(500).send('Dashboard initialization failed. Please check server logs.')
   }
@@ -344,13 +353,7 @@ app.all('/admin*', (req: Request, res: Response) => {
   return handle(req, res)
 })
 
-// Test page for API debugging
-app.get('/test-calls', (req: Request, res: Response) => {
-  const testPagePath = path.join(__dirname, '../public/test-calls.html');
-  res.sendFile(testPagePath);
-});
-
-// 2. Mount API routes
+// 2. Mount API routes BEFORE Next.js dashboard handler
 // (chat route mounted earlier to avoid 404 during Next.js prepare)
 // app.use('/api/chat', chatRoutes)
 app.use('/api/auth', authRoutes)
@@ -396,6 +399,12 @@ app.use('/api/widget-config', widgetConfigRoutes)
       req.url = '/preview'
       elevenLabsRouter(req, res, () => {})
     })
+
+    // Test page for API debugging
+    app.get('/test-calls', (req: Request, res: Response) => {
+      const testPagePath = path.join(__dirname, '../public/test-calls.html');
+      res.sendFile(testPagePath);
+    });
 
     // 3. Specific file serving routes
     // Serve the public chat widget bundle. Historically the snippet referenced

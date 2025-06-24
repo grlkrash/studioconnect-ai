@@ -267,7 +267,13 @@ app.all('/dashboard*', (req, res) => {
     console.log(`[DASHBOARD] Redirecting ${req.url} -> ${redirectUrl}`);
     res.redirect(301, redirectUrl);
 });
-app.all('/admin*', (req, res) => {
+app.all('/admin', (req, res) => {
+    res.redirect('/admin/');
+});
+app.all('/admin/*', (req, res, next) => {
+    if (req.path.startsWith('/admin/api/')) {
+        return next();
+    }
     if (nextError) {
         return res.status(500).send('Dashboard initialization failed. Please check server logs.');
     }
@@ -278,10 +284,6 @@ app.all('/admin*', (req, res) => {
     req.url = req.url.replace(/^\/admin/, '') || '/';
     console.log(`[DASHBOARD] Handling ${originalUrl} -> ${req.url}`);
     return handle(req, res);
-});
-app.get('/test-calls', (req, res) => {
-    const testPagePath = path_1.default.join(__dirname, '../public/test-calls.html');
-    res.sendFile(testPagePath);
 });
 app.use('/api/auth', authRoutes_1.default);
 app.use('/admin/api/auth', authRoutes_1.default);
@@ -318,6 +320,10 @@ app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date()
 app.post('/api/voice-preview', async (req, res) => {
     req.url = '/preview';
     (0, elevenlabsRoutes_1.elevenLabsRouter)(req, res, () => { });
+});
+app.get('/test-calls', (req, res) => {
+    const testPagePath = path_1.default.join(__dirname, '../public/test-calls.html');
+    res.sendFile(testPagePath);
 });
 const widgetHandler = (req, res) => {
     const widgetPath = path_1.default.join(process.cwd(), 'public/widget.js');

@@ -1456,13 +1456,9 @@ router.all('/webhook-debug', (req, res) => {
   })
 })
 
-// 🚨 CRITICAL PROBLEM IDENTIFIED - ElevenLabs NOT calling personalization webhook!
-let personalizationCallCount = 0
-
 // Track webhook calls for debugging
 router.use('/elevenlabs-personalization-working', (req, res, next) => {
-  personalizationCallCount++
-  console.log(`🚨🚨🚨 PERSONALIZATION WEBHOOK CALL #${personalizationCallCount} 🚨🚨🚨`)
+  console.log(`🚨🚨🚨 PERSONALIZATION WEBHOOK CALLED 🚨🚨🚨`)
   console.log(`🚨 Method: ${req.method}`)
   console.log(`🚨 Time: ${new Date().toISOString()}`)
   console.log(`🚨 URL: ${req.url}`)
@@ -1470,235 +1466,202 @@ router.use('/elevenlabs-personalization-working', (req, res, next) => {
   console.log(`🚨 User-Agent: ${req.get('user-agent')}`)
   console.log(`🚨 Headers:`, JSON.stringify(req.headers, null, 2))
   console.log(`🚨 Body:`, JSON.stringify(req.body, null, 2))
-  console.log(`🚨🚨🚨 END WEBHOOK CALL #${personalizationCallCount} 🚨🚨🚨`)
+  console.log(`🚨🚨🚨 END WEBHOOK CALL 🚨🚨🚨`)
   next()
-})
-
-// Get personalization call count
-router.get('/personalization-call-count', (req, res) => {
-  res.json({
-    callCount: personalizationCallCount,
-    lastReset: new Date().toISOString(),
-    message: personalizationCallCount === 0 ? 
-      '🚨 ElevenLabs is NOT calling the personalization webhook!' :
-      `✅ Personalization webhook called ${personalizationCallCount} times`
-  })
 })
 
 // 🎯 BULLETPROOF PERSONALIZATION WEBHOOK - PRODUCTION READY
 router.post('/elevenlabs-personalization-working', async (req, res) => {
   try {
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
-    console.log('🎯🔥 ELEVENLABS PERSONALIZATION WEBHOOK CALLED - BULLETPROOF CONFIGURATION 🔥🎯')
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
-    console.log('🎯🔥 THIS IS THE CRITICAL WEBHOOK THAT MUST BE CONFIGURED IN ELEVENLABS 🔥🎯')
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
+    const { caller_id, agent_id, called_number, call_sid } = req.body
     
-    // Log request details
-    console.log('🎯 REQUEST DETAILS:')
-    console.log('🎯 - Method:', req.method)
-    console.log('🎯 - URL:', req.url)
-    console.log('🎯 - Full URL:', `${req.protocol}://${req.get('host')}${req.originalUrl}`)
-    console.log('🎯 - User-Agent:', req.get('user-agent'))
-    console.log('🎯 - Content-Type:', req.get('content-type'))
-    console.log('🎯 - Headers:', JSON.stringify(req.headers, null, 2))
-    console.log('🎯 - Body:', JSON.stringify(req.body, null, 2))
-    console.log('🎯 - Timestamp:', new Date().toISOString())
+    console.log(`[🎯💥 PERSONALIZATION] ================================================`)
+    console.log(`[🎯💥 PERSONALIZATION] 📞 INCOMING CALL`)
+    console.log(`[🎯💥 PERSONALIZATION] 📞 Caller: ${caller_id}`)
+    console.log(`[🎯💥 PERSONALIZATION] 📞 Called: ${called_number}`)
+    console.log(`[🎯💥 PERSONALIZATION] 🤖 Agent: ${agent_id}`)
+    console.log(`[🎯💥 PERSONALIZATION] 📞 Call SID: ${call_sid}`)
+    console.log(`[🎯💥 PERSONALIZATION] ================================================`)
+
+    // Clean phone number helper function
+    const normalizePhone = (num: string | null | undefined) =>
+      (num || '').replace(/[^0-9]/g, '')
+
+    // Strategy 1: Direct Twilio number match
+    let business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: { agentConfig: true }
+    })
     
-    const { caller_id, agent_id, called_number, call_sid, conversation_id } = req.body
-    
-    console.log('🎯 CALL PARAMETERS:')
-    console.log('🎯 - Caller ID:', caller_id || 'MISSING')
-    console.log('🎯 - Agent ID:', agent_id || 'MISSING')
-    console.log('🎯 - Called Number:', called_number || 'MISSING') 
-    console.log('🎯 - Call SID:', call_sid || 'MISSING')
-    console.log('🎯 - Conversation ID:', conversation_id || 'MISSING')
-    
-    // BULLETPROOF BUSINESS LOOKUP
-    console.log('🎯 STARTING BULLETPROOF BUSINESS LOOKUP...')
-    
-    let business = null
-    
-    // Strategy 1: Direct match
-    if (called_number) {
-      console.log('🎯 Strategy 1: Direct phone match for:', called_number)
-      business = await prisma.business.findFirst({
-        where: { twilioPhoneNumber: called_number },
-        include: { agentConfig: true }
-      })
-      
-      if (business) {
-        console.log('🎯 ✅ DIRECT MATCH FOUND:', business.name)
-      }
-    }
-    
-    // Strategy 2: Normalized digits match
+    // Strategy 2: Normalized digits match (fallback)
     if (!business && called_number) {
-      const digits = called_number.replace(/[^0-9]/g, '')
-      console.log('🎯 Strategy 2: Normalized digits match for:', digits)
-      
+      const digits = normalizePhone(called_number)
       business = await prisma.business.findFirst({
-        where: { 
-          OR: [
-            { twilioPhoneNumber: { endsWith: digits } },
-            { twilioPhoneNumber: { contains: digits } }
-          ]
-        },
+        where: { twilioPhoneNumber: { contains: digits } },
         include: { agentConfig: true }
       })
-      
-      if (business) {
-        console.log('🎯 ✅ NORMALIZED MATCH FOUND:', business.name)
-      }
     }
-    
-    // Strategy 3: Agent ID match (if available)
+
+    // Strategy 3: Agent ID reverse lookup (if we store elevenlabsAgentId)
     if (!business && agent_id) {
-      console.log('🎯 Strategy 3: Agent ID match for:', agent_id)
-      
       business = await prisma.business.findFirst({
         where: { 
-          agentConfig: {
-            elevenlabsAgentId: agent_id
-          }
+          agentConfig: { 
+            elevenlabsAgentId: agent_id 
+          } 
         },
         include: { agentConfig: true }
       })
       
       if (business) {
-        console.log('🎯 ✅ AGENT ID MATCH FOUND:', business.name)
+        console.log(`[🎯💥 PERSONALIZATION] ✅ Found business via Agent ID: ${business.name}`)
       }
     }
 
-    // CONSTRUCT BULLETPROOF RESPONSE
-    let response
-    if (business?.agentConfig) {
-      console.log('🎯 ✅ BUSINESS FOUND - CONSTRUCTING CUSTOM CONFIGURATION')
-      console.log('🎯 - Business Name:', business.name)
-      console.log('🎯 - Business ID:', business.id)
-      console.log('🎯 - Agent Config Present:', !!business.agentConfig)
-      console.log('🎯 - Has Persona Prompt:', !!business.agentConfig.personaPrompt)
-      console.log('🎯 - Has Voice Greeting:', !!business.agentConfig.voiceGreetingMessage)
-      console.log('🎯 - Has Welcome Message:', !!business.agentConfig.welcomeMessage)
-      console.log('🎯 - ElevenLabs Voice:', business.agentConfig.elevenlabsVoice)
-      console.log('🎯 - ElevenLabs Agent ID:', business.agentConfig.elevenlabsAgentId)
+    if (!business) {
+      console.error(`[🎯💥 PERSONALIZATION] ❌ NO BUSINESS FOUND for called_number: ${called_number}, agent_id: ${agent_id}`)
       
-      // Build welcome message priority: voiceGreetingMessage > welcomeMessage > default
-      const firstMessage = business.agentConfig.voiceGreetingMessage ||
-                           business.agentConfig.welcomeMessage ||
-                           `Hello! Thank you for calling ${business.name}. I'm Maya, your AI Account Manager. How can I help you today?`
-      
-      // Build system prompt with business context
-      const systemPrompt = business.agentConfig.personaPrompt ||
-                          `You are Maya, a professional AI Account Manager for ${business.name}. You help with project updates, client questions, and connecting people to the right team members. Be helpful, professional, and solution-focused.`
-      
-      // Check for existing client
-      let isExistingClient = false
-      let clientName = ''
-      
-      if (caller_id) {
-        try {
-          const client = await prisma.client.findFirst({
-            where: {
-              businessId: business.id,
-              phone: caller_id
-            }
-          })
-          
-          if (client) {
-            isExistingClient = true
-            clientName = client.name
-            console.log('🎯 ✅ EXISTING CLIENT IDENTIFIED:', clientName)
+      // Return ElevenLabs' expected format for fallback
+      return res.json({
+        type: "conversation_initiation_client_data",
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: "You are a professional AI assistant for a premium creative agency. Be helpful, professional, and courteous with all callers. Keep responses concise and offer to connect them with the appropriate team member for detailed assistance."
+            },
+            first_message: "Hello! Thank you for calling. I'm your AI assistant, and I'm here to help with any questions about our services and projects. How may I assist you today?",
+            language: "en"
+          },
+          tts: {
+            voice_id: "pNInz6obpgDQGcFmaJgB"
           }
-        } catch (clientError) {
-          console.warn('🎯 ⚠️ Error checking for existing client:', clientError)
-        }
-      }
-      
-      response = {
-        first_message: firstMessage,
-        system_prompt: systemPrompt,
-        voice_id: business.agentConfig.elevenlabsVoice || 'pNInz6obpgDQGcFmaJgB',
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.85,
-          style: 0.3,
-          use_speaker_boost: true,
-          speed: 1.0
         },
-        // Additional context for ElevenLabs (ElevenLabs supports variables)
-        variables: {
-          business_name: business.name,
-          business_id: business.id,
-          caller_id: caller_id || '',
-          is_existing_client: isExistingClient,
-          client_name: clientName,
-          call_sid: call_sid || '',
-          conversation_id: conversation_id || ''
-        }
-      }
+        dynamic_variables: {},
+        custom_llm_extra_body: {}
+      })
+    }
+    
+    console.log(`[🎯💥 PERSONALIZATION] ✅ FOUND BUSINESS: ${business.name}`)
+    
+    // Check for existing client to personalize greeting
+    let existingClient = null
+    if (caller_id) {
+      existingClient = await prisma.client.findFirst({
+        where: { 
+          phone: caller_id,
+          businessId: business.id
+        },
+        select: { id: true, name: true }
+      })
       
-      console.log('🎯 ✅ CUSTOM CONFIGURATION BUILT FOR:', business.name)
-      console.log('🎯 - First Message Length:', response.first_message.length)
-      console.log('🎯 - System Prompt Length:', response.system_prompt.length)
-      console.log('🎯 - Voice ID:', response.voice_id)
-      console.log('🎯 - Has Variables:', !!response.variables)
-      
-    } else {
-      console.log('🎯 ❌ NO BUSINESS FOUND - USING DEFAULT CONFIGURATION')
-      console.log('🎯 - Called Number:', called_number)
-      console.log('🎯 - Agent ID:', agent_id)
-      console.log('🎯 - This should NOT happen in production!')
-      
-      response = {
-        first_message: "Hello! Thank you for calling. I'm your AI assistant and I'm here to help. How can I assist you today?",
-        system_prompt: "You are a professional AI assistant for a premium creative agency. Be helpful, professional, and solution-focused. Ask clarifying questions to understand their needs.",
-        voice_id: 'pNInz6obpgDQGcFmaJgB',
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.85,
-          style: 0.3,
-          use_speaker_boost: true,
-          speed: 1.0
-        }
+      if (existingClient) {
+        console.log(`[🎯💥 PERSONALIZATION] ✅ EXISTING CLIENT: ${existingClient.name}`)
       }
     }
     
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
-    console.log('🎯🔥 FINAL RESPONSE BEING SENT TO ELEVENLABS 🔥🎯')
-    console.log('📋 Response Object:', JSON.stringify(response, null, 2))
-    console.log('🎯 - First Message Preview:', response.first_message?.substring(0, 100) + '...')
-    console.log('🎯 - System Prompt Preview:', response.system_prompt?.substring(0, 100) + '...')
-    console.log('🎯 - Voice ID:', response.voice_id)
-    console.log('🎯 - Variables:', response.variables || 'None')
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
+    // Build the welcome message from database configuration
+    let welcomeMessage: string
+    if (business.agentConfig?.voiceGreetingMessage) {
+      welcomeMessage = business.agentConfig.voiceGreetingMessage
+      console.log(`[🎯💥 PERSONALIZATION] ✅ Using voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else if (business.agentConfig?.welcomeMessage) {
+      welcomeMessage = business.agentConfig.welcomeMessage
+      console.log(`[🎯💥 PERSONALIZATION] ✅ Using welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else {
+      welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant. How can I help you today?`
+      console.log(`[🎯💥 PERSONALIZATION] ⚠️ Using generated welcome message`)
+    }
     
-    // Set proper response headers
-    res.setHeader('Content-Type', 'application/json')
-    res.setHeader('Cache-Control', 'no-cache')
+    // Build the system prompt from database configuration
+    let systemPrompt: string
+    if (business.agentConfig?.personaPrompt) {
+      systemPrompt = business.agentConfig.personaPrompt
+      console.log(`[🎯💥 PERSONALIZATION] ✅ Using personaPrompt (${systemPrompt.length} chars)`)
+    } else {
+      systemPrompt = `You are a professional AI assistant for ${business.name}.
+
+CORE RESPONSIBILITIES:
+- Answer questions about projects, services, and creative work
+- Provide project status updates and timeline information  
+- Help with billing and payment questions
+- Qualify new prospects and understand their needs
+- Connect callers to appropriate team members
+- Handle requests professionally and efficiently
+
+COMMUNICATION STYLE:
+- Professional yet conversational tone
+- Keep responses concise (1-2 sentences typically)
+- Ask clarifying questions when needed
+- Always offer to connect with a team member for complex requests
+- Be helpful and solution-focused
+
+Remember: You represent ${business.name} - maintain high professional standards in every interaction.`
+      console.log(`[🎯💥 PERSONALIZATION] ⚠️ Using generated system prompt`)
+    }
     
-    // Send response to ElevenLabs
+    // Build dynamic variables for ElevenLabs
+    const dynamicVariables: Record<string, string> = {}
+    
+    if (existingClient && existingClient.name) {
+      dynamicVariables.customer_name = existingClient.name
+      dynamicVariables.customer_status = "existing"
+    } else {
+      dynamicVariables.customer_status = "new"
+    }
+    
+    dynamicVariables.business_name = business.name
+    dynamicVariables.caller_phone = caller_id || "unknown"
+    
+    // Build the correct ElevenLabs response format
+    const response = {
+      type: "conversation_initiation_client_data",
+      conversation_config_override: {
+        agent: {
+          prompt: {
+            prompt: systemPrompt
+          },
+          first_message: welcomeMessage,
+          language: "en"
+        },
+        tts: {
+          voice_id: business.agentConfig?.elevenlabsVoice || "pNInz6obpgDQGcFmaJgB"
+        }
+      },
+      dynamic_variables: dynamicVariables,
+      custom_llm_extra_body: {
+        temperature: 0.7,
+        max_tokens: 200
+      }
+    }
+    
+    console.log(`[🎯💥 PERSONALIZATION] ✅ SENDING CORRECT FORMAT RESPONSE`)
+    console.log(`[🎯💥 PERSONALIZATION] 📝 Welcome message length: ${welcomeMessage.length}`)
+    console.log(`[🎯💥 PERSONALIZATION] 📝 System prompt length: ${systemPrompt.length}`)
+    console.log(`[🎯💥 PERSONALIZATION] 📝 Dynamic variables:`, Object.keys(dynamicVariables))
+    console.log(`[🎯💥 PERSONALIZATION] 📝 Voice ID: ${response.conversation_config_override.tts.voice_id}`)
+    
     res.json(response)
     
-    console.log('🎯 ✅ PERSONALIZATION RESPONSE SENT TO ELEVENLABS SUCCESSFULLY')
-    console.log('🎯💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥💥')
-    
   } catch (error) {
-    console.error('🎯💥 PERSONALIZATION ERROR:', error)
-    console.error('🎯💥 ERROR STACK:', error instanceof Error ? error.stack : 'No stack trace')
+    console.error('[🎯💥 PERSONALIZATION] ❌ CRITICAL ERROR:', error)
     
-    // Send fallback response
+    // Always return valid ElevenLabs format even on error
     res.json({
-      first_message: "Hello! Thank you for calling. How can I help you today?",
-      system_prompt: "You are a professional AI assistant.",
-      voice_id: 'pNInz6obpgDQGcFmaJgB',
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.85,
-        style: 0.3,
-        use_speaker_boost: true,
-        speed: 1.0
-      }
+      type: "conversation_initiation_client_data",
+      conversation_config_override: {
+        agent: {
+          prompt: {
+            prompt: "You are a professional AI assistant. Please help the caller with their inquiry and offer to connect them with a team member if needed."
+          },
+          first_message: "Hello! Thank you for calling. I'm your AI assistant. How may I help you today?",
+          language: "en"
+        },
+        tts: {
+          voice_id: "pNInz6obpgDQGcFmaJgB"
+        }
+      },
+      dynamic_variables: {},
+      custom_llm_extra_body: {}
     })
   }
 })
@@ -3799,6 +3762,329 @@ router.post('/track-webhook-call', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Webhook tracking failed'
+    })
+  }
+})
+
+// 🎯 COMPREHENSIVE ELEVENLABS CONFIGURATION STATUS ENDPOINT
+router.get('/elevenlabs-config-status', async (req, res) => {
+  try {
+    console.log('[🎯💥 CONFIG STATUS] Starting comprehensive configuration check...')
+    
+    // Get all businesses with agent configs
+    const businesses = await prisma.business.findMany({
+      include: { agentConfig: true },
+      orderBy: { name: 'asc' }
+    })
+    
+    const status = {
+      timestamp: new Date().toISOString(),
+      server_status: 'HEALTHY',
+      total_businesses: businesses.length,
+      webhook_urls: {
+        personalization: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-personalization-working`,
+        post_call: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-post-call`,
+        config_status: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-config-status`,
+        test_webhook: `${req.protocol}://${req.get('host')}/api/voice/test-personalization-webhook-manual`
+      },
+      businesses: businesses.map(business => ({
+        id: business.id,
+        name: business.name,
+        twilio_phone: business.twilioPhoneNumber,
+        has_agent_config: !!business.agentConfig,
+        voice_greeting_configured: !!business.agentConfig?.voiceGreetingMessage,
+        welcome_message_configured: !!business.agentConfig?.welcomeMessage,
+        persona_prompt_configured: !!business.agentConfig?.personaPrompt,
+        elevenlabs_voice_id: business.agentConfig?.elevenlabsVoice || 'default',
+        elevenlabs_agent_id: business.agentConfig?.elevenlabsAgentId,
+        configuration_score: calculateConfigScore(business.agentConfig)
+      })),
+      critical_next_steps: [
+        "1. Copy the personalization webhook URL above",
+        "2. In ElevenLabs dashboard, go to Agent Settings > Security tab",
+        "3. Enable 'Fetch conversation initiation data for inbound Twilio calls'",
+        "4. Paste the personalization webhook URL",
+        "5. Test by calling your Twilio number: " + (businesses[0]?.twilioPhoneNumber || "NOT_CONFIGURED"),
+        "6. Watch for [🎯💥 PERSONALIZATION] logs in this terminal"
+      ]
+    }
+    
+    res.json(status)
+    
+  } catch (error) {
+    console.error('[🎯💥 CONFIG STATUS] Error:', error)
+    res.status(500).json({ error: 'Configuration check failed', details: error.message })
+  }
+})
+
+// Helper function to calculate configuration completeness score
+function calculateConfigScore(agentConfig: any): string {
+  if (!agentConfig) return 'NOT_CONFIGURED'
+  
+  let score = 0
+  if (agentConfig.voiceGreetingMessage || agentConfig.welcomeMessage) score += 25
+  if (agentConfig.personaPrompt) score += 25
+  if (agentConfig.elevenlabsVoice) score += 25
+  if (agentConfig.elevenlabsAgentId) score += 25
+  
+  if (score >= 75) return 'EXCELLENT'
+  if (score >= 50) return 'GOOD'
+  if (score >= 25) return 'BASIC'
+  return 'INCOMPLETE'
+}
+
+// 🎯 MANUAL WEBHOOK TESTING ENDPOINT 
+router.post('/test-personalization-webhook-manual', async (req, res) => {
+  try {
+    console.log('[🎯💥 MANUAL TEST] Testing personalization webhook manually...')
+    
+    const testData = {
+      caller_id: req.body.caller_id || '+15136120566',
+      agent_id: req.body.agent_id || 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+      called_number: req.body.called_number || '+15138487161',
+      call_sid: req.body.call_sid || 'TEST_CALL_SID_' + Date.now()
+    }
+    
+    console.log('[🎯💥 MANUAL TEST] Using test data:', testData)
+    
+    // Call our own personalization endpoint
+    const response = await fetch(`${req.protocol}://${req.get('host')}/api/voice/elevenlabs-personalization-working`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testData)
+    })
+    
+    const result = await response.json()
+    
+    res.json({
+      test_status: 'COMPLETED',
+      test_data: testData,
+      webhook_response: result,
+      response_format_valid: !!(result.type === 'conversation_initiation_client_data'),
+      has_conversation_config: !!(result.conversation_config_override),
+      has_agent_config: !!(result.conversation_config_override?.agent),
+      has_prompt: !!(result.conversation_config_override?.agent?.prompt?.prompt),
+      has_first_message: !!(result.conversation_config_override?.agent?.first_message),
+      has_tts_config: !!(result.conversation_config_override?.tts),
+      dynamic_variables_count: Object.keys(result.dynamic_variables || {}).length
+    })
+    
+  } catch (error) {
+    console.error('[🎯💥 MANUAL TEST] Error:', error)
+    res.status(500).json({ error: 'Manual test failed', details: error.message })
+  }
+})
+
+// 🎯 WEBHOOK CALL COUNTER
+let personalizationCallCount = 0
+
+router.get('/personalization-call-count', (req, res) => {
+  res.json({
+    total_calls: personalizationCallCount,
+    last_reset: new Date().toISOString(),
+    status: personalizationCallCount > 0 ? 'WEBHOOK_ACTIVE' : 'WEBHOOK_NOT_CALLED'
+  })
+})
+
+router.post('/reset-personalization-counter', (req, res) => {
+  personalizationCallCount = 0
+  res.json({ message: 'Counter reset', timestamp: new Date().toISOString() })
+})
+
+// 🎯 ENHANCED PERSONALIZATION WEBHOOK WITH CALL COUNTING
+router.post('/elevenlabs-personalization-working', async (req, res) => {
+  personalizationCallCount++
+  
+  try {
+    const { caller_id, agent_id, called_number, call_sid } = req.body
+    
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ================================================`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 INCOMING CALL`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Caller: ${caller_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Called: ${called_number}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 🤖 Agent: ${agent_id}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📞 Call SID: ${call_sid}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ================================================`)
+
+    // Clean phone number helper function
+    const normalizePhone = (num: string | null | undefined) =>
+      (num || '').replace(/[^0-9]/g, '')
+
+    // Strategy 1: Direct Twilio number match
+    let business = await prisma.business.findFirst({
+      where: { twilioPhoneNumber: called_number },
+      include: { agentConfig: true }
+    })
+    
+    // Strategy 2: Normalized digits match (fallback)
+    if (!business && called_number) {
+      const digits = normalizePhone(called_number)
+      business = await prisma.business.findFirst({
+        where: { twilioPhoneNumber: { contains: digits } },
+        include: { agentConfig: true }
+      })
+    }
+
+    // Strategy 3: Agent ID reverse lookup (if we store elevenlabsAgentId)
+    if (!business && agent_id) {
+      business = await prisma.business.findFirst({
+        where: { 
+          agentConfig: { 
+            elevenlabsAgentId: agent_id 
+          } 
+        },
+        include: { agentConfig: true }
+      })
+      
+      if (business) {
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Found business via Agent ID: ${business.name}`)
+      }
+    }
+
+    if (!business) {
+      console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ NO BUSINESS FOUND for called_number: ${called_number}, agent_id: ${agent_id}`)
+      
+      // Return ElevenLabs' expected format for fallback
+      return res.json({
+        type: "conversation_initiation_client_data",
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: "You are a professional AI assistant for a premium creative agency. Be helpful, professional, and courteous with all callers. Keep responses concise and offer to connect them with the appropriate team member for detailed assistance."
+            },
+            first_message: "Hello! Thank you for calling. I'm your AI assistant, and I'm here to help with any questions about our services and projects. How may I assist you today?",
+            language: "en"
+          },
+          tts: {
+            voice_id: "pNInz6obpgDQGcFmaJgB"
+          }
+        },
+        dynamic_variables: {},
+        custom_llm_extra_body: {}
+      })
+    }
+    
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ FOUND BUSINESS: ${business.name}`)
+    
+    // Check for existing client to personalize greeting
+    let existingClient = null
+    if (caller_id) {
+      existingClient = await prisma.client.findFirst({
+        where: { 
+          phone: caller_id,
+          businessId: business.id
+        },
+        select: { id: true, name: true }
+      })
+      
+      if (existingClient) {
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ EXISTING CLIENT: ${existingClient.name}`)
+      }
+    }
+    
+    // Build the welcome message from database configuration
+    let welcomeMessage: string
+    if (business.agentConfig?.voiceGreetingMessage) {
+      welcomeMessage = business.agentConfig.voiceGreetingMessage
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using voiceGreetingMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else if (business.agentConfig?.welcomeMessage) {
+      welcomeMessage = business.agentConfig.welcomeMessage
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using welcomeMessage: "${welcomeMessage.substring(0, 50)}..."`)
+    } else {
+      welcomeMessage = `Hello! Thank you for calling ${business.name}. I'm your AI assistant. How can I help you today?`
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated welcome message`)
+    }
+    
+    // Build the system prompt from database configuration
+    let systemPrompt: string
+    if (business.agentConfig?.personaPrompt) {
+      systemPrompt = business.agentConfig.personaPrompt
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Using personaPrompt (${systemPrompt.length} chars)`)
+    } else {
+      systemPrompt = `You are a professional AI assistant for ${business.name}.
+
+CORE RESPONSIBILITIES:
+- Answer questions about projects, services, and creative work
+- Provide project status updates and timeline information  
+- Help with billing and payment questions
+- Qualify new prospects and understand their needs
+- Connect callers to appropriate team members
+- Handle requests professionally and efficiently
+
+COMMUNICATION STYLE:
+- Professional yet conversational tone
+- Keep responses concise (1-2 sentences typically)
+- Ask clarifying questions when needed
+- Always offer to connect with a team member for complex requests
+- Be helpful and solution-focused
+
+Remember: You represent ${business.name} - maintain high professional standards in every interaction.`
+      console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
+    }
+    
+    // Build dynamic variables for ElevenLabs
+    const dynamicVariables: Record<string, string> = {}
+    
+    if (existingClient && existingClient.name) {
+      dynamicVariables.customer_name = existingClient.name
+      dynamicVariables.customer_status = "existing"
+    } else {
+      dynamicVariables.customer_status = "new"
+    }
+    
+    dynamicVariables.business_name = business.name
+    dynamicVariables.caller_phone = caller_id || "unknown"
+    
+    // Build the correct ElevenLabs response format
+    const response = {
+      type: "conversation_initiation_client_data",
+      conversation_config_override: {
+        agent: {
+          prompt: {
+            prompt: systemPrompt
+          },
+          first_message: welcomeMessage,
+          language: "en"
+        },
+        tts: {
+          voice_id: business.agentConfig?.elevenlabsVoice || "pNInz6obpgDQGcFmaJgB"
+        }
+      },
+      dynamic_variables: dynamicVariables,
+      custom_llm_extra_body: {
+        temperature: 0.7,
+        max_tokens: 200
+      }
+    }
+    
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ SENDING CORRECT FORMAT RESPONSE`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Welcome message length: ${welcomeMessage.length}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 System prompt length: ${systemPrompt.length}`)
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Dynamic variables:`, Object.keys(dynamicVariables))
+    console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] 📝 Voice ID: ${response.conversation_config_override.tts.voice_id}`)
+    
+    res.json(response)
+    
+  } catch (error) {
+    console.error(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ❌ CRITICAL ERROR:`, error)
+    
+    // Always return valid ElevenLabs format even on error
+    res.json({
+      type: "conversation_initiation_client_data",
+      conversation_config_override: {
+        agent: {
+          prompt: {
+            prompt: "You are a professional AI assistant. Please help the caller with their inquiry and offer to connect them with a team member if needed."
+          },
+          first_message: "Hello! Thank you for calling. I'm your AI assistant. How may I help you today?",
+          language: "en"
+        },
+        tts: {
+          voice_id: "pNInz6obpgDQGcFmaJgB"
+        }
+      },
+      dynamic_variables: {},
+      custom_llm_extra_body: {}
     })
   }
 })
