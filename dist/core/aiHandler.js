@@ -624,8 +624,11 @@ async function getProjectStatusIntelligence(message, businessId) {
         });
         console.log(`[🎯 PROJECT INTELLIGENCE] Active integrations: ${activeIntegrations.length}`);
         if (activeIntegrations.length === 0) {
-            console.log(`[🎯 PROJECT INTELLIGENCE] No active PM integrations - skipping project intelligence`);
-            return null;
+            console.log(`[🎯 PROJECT INTELLIGENCE] No active PM integrations - being honest about limitations`);
+            return {
+                reply: "I don't currently have access to live project management data. Our project management integrations are still being set up. Let me connect you with your project manager who can provide you with detailed, up-to-date project status information right away.",
+                projectFound: false
+            };
         }
         const statusPatterns = [
             /(status|update|progress|where\s+(are\s+)?we|how\s+is|what'?s\s+the\s+status)\s+(of|on|for|with)?\s*(.{3,})/i,

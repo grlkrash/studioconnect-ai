@@ -1171,6 +1171,51 @@ router.post('/elevenlabs-post-call', async (req, res) => {
       }
     }
 
+    // 🎯 STEP 2.6: NOTIFICATION SYSTEM - Send call summary email
+    console.log('[🎯 STEP 2] 📧 SENDING NOTIFICATION EMAIL...')
+    
+    try {
+      // Get business notification emails
+      const notificationEmails = business.notificationEmails || (business.notificationEmail ? [business.notificationEmail] : [])
+      
+      if (notificationEmails.length > 0) {
+        const { sendCallSummaryEmail } = await import('../services/notificationService')
+        
+        // Format transcript for email
+        let formattedTranscript = 'No transcript available'
+        if (transcript) {
+          if (typeof transcript === 'string') {
+            formattedTranscript = transcript
+          } else if (Array.isArray(transcript)) {
+            formattedTranscript = transcript.map((entry: any) => {
+              if (typeof entry === 'string') return entry
+              if (entry.role && entry.content) {
+                return `${entry.role === 'user' ? 'Caller' : 'Agent'}: ${entry.content}`
+              }
+              return JSON.stringify(entry)
+            }).join('\n\n')
+          } else {
+            formattedTranscript = JSON.stringify(transcript, null, 2)
+          }
+        }
+        
+        // Send call summary email
+        await sendCallSummaryEmail(notificationEmails, {
+          businessName: business.name,
+          caller: caller_id || 'Unknown',
+          callee: called_number,
+          durationSec: duration_seconds || 0,
+          transcript: formattedTranscript
+        })
+        
+        console.log('[🎯 STEP 2] ✅ Notification email sent to:', notificationEmails.join(', '))
+      } else {
+        console.warn('[🎯 STEP 2] ⚠️ No notification emails configured for business:', business.name)
+      }
+    } catch (emailError) {
+      console.error('[🎯 STEP 2] ❌ Failed to send notification email:', emailError)
+    }
+    
     console.log('[🎯 STEP 2] 🎉 SUCCESS: Post-call webhook processing completed')
     console.log('[🎯 STEP 2] Final response:', response)
     
@@ -1624,6 +1669,53 @@ COMMUNICATION STYLE:
 
 Remember: You represent ${business.name} - maintain high professional standards in every interaction.`
       console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
+    }
+    
+    // 🎯 ADD KNOWLEDGE BASE CONTEXT TO SYSTEM PROMPT
+    try {
+      const knowledgeBaseEntries = await prisma.knowledgeBase.findMany({
+        where: { businessId: business.id },
+        select: { content: true, sourceURL: true },
+        take: 10 // Limit to prevent prompt overflow
+      })
+      
+      if (knowledgeBaseEntries.length > 0) {
+        const knowledgeContext = knowledgeBaseEntries
+          .map(entry => `- ${entry.content}${entry.sourceURL ? ` (Source: ${entry.sourceURL})` : ''}`)
+          .join('\n')
+        
+        systemPrompt += `\n\nKNOWLEDGE BASE:\nUse this information to answer questions about our business:\n${knowledgeContext}`
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Added ${knowledgeBaseEntries.length} knowledge base entries`)
+      }
+    } catch (error) {
+      console.warn(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Could not load knowledge base:`, error)
+    }
+    
+    // 🎯 ADD LEAD CAPTURE QUESTIONS CONTEXT
+    try {
+      const leadQuestions = await prisma.leadCaptureQuestion.findMany({
+        where: { 
+          config: { businessId: business.id }
+        },
+        orderBy: { order: 'asc' },
+        select: {
+          questionText: true,
+          isRequired: true,
+          mapsToLeadField: true,
+          isEssentialForEmergency: true
+        }
+      })
+      
+      if (leadQuestions.length > 0) {
+        const questionsContext = leadQuestions
+          .map((q, index) => `${index + 1}. ${q.questionText}${q.isRequired ? ' (Required)' : ''}${q.isEssentialForEmergency ? ' (Emergency Essential)' : ''}`)
+          .join('\n')
+        
+        systemPrompt += `\n\nLEAD INTAKE QUESTIONS:\nWhen qualifying new prospects, gather this information:\n${questionsContext}\n\nAsk these questions naturally during conversation and capture responses for lead qualification.`
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Added ${leadQuestions.length} lead capture questions`)
+      }
+    } catch (error) {
+      console.warn(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Could not load lead questions:`, error)
     }
     
     // 🎯 ENHANCED DYNAMIC VARIABLES per official ElevenLabs docs
@@ -4091,8 +4183,55 @@ Remember: You represent ${business.name} - maintain high professional standards 
       console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Using generated system prompt`)
     }
     
+    // 🎯 ADD KNOWLEDGE BASE CONTEXT TO SYSTEM PROMPT
+    try {
+      const knowledgeBaseEntries = await prisma.knowledgeBase.findMany({
+        where: { businessId: business.id },
+        select: { content: true, sourceURL: true },
+        take: 10 // Limit to prevent prompt overflow
+      })
+      
+      if (knowledgeBaseEntries.length > 0) {
+        const knowledgeContext = knowledgeBaseEntries
+          .map(entry => `- ${entry.content}${entry.sourceURL ? ` (Source: ${entry.sourceURL})` : ''}`)
+          .join('\n')
+        
+        systemPrompt += `\n\nKNOWLEDGE BASE:\nUse this information to answer questions about our business:\n${knowledgeContext}`
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Added ${knowledgeBaseEntries.length} knowledge base entries`)
+      }
+    } catch (error) {
+      console.warn(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Could not load knowledge base:`, error)
+    }
+    
+    // 🎯 ADD LEAD CAPTURE QUESTIONS CONTEXT
+    try {
+      const leadQuestions = await prisma.leadCaptureQuestion.findMany({
+        where: { 
+          config: { businessId: business.id }
+        },
+        orderBy: { order: 'asc' },
+        select: {
+          questionText: true,
+          isRequired: true,
+          mapsToLeadField: true,
+          isEssentialForEmergency: true
+        }
+      })
+      
+      if (leadQuestions.length > 0) {
+        const questionsContext = leadQuestions
+          .map((q, index) => `${index + 1}. ${q.questionText}${q.isRequired ? ' (Required)' : ''}${q.isEssentialForEmergency ? ' (Emergency Essential)' : ''}`)
+          .join('\n')
+        
+        systemPrompt += `\n\nLEAD INTAKE QUESTIONS:\nWhen qualifying new prospects, gather this information:\n${questionsContext}\n\nAsk these questions naturally during conversation and capture responses for lead qualification.`
+        console.log(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ✅ Added ${leadQuestions.length} lead capture questions`)
+      }
+    } catch (error) {
+      console.warn(`[🎯💥 PERSONALIZATION #${personalizationCallCount}] ⚠️ Could not load lead questions:`, error)
+    }
+    
     // Build comprehensive dynamic variables for ElevenLabs
-    const agentName = business.agentConfig?.agentName || 'Maya'
+    const agentName = business.agentConfig?.agentName || 'Alex' // Changed from 'Maya' to gender-neutral default
     const clientName = existingClient?.name || 'valued caller'
     const clientStatus = existingClient ? 'existing' : 'new'
     const clientType = existingClient ? 'returning_client' : 'new_prospect'
@@ -4101,7 +4240,7 @@ Remember: You represent ${business.name} - maintain high professional standards 
       // Business Information
       business_name: business.name,
       company_name: business.name,
-      business_type: business.businessType || 'creative_agency',
+      business_type: business.businessType === 'OTHER' ? 'creative_agency' : (business.businessType?.toLowerCase().replace(/_/g, ' ') || 'creative_agency'),
       
       // Agent Information  
       agent_name: agentName,
@@ -4223,8 +4362,8 @@ Use this context to personalize responses appropriately.`,
         // Transfer configuration
         transfer_settings: {
           phone_number: '+15136120566',
-          max_wait_time: 15, // seconds
-          wait_message: 'Please hold while I connect you with our {{agent_title}}...',
+          max_wait_time: 15, // seconds - reduced from default
+          wait_message: 'Please hold while I connect you with our creative team...',
           no_answer_action: 'return_to_agent',
           context_collection: false, // CRITICAL: Don't ask client for context
           auto_context: `Transfer from {{agent_name}} regarding {{business_name}} inquiry. Caller: {{client_name}} ({{client_status}} client) - {{caller_phone}}.`
@@ -4240,57 +4379,257 @@ Use this context to personalize responses appropriately.`,
           speed: 1.0
         },
         
-        // VAD settings for natural conversation
+        // VAD settings - Use ElevenLabs optimized defaults for natural conversation
         vad_settings: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 800, // Reduced from 1200ms
-          interruption_sensitivity: 'medium'
+          type: 'server_vad', // Use ElevenLabs' server-side VAD
+          threshold: 0.5, // Default threshold for voice detection
+          prefix_padding_ms: 300, // Brief padding before speech
+          silence_duration_ms: 800, // Reduced from 1200ms for more natural flow
+          interruption_sensitivity: 'medium' // Allow natural interruptions
         }
       },
       
-      available_variables: [
-        'agent_name', 'agent_title', 'business_name', 'company_name', 'business_type',
+      // Dynamic variables available for use in prompts
+      available_dynamic_variables: [
+        'business_name', 'company_name', 'business_type',
+        'agent_name', 'agent_title', 
         'caller_phone', 'caller_id', 'client_status', 'client_name', 'client_type',
-        'called_number', 'agent_id', 'call_timestamp', 'support_available',
-        'has_custom_greeting', 'has_persona', 'voice_configured'
+        'called_number', 'agent_id', 'call_timestamp',
+        'support_available', 'has_custom_greeting', 'has_persona', 'voice_configured'
       ],
       
-      webhook_urls: {
-        personalization: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-personalization-working`,
-        post_call: `${req.protocol}://${req.get('host')}/api/voice/elevenlabs-post-call`
-      },
-      
-      configuration_steps: [
-        '1. Go to ElevenLabs Dashboard → Conversational AI → Your Agent',
-        '2. Update System Prompt with the template above (includes dynamic variables)',
-        '3. Update First Message with the template above (includes dynamic variables)', 
-        '4. Set Transfer phone to +15136120566',
-        '5. Set Transfer wait time to 15 seconds',
-        '6. DISABLE "Ask client for transfer context"',
-        '7. Set auto-context message for transfers',
-        '8. Configure VAD settings as shown above',
-        '9. Set personalization webhook URL',
-        '10. Set post-call webhook URL',
-        '11. Save configuration and test'
-      ],
-      
-      critical_fixes: [
-        '❌ DISABLE context collection in transfer settings',
-        '🎵 Use ElevenLabs VAD (not custom)',
-        '⏱️ Reduce silence detection to 800ms',
-        '📞 Set transfer wait to 15 seconds max',
-        '🎯 Use {{agent_name}} variable in prompts',
-        '🔄 Enable personalization webhook'
-      ]
+      // Recommended ElevenLabs UI Settings
+      elevenlabs_ui_configuration: {
+        conversation_config: {
+          max_duration: 600, // 10 minutes
+          client_events: ['conversation_started', 'conversation_ended'],
+          server_events: ['conversation_started', 'conversation_ended', 'user_transcript', 'agent_response']
+        },
+        
+        analysis_config: {
+          post_call_analysis: true,
+          transcript_summary: true,
+          evaluation_criteria: [
+            {
+              name: 'call_successful',
+              prompt: 'Evaluate if the caller\'s inquiry was successfully addressed or properly escalated'
+            },
+            {
+              name: 'professional_tone',
+              prompt: 'Rate the agent\'s professionalism and brand representation'
+            }
+          ]
+        }
+      }
     }
+    
+    console.log('[🎯 AGENT CONFIG] ✅ Generated comprehensive ElevenLabs configuration template')
     
     res.json(template)
     
   } catch (error) {
-    console.error('[🎯 AGENT CONFIG] Error:', error)
+    console.error('[🎯 AGENT CONFIG] ❌ Error generating template:', error)
     res.status(500).json({ error: 'Failed to generate configuration template' })
+  }
+})
+
+// 🚨 CRITICAL: COMPREHENSIVE SYSTEM STATUS CHECK
+router.get('/system-status-check', async (req, res) => {
+  try {
+    console.log('🔍 COMPREHENSIVE SYSTEM STATUS CHECK INITIATED')
+    
+    // Force HTTPS for webhook URLs (Render.com terminates SSL)
+    const host = req.get('host')
+    const baseUrl = host?.includes('onrender.com') || host?.includes('cincyaisolutions.com') ? 
+      `https://${host}` : 
+      `${req.protocol}://${host}`
+    
+    // 1. DATABASE CONNECTIVITY CHECK
+    console.log('📊 Checking database connectivity...')
+    const business = await prisma.business.findFirst({
+      where: { 
+        OR: [
+          { name: { contains: 'Aurora' } },
+          { twilioPhoneNumber: '+15138487161' }
+        ]
+      },
+      include: { 
+        agentConfig: true,
+        knowledgeBase: true
+      }
+    })
+    
+    // 2. KNOWLEDGE BASE CHECK
+    const knowledgeBaseCount = business ? await prisma.knowledgeBase.count({
+      where: { businessId: business.id }
+    }) : 0
+    
+    // 3. WEBHOOK ENDPOINTS CHECK
+    const webhookEndpoints = {
+      personalization: `${baseUrl}/api/voice/elevenlabs-personalization-working`,
+      post_call: `${baseUrl}/api/voice/elevenlabs-post-call`,
+      agent_config: `${baseUrl}/api/voice/elevenlabs-agent-config-template`,
+      system_status: `${baseUrl}/api/voice/system-status-check`
+    }
+    
+    // 4. ENVIRONMENT VARIABLES CHECK
+    const envStatus = {
+      elevenlabs_api_key: !!process.env.ELEVENLABS_API_KEY,
+      elevenlabs_webhook_secret: !!process.env.ELEVENLABS_WEBHOOK_SECRET,
+      twilio_account_sid: !!process.env.TWILIO_ACCOUNT_SID,
+      twilio_auth_token: !!process.env.TWILIO_AUTH_TOKEN,
+      sendgrid_api_key: !!process.env.SENDGRID_API_KEY,
+      from_email: !!process.env.FROM_EMAIL
+    }
+    
+    // 5. NOTIFICATION SYSTEM CHECK
+    const notificationEmails = business?.notificationEmails || (business?.notificationEmail ? [business.notificationEmail] : [])
+    
+    // 6. RECENT CALL ACTIVITY CHECK
+    const recentCalls = await prisma.callLog.findMany({
+      where: {
+        createdAt: {
+          gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        callSid: true,
+        from: true,
+        to: true,
+        createdAt: true,
+        status: true,
+        metadata: true
+      }
+    })
+    
+    // 7. SYSTEM HEALTH ASSESSMENT
+    const healthScore = {
+      database: business ? 100 : 0,
+      agent_config: business?.agentConfig ? 100 : 0,
+      knowledge_base: knowledgeBaseCount > 0 ? 100 : 50,
+      environment: Object.values(envStatus).filter(Boolean).length * 16.67, // 6 vars * 16.67 = 100
+      notifications: notificationEmails.length > 0 ? 100 : 0,
+      recent_activity: recentCalls.length > 0 ? 100 : 50
+    }
+    
+    const overallHealth = Math.round(Object.values(healthScore).reduce((a, b) => a + b, 0) / Object.keys(healthScore).length)
+    
+    const statusReport = {
+      timestamp: new Date().toISOString(),
+      overall_health: overallHealth,
+      status: overallHealth >= 80 ? 'HEALTHY' : overallHealth >= 60 ? 'WARNING' : 'CRITICAL',
+      
+      // 🏢 BUSINESS CONFIGURATION
+      business_config: business ? {
+        id: business.id,
+        name: business.name,
+        phone: business.twilioPhoneNumber,
+        agent_configured: !!business.agentConfig,
+        agent_name: business.agentConfig?.agentName || 'Not configured',
+        has_persona: !!business.agentConfig?.personaPrompt,
+        has_welcome_message: !!business.agentConfig?.welcomeMessage,
+        elevenlabs_agent_id: business.agentConfig?.elevenlabsAgentId || 'Not set',
+        knowledge_base_entries: knowledgeBaseCount
+      } : null,
+      
+      // 🌐 WEBHOOK CONFIGURATION
+      webhook_config: {
+        base_url: baseUrl,
+        endpoints: webhookEndpoints,
+        elevenlabs_configuration: {
+          agent_id: business?.agentConfig?.elevenlabsAgentId || 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+          personalization_webhook: webhookEndpoints.personalization,
+          post_call_webhook: webhookEndpoints.post_call
+        }
+      },
+      
+      // 🔧 ENVIRONMENT STATUS
+      environment_status: envStatus,
+      
+      // 📧 NOTIFICATION SYSTEM
+      notification_system: {
+        configured: notificationEmails.length > 0,
+        email_count: notificationEmails.length,
+        emails: notificationEmails,
+        sendgrid_ready: envStatus.sendgrid_api_key
+      },
+      
+      // 📊 RECENT ACTIVITY
+      recent_activity: {
+        calls_24h: recentCalls.length,
+        latest_calls: recentCalls.map(call => ({
+          id: call.id,
+          call_sid: call.callSid,
+          from: call.from,
+          to: call.to,
+          time: call.createdAt,
+          status: call.status
+        }))
+      },
+      
+      // 🎯 HEALTH SCORES
+      health_breakdown: healthScore,
+      
+      // 🚨 CRITICAL ACTIONS NEEDED
+      action_items: [
+        ...(overallHealth < 80 ? ['⚠️ System health below 80% - review configuration'] : []),
+        ...(envStatus.elevenlabs_api_key ? [] : ['🔑 Set ELEVENLABS_API_KEY environment variable']),
+        ...(business?.agentConfig?.elevenlabsAgentId ? [] : ['🤖 Configure ElevenLabs Agent ID in dashboard']),
+        ...(notificationEmails.length > 0 ? [] : ['📧 Configure notification emails in business settings']),
+        ...(knowledgeBaseCount > 0 ? [] : ['📚 Add knowledge base entries for better AI responses']),
+        ...(recentCalls.length > 0 ? [] : ['📞 No recent call activity - test your phone number'])
+      ],
+      
+      // 📋 ELEVENLABS CONFIGURATION STEPS
+      elevenlabs_setup: {
+        dashboard_url: 'https://elevenlabs.io/app/conversational-ai',
+        agent_id: business?.agentConfig?.elevenlabsAgentId || 'agent_01jy6ztt6mf5jaa266qj8b7asz',
+        required_settings: [
+          {
+            setting: 'Personalization Webhook',
+            value: webhookEndpoints.personalization,
+            description: 'Provides dynamic business and caller context'
+          },
+          {
+            setting: 'Post-call Webhook', 
+            value: webhookEndpoints.post_call,
+            description: 'Sends call data and notifications'
+          },
+          {
+            setting: 'Transfer Phone Number',
+            value: '+15136120566',
+            description: 'Number to transfer calls to'
+          },
+          {
+            setting: 'Transfer Wait Time',
+            value: '15 seconds',
+            description: 'Maximum wait time before returning to agent'
+          },
+          {
+            setting: 'Context Collection',
+            value: 'DISABLED',
+            description: 'Do not ask caller for context when transferring'
+          }
+        ]
+      }
+    }
+    
+    console.log('✅ SYSTEM STATUS CHECK COMPLETE')
+    console.log('Overall Health:', overallHealth + '%')
+    console.log('Status:', statusReport.status)
+    
+    res.json(statusReport)
+    
+  } catch (error) {
+    console.error('❌ SYSTEM STATUS CHECK FAILED:', error)
+    res.status(500).json({
+      error: 'System status check failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    })
   }
 })
 
