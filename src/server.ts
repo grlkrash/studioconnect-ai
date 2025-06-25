@@ -228,12 +228,7 @@ app.get('/test-key', async (req: Request, res: Response) => {
 // during container startup.
 // ────────────────────────────────────────────────────────────
 
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString()
-  })
-})
+app.get('/health', (req: Request, res: Response) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
 // Server readiness flag for clearer boot-status responses
 let isServerReady = false
@@ -325,13 +320,47 @@ app.all('/dashboard*', (req: Request, res: Response) => {
   res.redirect(301, redirectUrl)
 })
 
-// Handle all admin routes with Next.js (except API routes)
+// CRITICAL: Mount ALL API routes BEFORE the /admin/* handler to prevent conflicts
+app.use('/api/auth', authRoutes)
+app.use('/admin/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/clients', clientRoutes)
+app.use('/api/projects', projectRoutes)
+app.use('/api/knowledge-base', knowledgeBaseRoutes)
+app.use('/api/business', businessRoutes)
+app.use('/api/agent-config', agentConfigRoutes)
+app.use('/api/lead-questions', leadQuestionRoutes)
+app.use('/api/integrations', integrationRoutes)
+app.use('/api/calls', callHistoryRoutes)
+app.use('/api/interactions', interactionRoutes)
+app.use('/api/analytics', analyticsRoutes)
+app.use('/api/widget-config', widgetConfigRoutes)
+app.use('/api/elevenlabs', elevenLabsRouter)
+app.use('/api/healthz', healthzRouter)
+
+// Admin API routes (for dashboard)
+app.use('/admin/api/admin', adminRoutes)
+app.use('/admin/api/clients', clientRoutes)
+app.use('/admin/api/projects', projectRoutes)
+app.use('/admin/api/knowledge-base', knowledgeBaseRoutes)
+app.use('/admin/api/business', businessRoutes)
+app.use('/admin/api/agent-config', agentConfigRoutes)
+app.use('/admin/api/lead-questions', leadQuestionRoutes)
+app.use('/admin/api/integrations', integrationRoutes)
+app.use('/admin/api/calls', callHistoryRoutes)
+app.use('/admin/api/interactions', interactionRoutes)
+app.use('/admin/api/analytics', analyticsRoutes)
+app.use('/admin/api/widget-config', widgetConfigRoutes)
+app.use('/admin/api/elevenlabs', elevenLabsRouter)
+app.use('/admin/api/healthz', healthzRouter)
+
+// Handle all admin routes with Next.js (AFTER API routes are mounted)
 app.all('/admin', (req: Request, res: Response) => {
   res.redirect('/admin/')
 })
 
 app.all('/admin/*', (req: Request, res: Response, next) => {
-  // Skip API routes - let them be handled by the API router
+  // Skip API routes - let them be handled by the API router (mounted above)
   if (req.path.startsWith('/admin/api/')) {
     return next()
   }
@@ -353,136 +382,99 @@ app.all('/admin/*', (req: Request, res: Response, next) => {
   return handle(req, res)
 })
 
-// 2. Mount API routes BEFORE Next.js dashboard handler
-// (chat route mounted earlier to avoid 404 during Next.js prepare)
-// app.use('/api/chat', chatRoutes)
-app.use('/api/auth', authRoutes)
-app.use('/admin/api/auth', authRoutes)
-app.use('/api/admin', adminRoutes)
-app.use('/api/clients', clientRoutes)
-    app.use('/api/projects', projectRoutes)
-    app.use('/api/knowledge-base', knowledgeBaseRoutes)
-    app.use('/api/business', businessRoutes)
-    app.use('/api/agent-config', agentConfigRoutes)
-    app.use('/api/lead-questions', leadQuestionRoutes)
-    app.use('/api/integrations', integrationRoutes)
-    app.use('/api/calls', callHistoryRoutes)
-    app.use('/api/interactions', interactionRoutes)
-app.use('/api/analytics', analyticsRoutes)
-app.use('/api/widget-config', widgetConfigRoutes)
-    app.use('/api/elevenlabs', elevenLabsRouter)
-    app.use('/api/healthz', healthzRouter)
-    
-    // Admin API routes (for dashboard)
-    app.use('/admin/api/admin', adminRoutes)
-    app.use('/admin/api/clients', clientRoutes)
-    app.use('/admin/api/projects', projectRoutes)
-    app.use('/admin/api/knowledge-base', knowledgeBaseRoutes)
-    app.use('/admin/api/business', businessRoutes)
-    app.use('/admin/api/agent-config', agentConfigRoutes)
-    app.use('/admin/api/lead-questions', leadQuestionRoutes)
-    app.use('/admin/api/integrations', integrationRoutes)
-    app.use('/admin/api/calls', callHistoryRoutes)
-    app.use('/admin/api/interactions', interactionRoutes)
-    app.use('/admin/api/analytics', analyticsRoutes)
-    app.use('/admin/api/widget-config', widgetConfigRoutes)
-    app.use('/admin/api/elevenlabs', elevenLabsRouter)
-    app.use('/admin/api/healthz', healthzRouter)
-    
-    // Legacy health check endpoints
-    app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
-    app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
-    
-    // Voice preview route (alias for UI compatibility)
-    app.post('/api/voice-preview', async (req, res) => {
-      // Forward to ElevenLabs preview endpoint
-      req.url = '/preview'
-      elevenLabsRouter(req, res, () => {})
-    })
+// Legacy health check endpoints
+app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
-    // Test page for API debugging
-    app.get('/test-calls', (req: Request, res: Response) => {
-      const testPagePath = path.join(__dirname, '../public/test-calls.html');
-      res.sendFile(testPagePath);
-    });
+// Voice preview route (alias for UI compatibility)
+app.post('/api/voice-preview', async (req, res) => {
+  // Forward to ElevenLabs preview endpoint
+  req.url = '/preview'
+  elevenLabsRouter(req, res, () => {})
+})
 
-    // 3. Specific file serving routes
-    // Serve the public chat widget bundle. Historically the snippet referenced
-    // both `widget.js` and `embed.js`, so we alias the two paths here to avoid
-    // breaking existing installs.
-    const widgetHandler = (req: Request, res: Response) => {
-      // Using process.cwd() for more explicit path resolution
-      const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
+// Test page for API debugging
+app.get('/test-calls', (req: Request, res: Response) => {
+  const testPagePath = path.join(__dirname, '../public/test-calls.html');
+  res.sendFile(testPagePath);
+});
 
-      console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
-      try {
-        if (fs.existsSync(widgetPath)) {
-          console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
-          res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
-          res.sendFile(widgetPath, (err: Error | null) => {
-            if (err) {
-              console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
-              if (!res.headersSent) {
-                res.status(500).send('// Server error: Could not send widget file.');
-              }
-            } else {
-              console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
-            }
-          });
+// 3. Specific file serving routes
+// Serve the public chat widget bundle. Historically the snippet referenced
+// both `widget.js` and `embed.js`, so we alias the two paths here to avoid
+// breaking existing installs.
+const widgetHandler = (req: Request, res: Response) => {
+  // Using process.cwd() for more explicit path resolution
+  const widgetPath = path.join(process.cwd(), 'public/widget.js'); 
+
+  console.log(`WIDGET_DEBUG: Request for ${req.path}. Attempting to send from: ${widgetPath}`);
+  try {
+    if (fs.existsSync(widgetPath)) {
+      console.log(`WIDGET_DEBUG: File exists at ${widgetPath}. Setting Content-Type and trying to send...`);
+      res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+      res.sendFile(widgetPath, (err: Error | null) => {
+        if (err) {
+          console.error('WIDGET_DEBUG: Error during res.sendFile:', err);
+          if (!res.headersSent) {
+            res.status(500).send('// Server error: Could not send widget file.');
+          }
         } else {
-          console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
-          res.status(404).send('// Widget script not found.');
+          console.log('WIDGET_DEBUG: widget.js sent successfully via res.sendFile.');
         }
-      } catch (e: any) {
-        console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
-        if (!res.headersSent) {
-          res.status(500).send('// Server error processing widget request.');
-        }
-      }
-    };
-
-    // Main path used in documentation
-    app.get('/widget.js', widgetHandler);
-
-    // Legacy alias kept for backwards-compatibility
-    app.get('/embed.js', widgetHandler);
-
-    // 4. Debug route to test routing
-    app.get('/admin-test', (req: Request, res: Response) => {
-      res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
-    })
-
-    // 5. Root route handler
-    app.get('/', (req: Request, res: Response) => {
-      res.send('Application Root - Hello from Deployed App!');
-    });
-
-    // 6. Static file serving (general)
-    app.use('/static', express.static(path.join(__dirname, '../public')))
-
-    // Debug logs for static path
-    const staticPath = path.join(__dirname, '../public');
-    console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
-    try {
-      const files = fs.readdirSync(staticPath);
-      console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
-    } catch (e: any) {
-      console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+      });
+    } else {
+      console.error(`WIDGET_DEBUG: Widget file NOT FOUND at: ${widgetPath}`);
+      res.status(404).send('// Widget script not found.');
     }
+  } catch (e: any) {
+    console.error('WIDGET_DEBUG: Exception caught in widget route handler:', e.message);
+    if (!res.headersSent) {
+      res.status(500).send('// Server error processing widget request.');
+    }
+  }
+};
 
-    // =======================
-    // WILDCARD 404 HANDLER - MUST BE LAST!
-    // =======================
-    app.use('*', (req: express.Request, res: express.Response) => {
-      res.status(404).json({
-        error: 'Route not found',
-        path: req.originalUrl,
-        method: req.method
-      })
-    })
+// Main path used in documentation
+app.get('/widget.js', widgetHandler);
 
-    // Signal that every route has been mounted – server is ready
-    isServerReady = true
+// Legacy alias kept for backwards-compatibility
+app.get('/embed.js', widgetHandler);
+
+// 4. Debug route to test routing
+app.get('/admin-test', (req: Request, res: Response) => {
+  res.json({ message: 'Admin routing is working!', timestamp: new Date().toISOString() })
+})
+
+// 5. Root route handler
+app.get('/', (req: Request, res: Response) => {
+  res.send('Application Root - Hello from Deployed App!');
+});
+
+// 6. Static file serving (general)
+app.use('/static', express.static(path.join(__dirname, '../public')))
+
+// Debug logs for static path
+const staticPath = path.join(__dirname, '../public');
+console.log(`DEPLOY_DEBUG: Attempting to serve static files from resolved path: ${staticPath}`);
+try {
+  const files = fs.readdirSync(staticPath);
+  console.log('DEPLOY_DEBUG: Files found in static path directory by Express:', files);
+} catch (e: any) {
+  console.error('DEPLOY_DEBUG: Error reading static path directory by Express:', e.message);
+}
+
+// =======================
+// WILDCARD 404 HANDLER - MUST BE LAST!
+// =======================
+app.use('*', (req: express.Request, res: express.Response) => {
+  res.status(404).json({
+    error: 'Route not found',
+    path: req.originalUrl,
+    method: req.method
+  })
+})
+
+// Signal that every route has been mounted – server is ready
+isServerReady = true
 
 // Global error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
