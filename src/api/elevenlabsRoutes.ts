@@ -4,6 +4,7 @@ import { generateSpeechWithElevenLabs } from '../services/elevenlabs'
 import { prisma } from '../services/db'
 import { refreshProjectStatus } from '../services/projectStatusService'
 import { normalizePhoneNumber } from '../utils/phoneHelpers'
+import { sendLeadNotificationEmail } from '../services/notificationService'
 
 export const elevenLabsRouter = express.Router()
 
@@ -283,7 +284,7 @@ elevenLabsRouter.post('/client-tools/escalate-to-team', async (req, res) => {
     }
 
     // Create escalation record as a lead
-    await prisma.lead.create({
+    const newLead = await prisma.lead.create({
       data: {
         businessId: business.id,
         capturedData: {
@@ -299,6 +300,12 @@ elevenLabsRouter.post('/client-tools/escalate-to-team', async (req, res) => {
         notes: `Escalation from voice call: ${reason || 'General inquiry'}`
       }
     })
+
+    // Fire-and-forget email notification
+    if (business.notificationEmails?.length || business.notificationEmail) {
+      const recipients = business.notificationEmails?.length ? business.notificationEmails : (business.notificationEmail ? [business.notificationEmail] : [])
+      sendLeadNotificationEmail(recipients, newLead, newLead.priority, business.name).catch(console.error)
+    }
 
     // Determine escalation message based on urgency
     let escalationMessage = "I'm connecting you with one of our team members right now. "

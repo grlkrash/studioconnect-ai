@@ -1,7 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { processMessage } from '../core/aiHandler';
 import { initiateClickToCall } from '../services/notificationService';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { findRelevantKnowledge } from '../core/ragService';
+import { getChatCompletion } from '../services/openai';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -37,6 +39,66 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       });
       return;
     }
+    // If a projectId is provided, perform scope-creep analysis first
+    if (projectId) {
+      try {
+        // 1️⃣ Retrieve project-specific context from the knowledge base (RAG)
+        const contextEntries = await findRelevantKnowledge(
+          message,
+          businessId,
+          5,
+          { projectId }
+        );
+
+        const projectContext = contextEntries.map(e => e.content).join('\n---\n');
+
+        // 2️⃣ Ask the LLM whether the request is out of scope. We force a strict JSON response.
+        const systemPrompt = `You are a senior project manager whose task is to detect scope creep in client requests. Analyse the client's latest request against the original project scope. Respond STRICTLY with valid JSON (no markdown, no comments) matching this TypeScript type:\n{\"isOutOfScope\": boolean, \"briefExplanation\": string}`;
+
+        const analysisRaw = await getChatCompletion(
+          `PROJECT_SCOPE:\n${projectContext || 'N/A'}\n\nCLIENT_REQUEST:\n${message}`,
+          systemPrompt,
+          'gpt-4o'
+        );
+
+        let isOutOfScope = false;
+        let briefExplanation = '';
+        try {
+          const parsed = JSON.parse(analysisRaw || '{}');
+          isOutOfScope = Boolean(parsed.isOutOfScope);
+          briefExplanation = parsed.briefExplanation || '';
+        } catch (_) {
+          // Fallback – treat as in-scope if parsing fails
+          isOutOfScope = false;
+        }
+
+        // 3️⃣ If out-of-scope, record the risk and respond gracefully to the client
+        if (isOutOfScope) {
+          await prisma.knowledgeBase.create({
+            data: {
+              businessId,
+              projectId,
+              content: `⚠️ Possible scope-creep request: "${message}"\nExplanation: ${briefExplanation}`,
+              metadata: {
+                type: 'SCOPE_CREEP_RISK'
+              } as Prisma.JsonObject
+            }
+          });
+
+          res.status(200).json({
+            reply: "That's a great question. Let me check with the project manager and get back to you with the details.",
+            currentFlow: null
+          });
+          return;
+        }
+        // If not out-of-scope, continue normally
+      } catch (scopeErr) {
+        console.error('[Scope-Creep Detection] Error:', scopeErr);
+        // Fail-open: continue with normal processing
+      }
+    }
+
+    // Standard processing for new leads or in-scope project chats
     const aiResponse = await processMessage({
       message,
       conversationHistory: conversationHistory || [],
@@ -45,6 +107,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       projectId,
       channel: 'CHAT'
     });
+
     res.status(200).json(aiResponse);
     return;
   } catch (error) {

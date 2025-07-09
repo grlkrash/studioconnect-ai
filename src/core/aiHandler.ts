@@ -8,6 +8,7 @@ import { requireAuth } from '../api/authMiddleware'
 import { requirePlan } from '../middleware/planMiddleware'
 import { validateRequest } from '../middleware/validateRequest'
 import { refreshProjectStatus } from '../services/projectStatusService'
+import { detectProjectType, ProjectType } from '../utils/projectTypeClassifier'
 
 /**
  * 🎯 BULLETPROOF FORTUNE 500 AI HANDLER 🎯
@@ -31,6 +32,46 @@ interface LeadCaptureQuestionBase {
 // Extend the LeadCaptureQuestion type to include isEssentialForEmergency
 type ExtendedLeadCaptureQuestion = LeadCaptureQuestionBase & {
   isEssentialForEmergency: boolean
+}
+
+// Insert after ExtendedLeadCaptureQuestion type definition
+const DEFAULT_QUESTION_SETS: Record<ProjectType, ExtendedLeadCaptureQuestion[]> = {
+  BRANDING: [
+    { questionText: 'What is the name of your brand or product?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'brandName', isEssentialForEmergency: false },
+    { questionText: 'Do you have existing brand guidelines?', expectedFormat: 'TEXT', order: 2, isRequired: true, mapsToLeadField: 'brandGuidelines', isEssentialForEmergency: false },
+    { questionText: 'What timeline are you aiming for this branding project?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'timeline', isEssentialForEmergency: false },
+    { questionText: 'To help us scope this correctly, what is the approximate budget for this project?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ],
+  DESIGN: [
+    { questionText: 'Which design deliverables are you looking for (e.g., website, app, print)?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'designDeliverables', isEssentialForEmergency: false },
+    { questionText: 'Do you have wireframes or content ready?', expectedFormat: 'TEXT', order: 2, isRequired: false, mapsToLeadField: 'wireframes', isEssentialForEmergency: false },
+    { questionText: 'What is your preferred timeline?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'timeline', isEssentialForEmergency: false },
+    { questionText: 'To ensure we align on the scope, what is the budget you have allocated for these deliverables?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ],
+  MARKETING: [
+    { questionText: 'Which channels are you focusing on (social, email, paid ads, etc.)?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'channels', isEssentialForEmergency: false },
+    { questionText: 'What is the main goal of this campaign?', expectedFormat: 'TEXT', order: 2, isRequired: true, mapsToLeadField: 'campaignGoal', isEssentialForEmergency: false },
+    { questionText: 'What is your desired launch date?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'timeline', isEssentialForEmergency: false },
+    { questionText: 'What is the planned budget for this marketing campaign?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ],
+  PRODUCTION: [
+    { questionText: 'Are you looking for video, photo, or animation production?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'productionType', isEssentialForEmergency: false },
+    { questionText: 'Do you have a script or storyboard?', expectedFormat: 'TEXT', order: 2, isRequired: false, mapsToLeadField: 'script', isEssentialForEmergency: false },
+    { questionText: 'What is your target delivery date?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'timeline', isEssentialForEmergency: false },
+    { questionText: 'What is the budget for this production?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ],
+  EVENTS: [
+    { questionText: 'What type of event are you planning?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'eventType', isEssentialForEmergency: false },
+    { questionText: 'What is the expected date of the event?', expectedFormat: 'TEXT', order: 2, isRequired: true, mapsToLeadField: 'eventDate', isEssentialForEmergency: false },
+    { questionText: 'Approximately how many attendees are expected?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'attendees', isEssentialForEmergency: false },
+    { questionText: 'What is the overall budget you are working with for this event?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ],
+  OTHER: [
+    { questionText: 'Could you briefly describe the project you have in mind?', expectedFormat: 'TEXT', order: 1, isRequired: true, mapsToLeadField: 'projectDescription', isEssentialForEmergency: false },
+    { questionText: 'What is the primary goal you hope to achieve with this project?', expectedFormat: 'TEXT', order: 2, isRequired: true, mapsToLeadField: 'campaignGoal', isEssentialForEmergency: false },
+    { questionText: 'What is your ideal timeline or deadline?', expectedFormat: 'TEXT', order: 3, isRequired: false, mapsToLeadField: 'timeline', isEssentialForEmergency: false },
+    { questionText: 'And finally, what is the approximate budget you have in mind for this?', expectedFormat: 'TEXT', order: 4, isRequired: false, mapsToLeadField: 'budget', isEssentialForEmergency: false }
+  ]
 }
 
 // Default emergency questions when none are configured
@@ -617,7 +658,13 @@ const _processMessage = async (
       context = contextParts.join('\n\n')
     }
 
-    const leadCaptureQuestions = business.agentConfig?.questions || []
+    const detectedProjectType: ProjectType = detectProjectType(message)
+    let leadCaptureQuestions: any[] = []
+    if (detectedProjectType !== 'OTHER') {
+      leadCaptureQuestions = DEFAULT_QUESTION_SETS[detectedProjectType]
+    } else if (business.agentConfig?.questions && business.agentConfig.questions.length) {
+      leadCaptureQuestions = business.agentConfig.questions
+    }
 
     // 🎯 BUILD BULLETPROOF CONVERSATION CONTEXT 🎯
     const conversationContext = {
