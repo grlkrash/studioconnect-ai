@@ -10,10 +10,27 @@ export interface KnowledgeEntry {
   usage?: number
   metadata?: any
   lastUpdated?: string
+  projectId?: string
+  project?: {
+    id: string
+    name: string
+    client: {
+      name: string
+    }
+  }
+}
+
+export interface Project {
+  id: string
+  name: string
+  client: {
+    name: string
+  }
 }
 
 export function useKnowledgeBase() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { businessId } = useBusiness()
@@ -34,13 +51,25 @@ export function useKnowledgeBase() {
     }
   }
 
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/projects', { credentials: 'include' })
+      if (!res.ok) throw new Error('failed')
+      const data = await res.json()
+      setProjects(data)
+    } catch (err) {
+      console.error('Error fetching projects:', err)
+    }
+  }
+
   useEffect(() => {
     if (!businessId) return
     fetchEntries()
+    fetchProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId])
 
-  async function addText(payload: { content: string; metadata?: any }) {
+  async function addText(payload: { content: string; metadata?: any; projectId?: string }) {
     const res = await fetch(`/api/knowledge-base${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'POST',
       credentials: 'include',
@@ -55,9 +84,12 @@ export function useKnowledgeBase() {
     throw new Error(err.error || 'Failed to add entry')
   }
 
-  async function uploadFile(file: File) {
+  async function uploadFile(file: File, projectId?: string) {
     const form = new FormData()
     form.append('file', file)
+    if (projectId) {
+      form.append('projectId', projectId)
+    }
     const res = await fetch(`/api/knowledge-base/upload${businessId ? `?businessId=${businessId}` : ''}`, {
       method: 'POST',
       credentials: 'include',
@@ -98,7 +130,7 @@ export function useKnowledgeBase() {
     throw new Error('Failed to delete')
   }
 
-  return { entries, loading, error, addText, uploadFile, updateEntry, deleteEntry, refetch: fetchEntries }
+  return { entries, projects, loading, error, addText, uploadFile, updateEntry, deleteEntry, refetch: fetchEntries }
 }
 
 export function useKnowledgeStats(entries: KnowledgeEntry[]) {

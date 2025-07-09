@@ -212,12 +212,7 @@ app.get('/test-key', async (req, res) => {
         });
     }
 });
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'healthy',
-        timestamp: new Date().toISOString()
-    });
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 let isServerReady = false;
 app.use('/api/voice', voiceRoutes_1.default);
 app.use('/api/chat', chatRoutes_1.default);
@@ -236,9 +231,6 @@ app.set('views', [
     path_1.default.join(__dirname, '../views'),
     path_1.default.join(__dirname, '../src/views')
 ]);
-app.get('/admin/login', (req, res) => {
-    res.render('login', { error: null });
-});
 const dashboardDir = path_1.default.join(__dirname, '../dashboard');
 const isDev = process.env.NODE_ENV !== 'production';
 console.log(`[DASHBOARD] Initializing Next.js from: ${dashboardDir}`);
@@ -266,24 +258,6 @@ app.all('/dashboard*', (req, res) => {
     const redirectUrl = req.url.replace('/dashboard', '/admin');
     console.log(`[DASHBOARD] Redirecting ${req.url} -> ${redirectUrl}`);
     res.redirect(301, redirectUrl);
-});
-app.all('/admin', (req, res) => {
-    res.redirect('/admin/');
-});
-app.all('/admin/*', (req, res, next) => {
-    if (req.path.startsWith('/admin/api/')) {
-        return next();
-    }
-    if (nextError) {
-        return res.status(500).send('Dashboard initialization failed. Please check server logs.');
-    }
-    if (!nextReady) {
-        return res.status(503).send('Dashboard is starting up. Please wait a moment and refresh.');
-    }
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/admin/, '') || '/';
-    console.log(`[DASHBOARD] Handling ${originalUrl} -> ${req.url}`);
-    return handle(req, res);
 });
 app.use('/api/auth', authRoutes_1.default);
 app.use('/admin/api/auth', authRoutes_1.default);
@@ -315,7 +289,24 @@ app.use('/admin/api/analytics', analyticsRoutes_1.default);
 app.use('/admin/api/widget-config', widgetConfigRoutes_1.default);
 app.use('/admin/api/elevenlabs', elevenlabsRoutes_1.elevenLabsRouter);
 app.use('/admin/api/healthz', healthzRoutes_1.healthzRouter);
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.all('/admin', (req, res) => {
+    res.redirect('/admin/');
+});
+app.all('/admin/*', (req, res, next) => {
+    if (req.path.startsWith('/admin/api/')) {
+        return next();
+    }
+    if (nextError) {
+        return res.status(500).send('Dashboard initialization failed. Please check server logs.');
+    }
+    if (!nextReady) {
+        return res.status(503).send('Dashboard is starting up. Please wait a moment and refresh.');
+    }
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/admin/, '') || '/';
+    console.log(`[DASHBOARD] Handling ${originalUrl} -> ${req.url}`);
+    return handle(req, res);
+});
 app.get('/healthz', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 app.post('/api/voice-preview', async (req, res) => {
     req.url = '/preview';

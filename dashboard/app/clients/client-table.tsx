@@ -12,9 +12,26 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, Phone, Mail, MoreHorizontal } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Search, Phone, Mail, MoreHorizontal, Plus, FolderOpen } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface ClientWithProjects extends Client {
   projects: Project[]
@@ -22,10 +39,19 @@ interface ClientWithProjects extends Client {
 
 interface Props {
   clients: ClientWithProjects[]
+  onProjectCreated?: () => void
 }
 
-export default function ClientTable({ clients }: Props) {
+export default function ClientTable({ clients, onProjectCreated }: Props) {
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
+  const [selectedClient, setSelectedClient] = useState<ClientWithProjects | null>(null)
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false)
+  const [newProject, setNewProject] = useState({
+    name: "",
+    status: "active",
+    details: "",
+  })
 
   const filteredClients = clients.filter((client) => {
     const matchesSearch =
@@ -35,6 +61,40 @@ export default function ClientTable({ clients }: Props) {
 
     return matchesSearch
   })
+
+  const handleCreateProject = async () => {
+    if (!selectedClient) return
+
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...newProject,
+          clientId: selectedClient.id,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create project')
+      }
+
+      toast({ title: 'Success', description: 'Project created successfully' })
+      setIsCreateProjectOpen(false)
+      setNewProject({ name: "", status: "active", details: "" })
+      setSelectedClient(null)
+      onProjectCreated?.()
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' })
+    }
+  }
+
+  const openCreateProjectDialog = (client: ClientWithProjects) => {
+    setSelectedClient(client)
+    setIsCreateProjectOpen(true)
+  }
 
   return (
     <div className="space-y-4">
@@ -87,9 +147,20 @@ export default function ClientTable({ clients }: Props) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
-                    {client.projects.length} project{client.projects.length === 1 ? "" : "s"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                      {client.projects.length} project{client.projects.length === 1 ? "" : "s"}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openCreateProjectDialog(client)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Add Project
+                    </Button>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <DropdownMenu>
@@ -99,6 +170,10 @@ export default function ClientTable({ clients }: Props) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openCreateProjectDialog(client)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Project
+                      </DropdownMenuItem>
                       <DropdownMenuItem>View Details</DropdownMenuItem>
                       <DropdownMenuItem>Update Client</DropdownMenuItem>
                     </DropdownMenuContent>
@@ -109,6 +184,63 @@ export default function ClientTable({ clients }: Props) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Create Project Dialog */}
+      <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              {selectedClient && (
+                <>Create a new project for <strong>{selectedClient.name}</strong></>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project Name</Label>
+              <Input
+                id="project-name"
+                placeholder="e.g., Website Redesign, Brand Identity"
+                value={newProject.name}
+                onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={newProject.status} onValueChange={(value) => setNewProject({ ...newProject, status: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="on_hold">On Hold</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="details">Project Details</Label>
+              <Textarea
+                id="details"
+                rows={3}
+                placeholder="Brief description of the project scope and objectives..."
+                value={newProject.details}
+                onChange={(e) => setNewProject({ ...newProject, details: e.target.value })}
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateProject} disabled={!newProject.name}>
+                Create Project
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 } 

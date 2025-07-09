@@ -30,34 +30,39 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function fetchClients() {
-      try {
-        const response = await fetch('/admin/api/clients', { credentials: 'include' })
-        if (!response.ok) {
-          throw new Error('Failed to fetch clients')
-        }
-        const data = await response.json()
-        const clientsWithDates = (data.clients || []).map((client: any) => ({
-          ...client,
-          createdAt: new Date(client.createdAt),
-          updatedAt: new Date(client.updatedAt)
-        }))
-        setClients(clientsWithDates)
-        setStats({
-          clientsTotal: data.stats?.clientsTotal || 0,
-          clientsNewWeek: data.stats?.clientsNewWeek || 0,
-          leadsQualified: data.stats?.leadsQualified || 0
-        })
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load clients')
-      } finally {
-        setLoading(false)
+  const fetchClients = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/admin/api/clients', { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error('Failed to fetch clients')
       }
+      const data = await response.json()
+      const clientsWithDates = (data.clients || []).map((client: any) => ({
+        ...client,
+        createdAt: new Date(client.createdAt),
+        updatedAt: new Date(client.updatedAt)
+      }))
+      setClients(clientsWithDates)
+      setStats({
+        clientsTotal: data.stats?.clientsTotal || 0,
+        clientsNewWeek: data.stats?.clientsNewWeek || 0,
+        leadsQualified: data.stats?.leadsQualified || 0
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load clients')
+    } finally {
+      setLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchClients()
   }, [])
+
+  const handleProjectCreated = () => {
+    fetchClients() // Refresh clients data when a project is created
+  }
 
   if (loading) {
     return (
@@ -171,7 +176,7 @@ export default function ClientsPage() {
             <CardDescription>Manage your leads and client relationships</CardDescription>
           </CardHeader>
           <CardContent>
-            <ClientTable clients={clients} />
+            <ClientTable clients={clients} onProjectCreated={handleProjectCreated} />
           </CardContent>
         </Card>
       </div>

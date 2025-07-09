@@ -17,34 +17,42 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Check for authentication token
-  const token = request.cookies.get('token')?.value
-  console.log(`[MIDDLEWARE] Token present: ${!!token}`)
-  
-  // Public paths that don't require authentication (as seen by Next.js after prefix stripping)
-  const publicPaths = ['/login']
-  const isPublicPath = publicPaths.includes(pathname)
-  
-  console.log(`[MIDDLEWARE] Path: ${pathname}, Is public: ${isPublicPath}, Has token: ${!!token}`)
-  
-  // If no token and trying to access protected route, redirect to login
-  if (!token && !isPublicPath) {
-    console.log(`[MIDDLEWARE] No token for protected route, redirecting to login`)
-    // Redirect to the full /admin/login path since server.ts will strip it
-    const loginUrl = new URL('/admin/login', request.url)
-    return NextResponse.redirect(loginUrl)
-  }
-  
-  // If has token and on login page, redirect to dashboard root  
-  if (token && pathname === '/login') {
-    console.log(`[MIDDLEWARE] Has token on login page, redirecting to dashboard`)
-    // Redirect to the full /admin/ path since server.ts will strip it
-    const dashboardUrl = new URL('/admin/', request.url)
-    return NextResponse.redirect(dashboardUrl)
-  }
+  try {
+    // Check for authentication token
+    const token = request.cookies.get('token')?.value
+    console.log(`[MIDDLEWARE] Token present: ${!!token}`)
+    
+    // Public paths that don't require authentication (as seen by Next.js after prefix stripping)
+    const publicPaths = ['/login']
+    const isPublicPath = publicPaths.includes(pathname)
+    
+    console.log(`[MIDDLEWARE] Path: ${pathname}, Is public: ${isPublicPath}, Has token: ${!!token}`)
+    
+    // If no token and trying to access protected route, redirect to login
+    if (!token && !isPublicPath) {
+      console.log(`[MIDDLEWARE] No token for protected route, redirecting to login`)
+      // Use relative path to avoid domain issues and prevent loops
+      const loginUrl = new URL('/login', request.url)
+      console.log(`[MIDDLEWARE] Redirecting to: ${loginUrl.toString()}`)
+      return NextResponse.redirect(loginUrl)
+    }
+    
+    // If has token and on login page, redirect to dashboard root  
+    if (token && pathname === '/login') {
+      console.log(`[MIDDLEWARE] Has token on login page, redirecting to dashboard root`)
+      // Use relative path to avoid domain issues and prevent loops
+      const dashboardUrl = new URL('/', request.url)
+      console.log(`[MIDDLEWARE] Redirecting to: ${dashboardUrl.toString()}`)
+      return NextResponse.redirect(dashboardUrl)
+    }
 
-  console.log(`[MIDDLEWARE] Allowing request to proceed`)
-  return NextResponse.next()
+    console.log(`[MIDDLEWARE] Allowing request to proceed`)
+    return NextResponse.next()
+  } catch (error) {
+    console.error(`[MIDDLEWARE] Error processing request:`, error)
+    // On error, allow the request to proceed to avoid breaking the app
+    return NextResponse.next()
+  }
 }
 
 // Apply middleware to all routes except the excluded ones

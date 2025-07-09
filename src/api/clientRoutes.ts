@@ -4,6 +4,26 @@ import { authMiddleware } from './authMiddleware'
 
 const router = Router()
 
+// GET /api/clients – list all clients for the business
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const clients = await prisma.client.findMany({
+      where: { businessId: req.user!.businessId },
+      include: {
+        projects: {
+          select: { id: true, name: true, status: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(clients)
+  } catch (error) {
+    console.error('[CLIENT ROUTES] Failed to fetch clients:', error)
+    res.status(500).json({ error: 'failed to fetch clients' })
+  }
+})
+
 // POST /api/clients – create a new client for the authenticated user's business
 router.post('/', authMiddleware, async (req, res) => {
   try {

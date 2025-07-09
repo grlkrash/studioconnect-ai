@@ -11,6 +11,7 @@ import {
   BarChart3,
   Phone,
   LogOut,
+  FolderOpen,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -68,6 +69,11 @@ const managementItems = [
     title: "Knowledge Base",
     url: "/knowledge-base",
     icon: BookOpen,
+  },
+  {
+    title: "Projects",
+    url: "/projects",
+    icon: FolderOpen,
   },
   {
     title: "Clients & Requests",

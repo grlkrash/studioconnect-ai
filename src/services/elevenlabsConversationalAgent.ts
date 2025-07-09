@@ -54,8 +54,8 @@ export class ElevenLabsConversationalAgent extends EventEmitter {
   }
 
   /**
-   * 🚀 CREATE ELEVENLABS CONVERSATIONAL AI AGENT
-   * Following official documentation for agent creation
+   * 🚀 CREATE ELEVENLABS CONVERSATIONAL AI AGENT WITH CLIENT TOOLS
+   * Following official documentation for agent creation with real-time data access
    */
   async createAgent(businessId: string, config: {
     name: string
@@ -67,7 +67,10 @@ export class ElevenLabsConversationalAgent extends EventEmitter {
     knowledge_base?: string[]
   }): Promise<string> {
     try {
-      console.log('[🎯 ELEVENLABS AGENT] Creating Conversational AI agent...')
+      console.log('[🎯 ELEVENLABS AGENT] Creating Conversational AI agent with client tools...')
+      
+      // Get server URL for client tools
+      const serverUrl = process.env.FRONTEND_PRODUCTION_URL || process.env.APP_PRIMARY_URL || 'https://studioconnect-ai.onrender.com'
       
       const agentConfig = {
         conversation_config: {
@@ -100,7 +103,99 @@ export class ElevenLabsConversationalAgent extends EventEmitter {
                 prefix_padding_ms: 300,
                 silence_duration_ms: 1200
               }
-            }
+            },
+            // 🔥 CLIENT TOOLS FOR REAL-TIME DATA ACCESS 🔥
+            client_tools: [
+              {
+                name: "get_project_status",
+                description: "Get real-time project status and updates for a client. Use this when the caller asks about project progress, timelines, or status updates.",
+                url: `${serverUrl}/api/elevenlabs/client-tools/get-project-status`,
+                method: "POST",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    client_phone: {
+                      type: "string",
+                      description: "The caller's phone number"
+                    },
+                    project_name: {
+                      type: "string", 
+                      description: "Name or partial name of the project to look up"
+                    },
+                    business_phone: {
+                      type: "string",
+                      description: "The business phone number that was called"
+                    }
+                  },
+                  required: ["client_phone", "business_phone"]
+                }
+              },
+              {
+                name: "get_client_info",
+                description: "Get client information and relationship status. Use this at the beginning of calls to identify if the caller is a new or existing client.",
+                url: `${serverUrl}/api/elevenlabs/client-tools/get-client-info`,
+                method: "POST",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    client_phone: {
+                      type: "string",
+                      description: "The caller's phone number"
+                    },
+                    business_phone: {
+                      type: "string",
+                      description: "The business phone number that was called"
+                    }
+                  },
+                  required: ["client_phone", "business_phone"]
+                }
+              },
+              {
+                name: "escalate_to_team",
+                description: "Escalate the call to a human team member. Use this for complex requests, pricing discussions, or when the caller specifically asks to speak with someone.",
+                url: `${serverUrl}/api/elevenlabs/client-tools/escalate-to-team`,
+                method: "POST",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    client_phone: {
+                      type: "string",
+                      description: "The caller's phone number"
+                    },
+                    business_phone: {
+                      type: "string",
+                      description: "The business phone number that was called"
+                    },
+                    reason: {
+                      type: "string",
+                      description: "Reason for escalation (e.g., 'pricing discussion', 'complex project requirements', 'technical support')"
+                    },
+                    urgency: {
+                      type: "string",
+                      enum: ["normal", "urgent", "emergency"],
+                      description: "Urgency level of the escalation"
+                    }
+                  },
+                  required: ["client_phone", "business_phone", "reason"]
+                }
+              },
+              {
+                name: "get_business_hours",
+                description: "Get current business hours and availability status. Use this when callers ask about operating hours or availability.",
+                url: `${serverUrl}/api/elevenlabs/client-tools/get-business-hours`,
+                method: "POST",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    business_phone: {
+                      type: "string",
+                      description: "The business phone number that was called"
+                    }
+                  },
+                  required: ["business_phone"]
+                }
+              }
+            ]
           }
         },
         name: config.name,
@@ -119,7 +214,8 @@ export class ElevenLabsConversationalAgent extends EventEmitter {
       )
 
       const agentId = response.data.agent_id
-      console.log(`[🎯 ELEVENLABS AGENT] ✅ Agent created: ${agentId}`)
+      console.log(`[🎯 ELEVENLABS AGENT] ✅ Agent created with client tools: ${agentId}`)
+      console.log(`[🎯 ELEVENLABS AGENT] 🔧 Client tools configured for server: ${serverUrl}`)
       
       // Store agent configuration in database
       await this.saveAgentConfig(businessId, agentId, config)
@@ -127,6 +223,9 @@ export class ElevenLabsConversationalAgent extends EventEmitter {
       return agentId
     } catch (error) {
       console.error('[🎯 ELEVENLABS AGENT] ❌ Failed to create agent:', error)
+      if (axios.isAxiosError(error) && error.response) {
+        console.error('[🎯 ELEVENLABS AGENT] ❌ Response data:', JSON.stringify(error.response.data, null, 2))
+      }
       throw error
     }
   }

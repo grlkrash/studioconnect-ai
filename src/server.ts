@@ -263,11 +263,8 @@ app.set('views', [
 ])
 
 // -------------------------------------------------
-// TEMPORARY: Preserve legacy login page at /admin/login
+// Legacy login route removed - now handled by Next.js
 // -------------------------------------------------
-app.get('/admin/login', (req: Request, res: Response) => {
-  res.render('login', { error: null })
-})
 
 // ────────────────────────────────────────────────────────────
 // NEXT.JS DASHBOARD (dir: /dashboard) will be prepared below

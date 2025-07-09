@@ -4,6 +4,29 @@ import { authMiddleware } from './authMiddleware'
 
 const router = Router()
 
+// GET /api/projects – list all projects for the business
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const projects = await prisma.project.findMany({
+      where: { businessId: req.user!.businessId },
+      include: {
+        client: {
+          select: { id: true, name: true, email: true, phone: true }
+        },
+        knowledgeBaseEntries: {
+          select: { id: true, content: true, createdAt: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(projects)
+  } catch (error) {
+    console.error('[PROJECT ROUTES] Failed to fetch projects:', error)
+    res.status(500).json({ error: 'failed to fetch projects' })
+  }
+})
+
 // POST /api/projects – create a new project
 router.post('/', authMiddleware, async (req, res) => {
   try {
