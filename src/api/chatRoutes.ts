@@ -8,7 +8,7 @@ const router = Router();
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { message, conversationHistory, businessId, currentFlow } = req.body;
+    const { message, conversationHistory, businessId, currentFlow, projectId } = req.body;
     if (!businessId) {
       res.status(400).json({ error: 'Missing required field: businessId' });
       return;
@@ -42,6 +42,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       conversationHistory: conversationHistory || [],
       businessId,
       currentActiveFlow: currentFlow ?? null,
+      projectId,
       channel: 'CHAT'
     });
     res.status(200).json(aiResponse);

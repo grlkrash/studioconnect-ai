@@ -345,7 +345,7 @@ const determineNextVoiceAction = (intent, currentFlow) => {
         return 'TRANSFER';
     return 'CONTINUE';
 };
-const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow, callSid, channel = 'VOICE') => {
+const _processMessage = async (message, conversationHistory, businessId, currentActiveFlow = null, projectId = null, callSid, channel = 'VOICE') => {
     var _a, _b;
     const voiceSessionService = voiceSessionService_1.default.getInstance();
     const session = callSid ? await voiceSessionService.getVoiceSession(callSid) : null;
@@ -372,8 +372,11 @@ const _processMessage = async (message, conversationHistory, businessId, current
         let clientContext = '';
         let projectContext = '';
         let knowledgeContext = '';
+        const kbWhere = { businessId: business.id };
+        if (projectId)
+            kbWhere.projectId = projectId;
         const knowledgeBaseEntries = await db_1.prisma.knowledgeBase.findMany({
-            where: { businessId: business.id },
+            where: kbWhere,
             select: { content: true },
         });
         if (knowledgeBaseEntries.length > 0) {
@@ -604,11 +607,11 @@ async function handleIncomingMessage(message, sessionId, businessId) {
 }
 function processMessage(...args) {
     if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])) {
-        const { message, conversationHistory, businessId, currentActiveFlow = null, callSid, channel = 'VOICE' } = args[0];
-        return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel);
+        const { message, conversationHistory, businessId, currentActiveFlow = null, projectId = null, callSid, channel = 'VOICE' } = args[0];
+        return _processMessage(message, conversationHistory, businessId, currentActiveFlow, projectId, callSid, channel);
     }
-    const [message, conversationHistory, businessId, currentActiveFlow = null, callSid, channel = 'VOICE'] = args;
-    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel);
+    const [message, conversationHistory, businessId, currentActiveFlow = null, projectId = null, callSid, channel = 'VOICE'] = args;
+    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, projectId, callSid, channel);
 }
 async function getProjectStatusIntelligence(message, businessId) {
     var _a, _b;

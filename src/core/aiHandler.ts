@@ -516,7 +516,8 @@ const _processMessage = async (
   message: string,
   conversationHistory: any[],
   businessId: string,
-  currentActiveFlow?: string | null,
+  currentActiveFlow: string | null = null,
+  projectId: string | null = null,
   callSid?: string,
   channel: 'VOICE' | 'CHAT' = 'VOICE'
 ): Promise<{ 
@@ -556,8 +557,11 @@ const _processMessage = async (
     let knowledgeContext = ''
 
     // Fetch Knowledge Base for the business
+    const kbWhere: any = { businessId: business.id }
+    if (projectId) kbWhere.projectId = projectId
+
     const knowledgeBaseEntries = await prisma.knowledgeBase.findMany({
-      where: { businessId: business.id },
+      where: kbWhere,
       select: { content: true },
     })
     if (knowledgeBaseEntries.length > 0) {
@@ -849,6 +853,7 @@ interface ProcessMessageInput {
   conversationHistory: any[]
   businessId: string
   currentActiveFlow?: string | null
+  projectId?: string | null
   callSid?: string
   channel?: 'VOICE' | 'CHAT'
 }
@@ -860,6 +865,7 @@ export function processMessage(
   conversationHistory: any[],
   businessId: string,
   currentActiveFlow?: string | null,
+  projectId?: string | null,
   callSid?: string,
   channel?: 'VOICE' | 'CHAT'
 ): ReturnType<typeof _processMessage>
@@ -873,10 +879,11 @@ export function processMessage(...args: any[]): ReturnType<typeof _processMessag
       conversationHistory,
       businessId,
       currentActiveFlow = null,
+      projectId = null,
       callSid,
       channel = 'VOICE'
     } = args[0] as ProcessMessageInput
-    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel)
+    return _processMessage(message, conversationHistory, businessId, currentActiveFlow, projectId, callSid, channel)
   }
 
   // Positional-argument fallback (legacy support)
@@ -885,11 +892,12 @@ export function processMessage(...args: any[]): ReturnType<typeof _processMessag
     conversationHistory,
     businessId,
     currentActiveFlow = null,
+    projectId = null,
     callSid,
     channel = 'VOICE'
-  ] = args as [string, any[], string, string | null | undefined, string | undefined, 'VOICE' | 'CHAT']
+  ] = args as [string, any[], string, string | null | undefined, string | null | undefined, string | undefined, 'VOICE' | 'CHAT']
 
-  return _processMessage(message, conversationHistory, businessId, currentActiveFlow, callSid, channel)
+  return _processMessage(message, conversationHistory, businessId, currentActiveFlow, projectId, callSid, channel)
 }
 
 // PROCESS MESSAGE WRAPPER END

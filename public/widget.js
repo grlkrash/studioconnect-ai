@@ -8,6 +8,7 @@
     );
   
   const businessId = currentScript ? currentScript.getAttribute('data-business-id') : null;
+  const projectId = currentScript ? currentScript.getAttribute('data-project-id') || null : null;
   
   // Exit if no businessId found
   if (!businessId) {
@@ -710,7 +711,8 @@
         body: JSON.stringify({
           message: '', // Empty message to trigger welcome
           conversationHistory: [],
-          businessId: businessId
+          businessId: businessId,
+          projectId: projectId
         })
       });
 
@@ -859,6 +861,7 @@
         message: messageText,
         conversationHistory: conversationHistory,
         businessId: businessId,
+        projectId: projectId,
         currentFlow: currentFlowState
       };
 
